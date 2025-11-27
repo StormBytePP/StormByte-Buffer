@@ -1,4 +1,6 @@
 option(ENABLE_TEST "Enable Unit Tests" OFF)
 if(ENABLE_TEST AND NOT STORMBYTE_AS_DEPENDENCY)
-	
+	add_executable(FIFOTests fifo_test.cxx)
+	target_link_libraries(FIFOTests StormByte-Memory)
+	add_test(NAME FIFOTests COMMAND FIFOTests)
 endif()
