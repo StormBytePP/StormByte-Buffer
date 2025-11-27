@@ -1,6 +1,6 @@
 #pragma once
 
-#include <StormByte/buffer/visibility.h>
+#include <StormByte/buffer/position.hxx>
 
 #include <atomic>
 #include <concepts>
@@ -118,17 +118,48 @@ namespace StormByte::Buffer {
 			virtual void Write(const std::string& data);
 
 			/**
-			 * 	@brief Read up to @p count bytes (or all if count == 0).
-			 *  @param count Number of bytes to read; 0 reads all available.
+			 * 	@brief Non-destructive read up to @p count bytes from current read position.
+			 *  @param count Number of bytes to read; 0 reads all available from read position.
 			 *  @return A vector containing the requested bytes.
-			 *  @note Reading all when contiguous (head == 0) returns bytes via move.
+			 *  @note This operation is non-destructive. Data remains in the FIFO and can be
+			 *        read again by resetting the read position. The internal read position
+			 *        is advanced by the number of bytes read. Use @ref Extract() for
+			 *        destructive reads that remove data from the buffer.
+			 *  @see Extract(), ResetReadPosition()
 			 */
 			virtual std::vector<std::byte> Read(std::size_t count = 0);
 
 			/**
-			 * @brief Whether the FIFO is closed for further writes
+			 * 	@brief Extract up to @p count bytes (destructive read).
+			 *  @param count Number of bytes to extract; 0 extracts all available.
+			 *  @return A vector containing the extracted bytes.
+			 *  @note This operation removes data from the FIFO, advancing the head pointer
+			 *        and decreasing size. The read position is adjusted accordingly.
+			 *        When extracting all data and it's contiguous (head == 0), uses
+			 *        zero-copy move semantics.
+			 *  @see Read()
 			 */
-			inline bool IsClosed() const noexcept { return m_closed.load(); }	
+			virtual std::vector<std::byte> Extract(std::size_t count = 0);
+
+			/**
+			 * @brief Whether the FIFO is closed for further writes.
+			 * @return true if the FIFO is closed, false otherwise.
+			 */
+			inline bool IsClosed() const noexcept { return m_closed.load(); }
+
+			/**
+			 * @brief Move the read position for non-destructive reads.
+			 * @param position The position offset to apply.
+			 * @param mode Positioning mode: Position::Absolute sets the read position to
+			 *             an absolute offset from the head, Position::Relative adjusts
+			 *             the read position by the given offset from the current position.
+			 * @note In Absolute mode, the position is clamped to the range [0, Size()].
+			 *       In Relative mode, the resulting position is clamped to valid bounds.
+			 *       Seeking does not affect the data stored in the FIFO, only the position
+			 *       from which subsequent @ref Read() operations will start.
+			 * @see Read()
+			 */
+			virtual void Seek(const std::size_t& position, const Position& mode);
 
 		protected:
 			/**
@@ -157,9 +188,18 @@ namespace StormByte::Buffer {
 			std::atomic<std::size_t> m_size {0};
 
 			/**
-			 * @brief Whether the FIFO is closed for further writes
+			 * @brief Whether the FIFO is closed for further writes.
 			 */
 			std::atomic<bool> m_closed {false};
+
+			/**
+			 * @brief Current read position for non-destructive reads.
+			 *
+			 * Tracks the offset from the head for @ref Read() operations.
+			 * This position is relative to the current head and is automatically
+			 * adjusted when data is extracted via @ref Extract().
+			 */
+			std::atomic<std::size_t> m_read_position {0};
 
 		private:
 			/**

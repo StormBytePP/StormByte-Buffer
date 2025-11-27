@@ -8,11 +8,14 @@ FIFO::FIFO(std::size_t capacity) noexcept: m_buffer(capacity), m_initialCapacity
 
 FIFO::FIFO(const FIFO& other) noexcept: m_buffer(other.m_buffer), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
 	m_size.store(other.m_size);
+	m_read_position.store(other.m_read_position.load());
 }
 
 FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
 	m_size.store(other.m_size);
+	m_read_position.store(other.m_read_position.load());
 	other.m_head = other.m_tail = other.m_size = 0;
+	other.m_read_position.store(0);
     other.m_initialCapacity = 0;
 }
 
@@ -23,6 +26,7 @@ FIFO& FIFO::operator=(const FIFO& other) noexcept {
 		m_head = other.m_head;
 		m_tail = other.m_tail;
 		m_size.store(other.m_size);
+		m_read_position.store(other.m_read_position.load());
 	}
 	return *this;
 }
@@ -34,7 +38,9 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 		m_head = other.m_head;
 		m_tail = other.m_tail;
 		m_size.store(other.m_size);
+		m_read_position.store(other.m_read_position.load());
 		other.m_head = other.m_tail = other.m_size = 0;
+		other.m_read_position.store(0);
 		other.m_initialCapacity = 0;
 	}
 	return *this;
@@ -51,6 +57,7 @@ void FIFO::Clear() noexcept {
 		m_buffer.resize(m_initialCapacity);
 	}
 	m_head = m_tail = m_size = 0;
+	m_read_position.store(0);
 }
 
 void FIFO::Reserve(std::size_t newCapacity) {
@@ -111,6 +118,36 @@ void FIFO::Write(const std::string& data) {
 
 std::vector<std::byte> FIFO::Read(std::size_t count) {
 	const std::size_t current_size = m_size.load();
+	const std::size_t read_pos = m_read_position.load();
+	
+	// Calculate available data from read position
+	const std::size_t available = (read_pos <= current_size) ? (current_size - read_pos) : 0;
+	const std::size_t toRead = count > 0 ? std::min(count, available) : available;
+	
+	std::vector<std::byte> out;
+	if (toRead == 0) return out;
+	
+	out.resize(toRead);
+	const std::size_t cap = m_buffer.size();
+	
+	// Calculate actual position in circular buffer
+	const std::size_t actual_pos = (m_head + read_pos) % cap;
+	
+	const std::size_t first = std::min(toRead, cap - actual_pos);
+	std::copy_n(m_buffer.begin() + static_cast<std::ptrdiff_t>(actual_pos), first, out.begin());
+	const std::size_t second = toRead - first;
+	if (second) {
+		std::copy_n(m_buffer.begin(), second, out.begin() + static_cast<std::ptrdiff_t>(first));
+	}
+	
+	// Update read position atomically
+	m_read_position.fetch_add(toRead);
+	
+	return out;
+}
+
+std::vector<std::byte> FIFO::Extract(std::size_t count) {
+	const std::size_t current_size = m_size.load();
 	const std::size_t toRead = count > 0 ? std::min(count, current_size) : current_size;
 	std::vector<std::byte> out;
 	if (toRead == 0) return out;
@@ -119,6 +156,7 @@ std::vector<std::byte> FIFO::Read(std::size_t count) {
 		m_buffer.resize(m_size);
 		out = std::move(m_buffer);
 		m_head = m_tail = m_size = 0;
+		m_read_position.store(0);
 		return out;
 	}
 	out.resize(toRead);
@@ -131,6 +169,13 @@ std::vector<std::byte> FIFO::Read(std::size_t count) {
 	}
 	m_head = (m_head + toRead) % cap;
 	m_size -= toRead;
+	// Adjust read position if it points beyond extracted data
+	const std::size_t current_read_pos = m_read_position.load();
+	if (current_read_pos >= toRead) {
+		m_read_position.fetch_sub(toRead);
+	} else {
+		m_read_position.store(0);
+	}
 	return out;
 }
 
@@ -139,6 +184,20 @@ void FIFO::GrowToFit(std::size_t required) {
 	std::size_t newCap = m_buffer.empty() ? 64 : m_buffer.size();
 	while (newCap < required) newCap *= 2;
 	Reserve(newCap);
+}
+
+void FIFO::Seek(const std::size_t& position, const Position& mode) {
+	const std::size_t current_size = m_size.load();
+	
+	if (mode == Position::Absolute) {
+		// Set read position to absolute offset from head, clamped to [0, size]
+		m_read_position.store(std::min(position, current_size));
+	} else { // Position::Relative
+		const std::size_t current_pos = m_read_position.load();
+		// Calculate new position, clamping to valid range
+		const std::size_t new_pos = current_pos + position;
+		m_read_position.store(std::min(new_pos, current_size));
+	}
 }
 
 void FIFO::RelinearizeInto(std::vector<std::byte>& dst) const {
