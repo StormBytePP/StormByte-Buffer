@@ -1,4 +1,5 @@
 #include <StormByte/buffer/shared_fifo.hxx>
+#include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <thread>
@@ -12,7 +13,7 @@ using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::Position;
 
 static std::string toString(const std::vector<std::byte>& v) {
-    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+    return StormByte::String::FromByteVector(v);
 }
 
 int test_shared_fifo_producer_consumer_blocking() {

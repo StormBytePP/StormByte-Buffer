@@ -35,6 +35,7 @@
 
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/consumer.hxx>
+#include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <thread>
@@ -51,7 +52,7 @@ using StormByte::Buffer::Consumer;
 using StormByte::Buffer::Position;
 
 static std::string toString(const std::vector<std::byte>& v) {
-    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+    return StormByte::String::FromByteVector(v);
 }
 
 static std::vector<std::byte> toBytes(const std::string& s) {
