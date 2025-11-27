@@ -99,13 +99,20 @@ bool FIFO::Write(const std::string& data) {
 	return Write(tmp);
 }
 
-std::vector<std::byte> FIFO::Read(std::size_t count) {
+ExpectedData<InsufficientData> FIFO::Read(std::size_t count) {
 	const std::size_t current_size = m_size.load();
 	const std::size_t read_pos = m_read_position.load();
 	
 	// Calculate available data from read position
 	const std::size_t available = (read_pos <= current_size) ? (current_size - read_pos) : 0;
-	const std::size_t toRead = count > 0 ? std::min(count, available) : available;
+	
+	// If count is specified and there's not enough data, return error
+	if (count > 0 && count > available) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+	}
+	
+	// If count is 0, read all available data
+	const std::size_t toRead = count > 0 ? count : available;
 	
 	std::vector<std::byte> out;
 	if (toRead == 0) return out;
@@ -129,9 +136,17 @@ std::vector<std::byte> FIFO::Read(std::size_t count) {
 	return out;
 }
 
-std::vector<std::byte> FIFO::Extract(std::size_t count) {
+ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
 	const std::size_t current_size = m_size.load();
-	const std::size_t toRead = count > 0 ? std::min(count, current_size) : current_size;
+	
+	// If count is specified and there's not enough data, return error
+	if (count > 0 && count > current_size) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
+	}
+	
+	// If count is 0, extract all available data
+	const std::size_t toRead = count > 0 ? count : current_size;
+	
 	std::vector<std::byte> out;
 	if (toRead == 0) return out;
 	// Zero-copy fast path: entire content contiguous from head == 0

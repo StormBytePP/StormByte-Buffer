@@ -14,7 +14,7 @@ int test_fifo_write_read_vector() {
     std::string s = "Hello";
     fifo.Write(s);
     auto out = fifo.Extract(s.size());
-    std::string result(reinterpret_cast<const char*>(out.data()), out.size());
+    std::string result(reinterpret_cast<const char*>(out->data()), out->size());
     ASSERT_EQUAL("test_fifo_write_read_vector", result, s);
     ASSERT_TRUE("test_fifo_write_read_vector", fifo.Empty());
     RETURN_TEST("test_fifo_write_read_vector", 0);
@@ -24,11 +24,11 @@ int test_fifo_wrap_around() {
     FIFO fifo(5);
     fifo.Write("ABCDE");
     auto r1 = fifo.Extract(2); // now head moves, tail at end
-    ASSERT_EQUAL("test_fifo_wrap_around r1", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("AB"));
+    ASSERT_EQUAL("test_fifo_wrap_around r1", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("AB"));
     fifo.Write("1234"); // this will wrap
     auto all = fifo.Extract(7);
-    ASSERT_EQUAL("test_fifo_wrap_around size", all.size(), static_cast<std::size_t>(7));
-    ASSERT_EQUAL("test_fifo_wrap_around content", std::string(reinterpret_cast<const char*>(all.data()), all.size()), std::string("CDE1234"));
+    ASSERT_EQUAL("test_fifo_wrap_around size", all->size(), static_cast<std::size_t>(7));
+    ASSERT_EQUAL("test_fifo_wrap_around content", std::string(reinterpret_cast<const char*>(all->data()), all->size()), std::string("CDE1234"));
     ASSERT_TRUE("test_fifo_wrap_around empty", fifo.Empty());
     RETURN_TEST("test_fifo_wrap_around", 0);
 }
@@ -61,10 +61,10 @@ int test_fifo_buffer_stress() {
         expected.append(chunk);
         if (i % 10 == 0) {
             auto out = fifo.Extract(len / 2);
-            std::string got(reinterpret_cast<const char*>(out.data()), out.size());
-            std::string exp = expected.substr(0, out.size());
+            std::string got(reinterpret_cast<const char*>(out->data()), out->size());
+            std::string exp = expected.substr(0, out->size());
             ASSERT_EQUAL("stress phase1", got, exp);
-            expected.erase(0, out.size());
+            expected.erase(0, out->size());
         }
     }
 
@@ -75,15 +75,15 @@ int test_fifo_buffer_stress() {
         expected.append(chunk);
         if (i % 5 == 0) {
             auto out = fifo.Extract(len);
-            std::string got(reinterpret_cast<const char*>(out.data()), out.size());
-            std::string exp = expected.substr(0, out.size());
+            std::string got(reinterpret_cast<const char*>(out->data()), out->size());
+            std::string exp = expected.substr(0, out->size());
             ASSERT_EQUAL("stress phase2", got, exp);
-            expected.erase(0, out.size());
+            expected.erase(0, out->size());
         }
     }
 
     auto out = fifo.Extract();
-    std::string got(reinterpret_cast<const char*>(out.data()), out.size());
+    std::string got(reinterpret_cast<const char*>(out->data()), out->size());
     ASSERT_EQUAL("stress final drain", got, expected);
     ASSERT_TRUE("stress empty", fifo.Empty());
     RETURN_TEST("test_fifo_buffer_stress", 0);
@@ -111,12 +111,12 @@ int test_fifo_copy_ctor_assign() {
     FIFO b(a); // copy ctor
     ASSERT_EQUAL("copy ctor size", b.Size(), a.Size());
     auto out = b.Extract(2);
-    ASSERT_EQUAL("copy ctor content", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("AB"));
+    ASSERT_EQUAL("copy ctor content", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("AB"));
     FIFO c(1);
     c = a; // copy assign
     ASSERT_EQUAL("copy assign size", c.Size(), a.Size());
     auto out2 = c.Extract(2);
-    ASSERT_EQUAL("copy assign content", std::string(reinterpret_cast<const char*>(out2.data()), out2.size()), std::string("AB"));
+    ASSERT_EQUAL("copy assign content", std::string(reinterpret_cast<const char*>(out2->data()), out2->size()), std::string("AB"));
     RETURN_TEST("test_fifo_copy_ctor_assign", 0);
 }
 
@@ -160,7 +160,7 @@ int test_fifo_write_vector_and_rvalue() {
     w[0] = std::byte{'D'}; w[1] = std::byte{'E'}; w[2] = std::byte{'F'};
     fifo.Write(std::move(w));
     auto out = fifo.Extract(6);
-    ASSERT_EQUAL("write vector+rvalue", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("ABCDEF"));
+    ASSERT_EQUAL("write vector+rvalue", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("ABCDEF"));
     RETURN_TEST("test_fifo_write_vector_and_rvalue", 0);
 }
 
@@ -168,7 +168,7 @@ int test_fifo_read_default_all() {
     FIFO fifo;
     fifo.Write(std::string("DATA"));
     auto out = fifo.Extract(); // default parameter returns all
-    ASSERT_EQUAL("read default all", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("DATA"));
+    ASSERT_EQUAL("read default all", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("DATA"));
     ASSERT_TRUE("read default all empty", fifo.Empty());
     RETURN_TEST("test_fifo_read_default_all", 0);
 }
@@ -179,7 +179,7 @@ int test_fifo_adopt_storage_move_write() {
     fifo.Write(std::move(v)); // adopt when empty
     ASSERT_EQUAL("test_fifo_adopt_storage_move_write size", fifo.Size(), static_cast<std::size_t>(4));
     auto out = fifo.Extract(4);
-    ASSERT_EQUAL("test_fifo_adopt_storage_move_write content", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("MOVE"));
+    ASSERT_EQUAL("test_fifo_adopt_storage_move_write content", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("MOVE"));
     ASSERT_TRUE("test_fifo_adopt_storage_move_write empty", fifo.Empty());
     RETURN_TEST("test_fifo_adopt_storage_move_write", 0);
 }
@@ -214,7 +214,7 @@ int test_fifo_closed_noop_on_nonempty() {
     fifo.Write(std::string("DEF"));
     ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
     auto out = fifo.Extract();
-    ASSERT_EQUAL("content unchanged after close write", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("ABC"));
+    ASSERT_EQUAL("content unchanged after close write", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("ABC"));
     RETURN_TEST("test_fifo_closed_noop_on_nonempty", 0);
 }
 
@@ -224,17 +224,17 @@ int test_fifo_read_nondestructive() {
     
     // First read - should get data without removing it
     auto out1 = fifo.Read(3);
-    ASSERT_EQUAL("first read content", std::string(reinterpret_cast<const char*>(out1.data()), out1.size()), std::string("ABC"));
+    ASSERT_EQUAL("first read content", std::string(reinterpret_cast<const char*>(out1->data()), out1->size()), std::string("ABC"));
     ASSERT_EQUAL("size unchanged after read", fifo.Size(), static_cast<std::size_t>(6));
     
     // Second read - should continue from where we left off
     auto out2 = fifo.Read(3);
-    ASSERT_EQUAL("second read content", std::string(reinterpret_cast<const char*>(out2.data()), out2.size()), std::string("DEF"));
+    ASSERT_EQUAL("second read content", std::string(reinterpret_cast<const char*>(out2->data()), out2->size()), std::string("DEF"));
     ASSERT_EQUAL("size still unchanged", fifo.Size(), static_cast<std::size_t>(6));
     
     // Third read - should return empty (read position beyond available data)
-    auto out3 = fifo.Read(1);
-    ASSERT_EQUAL("third read empty", out3.size(), static_cast<std::size_t>(0));
+    auto out3 = fifo.Read(0);
+    ASSERT_EQUAL("third read empty", out3->size(), static_cast<std::size_t>(0));
     
     RETURN_TEST("test_fifo_read_nondestructive", 0);
 }
@@ -245,17 +245,17 @@ int test_fifo_read_vs_extract() {
     
     // Read shouldn't remove data
     auto r1 = fifo.Read(2);
-    ASSERT_EQUAL("read content", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("12"));
+    ASSERT_EQUAL("read content", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("12"));
     ASSERT_EQUAL("size after read", fifo.Size(), static_cast<std::size_t>(6));
     
     // Extract should remove data
     auto e1 = fifo.Extract(2);
-    ASSERT_EQUAL("extract content", std::string(reinterpret_cast<const char*>(e1.data()), e1.size()), std::string("12"));
+    ASSERT_EQUAL("extract content", std::string(reinterpret_cast<const char*>(e1->data()), e1->size()), std::string("12"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(4));
     
     // Read should continue from adjusted position
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("read after extract", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("34"));
+    ASSERT_EQUAL("read after extract", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("34"));
     
     RETURN_TEST("test_fifo_read_vs_extract", 0);
 }
@@ -266,13 +266,13 @@ int test_fifo_read_all_nondestructive() {
     
     // Read all with default parameter
     auto out1 = fifo.Read();
-    ASSERT_EQUAL("read all content", std::string(reinterpret_cast<const char*>(out1.data()), out1.size()), std::string("HELLO"));
+    ASSERT_EQUAL("read all content", std::string(reinterpret_cast<const char*>(out1->data()), out1->size()), std::string("HELLO"));
     ASSERT_EQUAL("size unchanged", fifo.Size(), static_cast<std::size_t>(5));
     ASSERT_FALSE("not empty after read", fifo.Empty());
     
     // Read again should return empty (position at end)
-    auto out2 = fifo.Read();
-    ASSERT_EQUAL("second read all empty", out2.size(), static_cast<std::size_t>(0));
+    auto out2 = fifo.Read(0);
+    ASSERT_EQUAL("second read all empty", out2->size(), static_cast<std::size_t>(0));
     
     RETURN_TEST("test_fifo_read_all_nondestructive", 0);
 }
@@ -285,7 +285,7 @@ int test_fifo_read_with_wrap() {
     
     // Read should handle wrap correctly
     auto out = fifo.Read(); // Should read CDE12
-    ASSERT_EQUAL("read wrap content", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("CDE12"));
+    ASSERT_EQUAL("read wrap content", std::string(reinterpret_cast<const char*>(out->data()), out->size()), std::string("CDE12"));
     ASSERT_EQUAL("size unchanged wrap", fifo.Size(), static_cast<std::size_t>(5));
     
     RETURN_TEST("test_fifo_read_with_wrap", 0);
@@ -297,17 +297,17 @@ int test_fifo_extract_adjusts_read_position() {
     
     // Read first 5 bytes
     auto r1 = fifo.Read(5);
-    ASSERT_EQUAL("read 5", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("01234"));
+    ASSERT_EQUAL("read 5", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("01234"));
     
     // Extract first 3 bytes (should adjust read position)
     auto e1 = fifo.Extract(3);
-    ASSERT_EQUAL("extract 3", std::string(reinterpret_cast<const char*>(e1.data()), e1.size()), std::string("012"));
+    ASSERT_EQUAL("extract 3", std::string(reinterpret_cast<const char*>(e1->data()), e1->size()), std::string("012"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(7));
     
     // Next read should continue from adjusted position (was at 5, extract removed 3, now at 2 relative to new head)
     // New head is at '3', read position is 2, so we read from '5' onwards
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("read after extract", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("56"));
+    ASSERT_EQUAL("read after extract", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("56"));
     
     RETURN_TEST("test_fifo_extract_adjusts_read_position", 0);
 }
@@ -319,22 +319,22 @@ int test_fifo_seek_absolute() {
     // Seek to absolute position 3
     fifo.Seek(3, Position::Absolute);
     auto r1 = fifo.Read(3);
-    ASSERT_EQUAL("seek absolute 3", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("DEF"));
+    ASSERT_EQUAL("seek absolute 3", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("DEF"));
     
     // Seek to absolute position 0 (beginning)
     fifo.Seek(0, Position::Absolute);
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("seek absolute 0", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("AB"));
+    ASSERT_EQUAL("seek absolute 0", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("AB"));
     
     // Seek to absolute position 7
     fifo.Seek(7, Position::Absolute);
     auto r3 = fifo.Read(3);
-    ASSERT_EQUAL("seek absolute 7", std::string(reinterpret_cast<const char*>(r3.data()), r3.size()), std::string("HIJ"));
+    ASSERT_EQUAL("seek absolute 7", std::string(reinterpret_cast<const char*>(r3->data()), r3->size()), std::string("HIJ"));
     
     // Seek beyond size (should clamp to size)
     fifo.Seek(100, Position::Absolute);
-    auto r4 = fifo.Read(5);
-    ASSERT_EQUAL("seek beyond size", r4.size(), static_cast<std::size_t>(0));
+    auto r4 = fifo.Read(0);
+    ASSERT_EQUAL("seek beyond size", r4->size(), static_cast<std::size_t>(0));
     
     RETURN_TEST("test_fifo_seek_absolute", 0);
 }
@@ -345,22 +345,22 @@ int test_fifo_seek_relative() {
     
     // Read first 2 bytes (position now at 2)
     auto r1 = fifo.Read(2);
-    ASSERT_EQUAL("initial read", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("01"));
+    ASSERT_EQUAL("initial read", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("01"));
     
     // Seek relative +3 (position now at 5)
     fifo.Seek(3, Position::Relative);
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("seek relative +3", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("56"));
+    ASSERT_EQUAL("seek relative +3", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("56"));
     
     // Seek relative +2 (position now at 9)
     fifo.Seek(2, Position::Relative);
     auto r3 = fifo.Read(1);
-    ASSERT_EQUAL("seek relative +2", std::string(reinterpret_cast<const char*>(r3.data()), r3.size()), std::string("9"));
+    ASSERT_EQUAL("seek relative +2", std::string(reinterpret_cast<const char*>(r3->data()), r3->size()), std::string("9"));
     
     // Seek relative beyond size (should clamp)
     fifo.Seek(100, Position::Relative);
-    auto r4 = fifo.Read(1);
-    ASSERT_EQUAL("seek relative beyond", r4.size(), static_cast<std::size_t>(0));
+    auto r4 = fifo.Read(0);
+    ASSERT_EQUAL("seek relative beyond", r4->size(), static_cast<std::size_t>(0));
     
     RETURN_TEST("test_fifo_seek_relative", 0);
 }
@@ -371,22 +371,22 @@ int test_fifo_seek_after_extract() {
     
     // Read first 5 bytes
     auto r1 = fifo.Read(5);
-    ASSERT_EQUAL("read before extract", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("ABCDE"));
+    ASSERT_EQUAL("read before extract", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("ABCDE"));
     
     // Extract first 3 bytes (removes ABC, head now at D)
     auto e1 = fifo.Extract(3);
-    ASSERT_EQUAL("extract 3", std::string(reinterpret_cast<const char*>(e1.data()), e1.size()), std::string("ABC"));
+    ASSERT_EQUAL("extract 3", std::string(reinterpret_cast<const char*>(e1->data()), e1->size()), std::string("ABC"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(12));
     
     // Seek to absolute position 0 (should start from new head at D)
     fifo.Seek(0, Position::Absolute);
     auto r2 = fifo.Read(3);
-    ASSERT_EQUAL("seek absolute after extract", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("DEF"));
+    ASSERT_EQUAL("seek absolute after extract", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("DEF"));
     
     // Seek to absolute position 5
     fifo.Seek(5, Position::Absolute);
     auto r3 = fifo.Read(3);
-    ASSERT_EQUAL("seek to middle after extract", std::string(reinterpret_cast<const char*>(r3.data()), r3.size()), std::string("IJK"));
+    ASSERT_EQUAL("seek to middle after extract", std::string(reinterpret_cast<const char*>(r3->data()), r3->size()), std::string("IJK"));
     
     RETURN_TEST("test_fifo_seek_after_extract", 0);
 }
@@ -406,12 +406,12 @@ int test_fifo_seek_with_wrap() {
     // Seek to absolute position 0
     fifo.Seek(0, Position::Absolute);
     auto r1 = fifo.Read(5);
-    ASSERT_EQUAL("seek 0 after wrap", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("FGHIJ"));
+    ASSERT_EQUAL("seek 0 after wrap", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("FGHIJ"));
     
     // Seek to absolute position 5
     fifo.Seek(5, Position::Absolute);
     auto r2 = fifo.Read(5);
-    ASSERT_EQUAL("seek 5 after wrap", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("12345"));
+    ASSERT_EQUAL("seek 5 after wrap", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("12345"));
     
     RETURN_TEST("test_fifo_seek_with_wrap", 0);
 }
@@ -422,19 +422,74 @@ int test_fifo_seek_relative_from_current() {
     
     // Read 2 bytes
     auto r1 = fifo.Read(2);
-    ASSERT_EQUAL("initial read", std::string(reinterpret_cast<const char*>(r1.data()), r1.size()), std::string("AB"));
+    ASSERT_EQUAL("initial read", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("AB"));
     
     // Current position is at 2, seek relative 0 (stay at current)
     fifo.Seek(0, Position::Relative);
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("seek relative 0", std::string(reinterpret_cast<const char*>(r2.data()), r2.size()), std::string("CD"));
+    ASSERT_EQUAL("seek relative 0", std::string(reinterpret_cast<const char*>(r2->data()), r2->size()), std::string("CD"));
     
     // Seek backwards by going to absolute 1
     fifo.Seek(1, Position::Absolute);
     auto r3 = fifo.Read(3);
-    ASSERT_EQUAL("seek back to 1", std::string(reinterpret_cast<const char*>(r3.data()), r3.size()), std::string("BCD"));
+    ASSERT_EQUAL("seek back to 1", std::string(reinterpret_cast<const char*>(r3->data()), r3->size()), std::string("BCD"));
     
     RETURN_TEST("test_fifo_seek_relative_from_current", 0);
+}
+
+int test_fifo_read_insufficient_data_error() {
+    FIFO fifo;
+    fifo.Write(std::string("ABC"));
+    fifo.Close();
+    
+    // Request more data than available - should return error
+    auto result = fifo.Read(10);
+    ASSERT_FALSE("read insufficient returns error", result.has_value());
+    
+    // Read with count=0 should succeed and return available data
+    auto result2 = fifo.Read(0);
+    ASSERT_TRUE("read with 0 succeeds", result2.has_value());
+    ASSERT_EQUAL("read returns available", result2->size(), static_cast<std::size_t>(3));
+    
+    RETURN_TEST("test_fifo_read_insufficient_data_error", 0);
+}
+
+int test_fifo_extract_insufficient_data_error() {
+    FIFO fifo;
+    fifo.Write(std::string("HELLO"));
+    fifo.Close();
+    
+    // Request more data than available - should return error
+    auto result = fifo.Extract(20);
+    ASSERT_FALSE("extract insufficient returns error", result.has_value());
+    
+    // Extract with count=0 should succeed and return available data
+    auto result2 = fifo.Extract(0);
+    ASSERT_TRUE("extract with 0 succeeds", result2.has_value());
+    ASSERT_EQUAL("extract returns available", result2->size(), static_cast<std::size_t>(5));
+    ASSERT_TRUE("buffer empty after extract all", fifo.Empty());
+    
+    RETURN_TEST("test_fifo_extract_insufficient_data_error", 0);
+}
+
+int test_fifo_read_after_position_beyond_size() {
+    FIFO fifo;
+    fifo.Write(std::string("1234"));
+    
+    // Read all data
+    auto r1 = fifo.Read(4);
+    ASSERT_EQUAL("read all data", std::string(reinterpret_cast<const char*>(r1->data()), r1->size()), std::string("1234"));
+    
+    // Now read position is at end, requesting more should fail
+    auto result = fifo.Read(1);
+    ASSERT_FALSE("read beyond position returns error", result.has_value());
+    
+    // Reading with count=0 should return empty successfully
+    auto result2 = fifo.Read(0);
+    ASSERT_TRUE("read 0 at end succeeds", result2.has_value());
+    ASSERT_EQUAL("read 0 returns empty", result2->size(), static_cast<std::size_t>(0));
+    
+    RETURN_TEST("test_fifo_read_after_position_beyond_size", 0);
 }
 
 int main() {
@@ -464,6 +519,9 @@ int main() {
     result += test_fifo_seek_after_extract();
     result += test_fifo_seek_with_wrap();
     result += test_fifo_seek_relative_from_current();
+    result += test_fifo_read_insufficient_data_error();
+    result += test_fifo_extract_insufficient_data_error();
+    result += test_fifo_read_after_position_beyond_size();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

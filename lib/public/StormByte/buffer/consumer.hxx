@@ -97,27 +97,23 @@ namespace StormByte::Buffer {
 			 */
 			inline void Clear() noexcept { m_buffer->Clear(); }
 
-			/**
-			 * @brief Non-destructive read from the buffer (blocks until data available).
-			 * @param count Number of bytes to read; 0 reads all available without blocking.
-			 * @return A vector containing the requested bytes.
-			 * @details **Blocks** until count bytes available or buffer closed (if count > 0).
-			 *          Data remains in buffer and can be re-read using Seek().
-			 * @see SharedFIFO::Read(), Extract(), Seek()
-			 */
-			inline std::vector<std::byte> Read(std::size_t count = 0) { return m_buffer->Read(count); }
-
-			/**
-			 * @brief Destructive read that removes data from the buffer (blocks until data available).
-			 * @param count Number of bytes to extract; 0 extracts all available without blocking.
-			 * @return A vector containing the extracted bytes.
-			 * @details **Blocks** until count bytes available or buffer closed (if count > 0).
-			 *          Removes data from buffer. Multiple consumers share data fairly.
-			 * @see SharedFIFO::Extract(), Read()
-			 */
-			inline std::vector<std::byte> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
-
-			/**
+		/**
+		 * @brief Non-destructive read from the buffer (blocks until data available).
+		 * @param count Number of bytes to read; 0 reads all available without blocking.
+		 * @return Expected containing a vector with the requested bytes, or an error.
+		 * @details **Blocks** until count bytes available or buffer closed (if count > 0).
+		 *          Data remains in buffer and can be re-read using Seek().
+		 * @see SharedFIFO::Read(), Extract(), Seek()
+		 */
+		inline ExpectedData<InsufficientData> Read(std::size_t count = 0) { return m_buffer->Read(count); }		/**
+		 * @brief Destructive read that removes data from the buffer (blocks until data available).
+		 * @param count Number of bytes to extract; 0 extracts all available without blocking.
+		 * @return Expected containing a vector with the extracted bytes, or an error.
+		 * @details **Blocks** until count bytes available or buffer closed (if count > 0).
+		 *          Removes data from buffer. Multiple consumers share data fairly.
+		 * @see SharedFIFO::Extract(), Read()
+		 */
+		inline ExpectedData<InsufficientData> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }			/**
 			 * @brief Check if the buffer is closed for further writes.
 			 * @return true if closed, false otherwise.
 			 * @details When closed, blocked Read()/Extract() calls wake up and return

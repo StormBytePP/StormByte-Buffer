@@ -116,7 +116,7 @@ namespace StormByte::Buffer {
              *          If count=0, returns immediately with available data.
              * @see FIFO::Read(), Consumer::Read()
              */
-            std::vector<std::byte> Read(std::size_t count = 0) override;
+            ExpectedData<InsufficientData> Read(std::size_t count = 0) override;
 
             /**
              * @brief Thread-safe blocking version of FIFO::Extract().
@@ -126,7 +126,7 @@ namespace StormByte::Buffer {
              *          If count=0, returns immediately with available data.
              * @see FIFO::Extract(), Consumer::Extract()
              */
-            std::vector<std::byte> Extract(std::size_t count = 0) override;
+            ExpectedData<InsufficientData> Extract(std::size_t count = 0) override;
             /** @} */
 
             /**

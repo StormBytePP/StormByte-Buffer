@@ -73,7 +73,7 @@ int test_producer_consumer_basic_write_read() {
     ASSERT_FALSE("not empty", consumer.Empty());
 
     auto data = consumer.Read(message.size());
-    ASSERT_EQUAL("content matches", toString(data), message);
+    ASSERT_EQUAL("content matches", toString(*data), message);
 
     RETURN_TEST("test_producer_consumer_basic_write_read", 0);
 }
@@ -87,7 +87,7 @@ int test_producer_consumer_multiple_writes() {
     producer.Write("Third");
 
     auto all = consumer.Read(0);
-    ASSERT_EQUAL("concatenated content", toString(all), std::string("FirstSecondThird"));
+    ASSERT_EQUAL("concatenated content", toString(*all), std::string("FirstSecondThird"));
 
     RETURN_TEST("test_producer_consumer_multiple_writes", 0);
 }
@@ -100,11 +100,11 @@ int test_producer_consumer_extract() {
     ASSERT_EQUAL("initial size", consumer.Size(), static_cast<std::size_t>(8));
 
     auto first = consumer.Extract(3);
-    ASSERT_EQUAL("extracted ABC", toString(first), std::string("ABC"));
+    ASSERT_EQUAL("extracted ABC", toString(*first), std::string("ABC"));
     ASSERT_EQUAL("size after extract", consumer.Size(), static_cast<std::size_t>(5));
 
     auto rest = consumer.Extract(0);
-    ASSERT_EQUAL("rest is DEFGH", toString(rest), std::string("DEFGH"));
+    ASSERT_EQUAL("rest is DEFGH", toString(*rest), std::string("DEFGH"));
     ASSERT_TRUE("empty after extract all", consumer.Empty());
 
     RETURN_TEST("test_producer_consumer_extract", 0);
@@ -136,16 +136,16 @@ int test_producer_consumer_seek_operations() {
 
     consumer.Seek(5, Position::Absolute);
     auto from5 = consumer.Read(3);
-    ASSERT_EQUAL("read from pos 5", toString(from5), std::string("567"));
+    ASSERT_EQUAL("read from pos 5", toString(*from5), std::string("567"));
 
     // After reading 3 bytes, position is at 8, relative +2 goes to 10 (end)
     consumer.Seek(0, Position::Absolute);
     auto fromStart = consumer.Read(4);
-    ASSERT_EQUAL("read from start", toString(fromStart), std::string("0123"));
+    ASSERT_EQUAL("read from start", toString(*fromStart), std::string("0123"));
 
     consumer.Seek(7, Position::Absolute);
     auto from7 = consumer.Read(2);
-    ASSERT_EQUAL("read from pos 7", toString(from7), std::string("78"));
+    ASSERT_EQUAL("read from pos 7", toString(*from7), std::string("78"));
 
     RETURN_TEST("test_producer_consumer_seek_operations", 0);
 }
@@ -160,7 +160,7 @@ int test_producer_consumer_copy_semantics() {
 
     auto consumer = producer1.Consumer();
     auto all = consumer.Read(0);
-    ASSERT_EQUAL("both producers share buffer", toString(all), std::string("OriginalAdded"));
+    ASSERT_EQUAL("both producers share buffer", toString(*all), std::string("OriginalAdded"));
 
     // Copy consumer - should share buffer
     auto consumer2 = consumer;
@@ -181,7 +181,7 @@ int test_producer_consumer_move_semantics() {
 
     auto consumer2 = std::move(consumer);
     auto data = consumer2.Read(0);
-    ASSERT_EQUAL("moved consumer works", toString(data), std::string("DataMore"));
+    ASSERT_EQUAL("moved consumer works", toString(*data), std::string("DataMore"));
 
     RETURN_TEST("test_producer_consumer_move_semantics", 0);
 }
@@ -206,8 +206,8 @@ int test_single_producer_single_consumer_threaded() {
     std::thread cons_thread([&]() {
         while (true) {
             auto data = consumer.Extract(10);
-            if (data.empty() && consumer.IsClosed()) break;
-            collected.append(toString(data));
+            if (data->empty() && consumer.IsClosed()) break;
+            collected.append(toString(*data));
             std::this_thread::sleep_for(std::chrono::microseconds(5));
         }
     });
@@ -249,8 +249,8 @@ int test_multiple_producers_single_consumer() {
         
         while (completed_producers.load() < 3 || !consumer.Empty()) {
             auto data = consumer.Extract(10);
-            if (!data.empty()) {
-                collected.append(toString(data));
+            if (!data->empty()) {
+                collected.append(toString(*data));
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
@@ -298,8 +298,8 @@ int test_single_producer_multiple_consumers() {
     auto consumer_func = [&](Consumer& cons, std::atomic<size_t>& counter) {
         while (true) {
             auto data = cons.Extract(5);
-            if (data.empty() && cons.IsClosed()) break;
-            counter.fetch_add(data.size());
+            if (data->empty() && cons.IsClosed()) break;
+            counter.fetch_add(data->size());
             std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
     };
@@ -361,9 +361,9 @@ int test_multiple_producers_multiple_consumers() {
             
             while (true) {
                 auto data = cons_copy.Extract(10);
-                if (data.empty() && cons_copy.IsClosed()) break;
-                if (!data.empty()) {
-                    local_consumed += data.size();
+                if (data->empty() && cons_copy.IsClosed()) break;
+                if (!data->empty()) {
+                    local_consumed += data->size();
                 }
                 std::this_thread::sleep_for(std::chrono::microseconds(20));
             }
@@ -400,7 +400,7 @@ int test_producer_consumer_with_reserve() {
     ASSERT_EQUAL("size after large writes", consumer.Size(), static_cast<std::size_t>(1000));
 
     auto data = consumer.Extract(0);
-    ASSERT_EQUAL("extracted size", data.size(), static_cast<std::size_t>(1000));
+    ASSERT_EQUAL("extracted size", data->size(), static_cast<std::size_t>(1000));
 
     RETURN_TEST("test_producer_consumer_with_reserve", 0);
 }
@@ -431,8 +431,8 @@ int test_producer_consumer_byte_vector_write() {
     producer.Write(bytes);
 
     auto read_data = consumer.Read(0);
-    ASSERT_EQUAL("byte vector write size", read_data.size(), bytes.size());
-    ASSERT_EQUAL("byte vector write content", toString(read_data), std::string("Binary data"));
+    ASSERT_EQUAL("byte vector write size", read_data->size(), bytes.size());
+    ASSERT_EQUAL("byte vector write content", toString(*read_data), std::string("Binary data"));
 
     RETURN_TEST("test_producer_consumer_byte_vector_write", 0);
 }
@@ -444,15 +444,15 @@ int test_producer_consumer_interleaved_operations() {
     producer.Write("Part1");
     producer.Close();
     auto r1 = consumer.Extract(3);
-    ASSERT_EQUAL("extract Par", toString(r1), std::string("Par"));
+    ASSERT_EQUAL("extract Par", toString(*r1), std::string("Par"));
 
     // After Extract(3), "t1" remains
     auto r2 = consumer.Read(0);
-    ASSERT_EQUAL("remaining t1", toString(r2), std::string("t1"));
+    ASSERT_EQUAL("remaining t1", toString(*r2), std::string("t1"));
 
     consumer.Seek(0, Position::Absolute);
     auto r3 = consumer.Read(2);
-    ASSERT_EQUAL("after seek to start", toString(r3), std::string("t1"));
+    ASSERT_EQUAL("after seek to start", toString(*r3), std::string("t1"));
 
     RETURN_TEST("test_producer_consumer_interleaved_operations", 0);
 }
@@ -476,8 +476,8 @@ int test_producer_consumer_stress_rapid_operations() {
     std::thread reader([&]() {
         while (!stop.load() || !consumer.Empty()) {
             auto data = consumer.Extract(1);
-            if (!data.empty()) {
-                read_count.fetch_add(data.size());
+            if (!data->empty()) {
+                read_count.fetch_add(data->size());
             }
         }
     });
@@ -519,9 +519,9 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage2([&]() {
         while (true) {
             auto data = stage1_consumer.Extract(10);
-            if (data.empty() && stage1_consumer.IsClosed()) break;
+            if (data->empty() && stage1_consumer.IsClosed()) break;
             
-            std::string str = toString(data);
+            std::string str = toString(*data);
             std::transform(str.begin(), str.end(), str.begin(), ::toupper);
             stage2_producer.Write(str);
         }
@@ -533,8 +533,8 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage3([&]() {
         while (true) {
             auto data = stage2_consumer.Extract(10);
-            if (data.empty() && stage2_consumer.IsClosed()) break;
-            final_result.append(toString(data));
+            if (data->empty() && stage2_consumer.IsClosed()) break;
+            final_result.append(toString(*data));
         }
         done.store(true);
     });
@@ -561,7 +561,7 @@ int test_out_of_sync_partial_writes() {
     // Consumer expects 10 bytes but producer sends them in parts
     std::thread consumer_thread([&]() {
         auto data = consumer.Read(10); // Blocks until 10 bytes available or closed
-        result = toString(data);
+        result = toString(*data);
         consumer_done.store(true);
     });
     
@@ -595,7 +595,7 @@ int test_consumer_waits_for_insufficient_data() {
     std::thread consumer_thread([&]() {
         read_started.store(true);
         auto data = consumer.Read(20); // Request 20 bytes
-        result = toString(data);
+        result = toString(*data);
         read_completed.store(true);
     });
     
@@ -629,7 +629,7 @@ int test_multiple_consumers_with_partial_data() {
     auto consumer_func = [&](int id) {
         Consumer cons = consumer;
         auto data = cons.Read(5); // Each wants 5 bytes
-        results[id] = toString(data);
+        results[id] = toString(*data);
         reads_completed.fetch_add(1);
     };
     
@@ -678,7 +678,7 @@ int test_interleaved_read_extract_with_blocking() {
     std::thread reader([&]() {
         step.store(1);
         auto data = consumer.Read(5); // Non-destructive, blocks for 5 bytes
-        read_result = toString(data);
+        read_result = toString(*data);
         step.store(2);
     });
     
@@ -686,7 +686,7 @@ int test_interleaved_read_extract_with_blocking() {
         while (step.load() < 1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         auto data = consumer.Extract(3); // Destructive, blocks for 3 bytes
-        extract_result = toString(data);
+        extract_result = toString(*data);
         step.store(3);
     });
     
@@ -715,7 +715,7 @@ int test_producer_close_during_consumer_wait() {
     std::thread consumer_thread([&]() {
         waiting.store(true);
         auto data = consumer.Read(100); // Request way more than will be available
-        result = toString(data);
+        result = toString(*data);
         completed.store(true);
     });
     
@@ -756,8 +756,8 @@ int test_rapid_write_close_with_slow_consumer() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             auto data = consumer.Extract(5);
-            if (data.empty() && consumer.IsClosed()) break;
-            total_consumed.fetch_add(data.size());
+            if (data->empty() && consumer.IsClosed()) break;
+            total_consumed.fetch_add(data->size());
         }
     });
     
@@ -780,7 +780,7 @@ int test_extract_zero_bytes_behavior() {
     // Extract(0) should return all available data immediately without blocking
     std::thread consumer_thread([&]() {
         auto data = consumer.Extract(0);
-        extracted_size = data.size();
+        extracted_size = data->size();
         completed.store(true);
     });
     
@@ -806,7 +806,7 @@ int test_seek_during_blocked_read() {
     std::thread reader([&]() {
         phase.store(1);
         auto data = consumer.Read(10); // Blocks waiting for 10 bytes
-        result = toString(data);
+        result = toString(*data);
         phase.store(3);
     });
     
@@ -853,8 +853,8 @@ int test_very_large_data_transfer() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(4096);
-            if (data.empty() && consumer.IsClosed()) break;
-            received_size += data.size();
+            if (data->empty() && consumer.IsClosed()) break;
+            received_size += data->size();
         }
         transfer_complete.store(true);
     });
@@ -890,8 +890,8 @@ int test_alternating_small_large_writes() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
-            if (data.empty() && consumer.IsClosed()) break;
-            total_received.fetch_add(data.size());
+            if (data->empty() && consumer.IsClosed()) break;
+            total_received.fetch_add(data->size());
         }
         done.store(true);
     });
@@ -940,7 +940,7 @@ int test_consumer_clear_during_production() {
         // Wait for new data
         while (phase.load() < 3) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         auto data = consumer.Extract(0);
-        got_after_clear.store(toString(data) == std::string("AfterClear"));
+        got_after_clear.store(toString(*data) == std::string("AfterClear"));
     });
     
     producer_thread.join();
@@ -965,7 +965,7 @@ int test_multiple_sequential_read_blocks() {
         // Multiple blocking reads in sequence
         for (int i = 0; i < 5; ++i) {
             auto data = consumer.Read(4);
-            results.push_back(toString(data));
+            results.push_back(toString(*data));
             reads_completed.fetch_add(1);
         }
     });
@@ -1012,8 +1012,8 @@ int test_burst_writes_with_reserve() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
-            if (data.empty() && consumer.IsClosed()) break;
-            total.fetch_add(data.size());
+            if (data->empty() && consumer.IsClosed()) break;
+            total.fetch_add(data->size());
         }
     });
     

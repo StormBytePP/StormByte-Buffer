@@ -67,26 +67,42 @@ bool SharedFIFO::Write(const std::string& data) {
 	return result;
 }
 
-std::vector<std::byte> SharedFIFO::Read(std::size_t count) {
+ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) {
     std::unique_lock<std::mutex> lock(m_mutex);
     if (count != 0) {
         Wait(count, lock);
+        // If closed and insufficient data, read whatever is available
+        if (m_closed.load()) {
+            const std::size_t sz = m_size.load();
+            const std::size_t rp = m_read_position.load();
+            const std::size_t available = (rp <= sz) ? (sz - rp) : 0;
+            if (available < count) {
+                return FIFO::Read(0); // Read all available
+            }
+        }
     }
     return FIFO::Read(count);
 }
 
-std::vector<std::byte> SharedFIFO::Extract(std::size_t count) {
-    std::vector<std::byte> out;
+ExpectedData<InsufficientData> SharedFIFO::Extract(std::size_t count) {
+    ExpectedData<InsufficientData> result;
     {
         std::unique_lock<std::mutex> lock(m_mutex);
         if (count != 0) {
             Wait(count, lock);
+            // If closed and insufficient data, extract whatever is available
+            if (m_closed.load() && m_size.load() < count) {
+                result = FIFO::Extract(0); // Extract all available
+            } else {
+                result = FIFO::Extract(count);
+            }
+        } else {
+            result = FIFO::Extract(count);
         }
-        out = FIFO::Extract(count);
         lock.unlock();
     }
-    if (!out.empty()) m_cv.notify_all();
-    return out;
+    if (result && !result->empty()) m_cv.notify_all();
+    return result;
 }
 
 void SharedFIFO::Seek(const std::size_t& position, const Position& mode) {
