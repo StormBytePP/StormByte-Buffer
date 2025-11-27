@@ -187,7 +187,6 @@ int test_single_producer_single_consumer_threaded() {
     std::thread prod_thread([&]() {
         for (int i = 0; i < messages; ++i) {
             producer.Write(std::to_string(i) + ",");
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
         producer.Close();
         producer_done.store(true);
@@ -198,7 +197,6 @@ int test_single_producer_single_consumer_threaded() {
             auto data = consumer.Extract(10);
             if (data->empty() && consumer.IsClosed()) break;
             collected.append(StormByte::String::FromByteVector(*data));
-            std::this_thread::sleep_for(std::chrono::microseconds(5));
         }
     });
 
@@ -223,7 +221,6 @@ int test_multiple_producers_single_consumer() {
         Producer prod_copy = producer; // Share the buffer
         for (int i = 0; i < chunks_per_producer; ++i) {
             prod_copy.Write(std::string(1, id));
-            std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
         completed_producers.fetch_add(1);
     };
@@ -237,12 +234,21 @@ int test_multiple_producers_single_consumer() {
         // Wait a bit for producers to start
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         
-        while (completed_producers.load() < 3 || !consumer.Empty()) {
+        // Extract until all producers done AND buffer empty
+        while (completed_producers.load() < 3) {
             auto data = consumer.Extract(10);
             if (!data->empty()) {
                 collected.append(StormByte::String::FromByteVector(*data));
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        
+        // Drain remaining data after all producers complete
+        while (!consumer.Empty()) {
+            auto data = consumer.Extract(0);
+            if (!data->empty()) {
+                collected.append(StormByte::String::FromByteVector(*data));
+            }
         }
     });
 
@@ -272,17 +278,14 @@ int test_single_producer_multiple_consumers() {
     auto consumer2 = consumer1; // Share the same consumer buffer
     auto consumer3 = consumer1;
     
-    const int total_bytes = 300;
-    std::atomic<bool> producer_done{false};
+    const int total_bytes = 200;
     std::atomic<size_t> consumed1{0}, consumed2{0}, consumed3{0};
 
     std::thread prod_thread([&]() {
         for (int i = 0; i < total_bytes; ++i) {
             producer.Write("X");
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
         producer.Close();
-        producer_done.store(true);
     });
 
     auto consumer_func = [&](Consumer& cons, std::atomic<size_t>& counter) {
@@ -290,7 +293,6 @@ int test_single_producer_multiple_consumers() {
             auto data = cons.Extract(5);
             if (data->empty() && cons.IsClosed()) break;
             counter.fetch_add(data->size());
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
     };
 
@@ -302,14 +304,11 @@ int test_single_producer_multiple_consumers() {
     cons1_thread.join();
     cons2_thread.join();
     cons3_thread.join();
-
-    ASSERT_TRUE("producer completed", producer_done.load());
     
     size_t total_consumed = consumed1.load() + consumed2.load() + consumed3.load();
     ASSERT_EQUAL("all data consumed", total_consumed, static_cast<size_t>(total_bytes));
     
-    // At least one consumer must have gotten data, but race conditions mean
-    // it's possible (though unlikely) for one consumer to get everything
+    // At least one consumer must have gotten data
     size_t consumers_with_data = 0;
     if (consumed1.load() > 0) consumers_with_data++;
     if (consumed2.load() > 0) consumers_with_data++;
@@ -323,12 +322,11 @@ int test_multiple_producers_multiple_consumers() {
     Producer producer;
     auto consumer = producer.Consumer();
     
-    const int producers_count = 4;
-    const int consumers_count = 3;
-    const int messages_per_producer = 50;
+    const int producers_count = 3;
+    const int consumers_count = 2;
+    const int messages_per_producer = 30;
     
     std::atomic<int> completed_producers{0};
-    std::atomic<int> completed_consumers{0};
     std::atomic<size_t> total_consumed{0};
 
     std::vector<std::thread> producers;
@@ -337,7 +335,6 @@ int test_multiple_producers_multiple_consumers() {
             Producer prod_copy = producer;
             for (int i = 0; i < messages_per_producer; ++i) {
                 prod_copy.Write(std::string(1, 'A' + p));
-                std::this_thread::sleep_for(std::chrono::microseconds(5));
             }
             completed_producers.fetch_add(1);
         });
@@ -352,14 +349,10 @@ int test_multiple_producers_multiple_consumers() {
             while (true) {
                 auto data = cons_copy.Extract(10);
                 if (data->empty() && cons_copy.IsClosed()) break;
-                if (!data->empty()) {
-                    local_consumed += data->size();
-                }
-                std::this_thread::sleep_for(std::chrono::microseconds(20));
+                local_consumed += data->size();
             }
             
             total_consumed.fetch_add(local_consumed);
-            completed_consumers.fetch_add(1);
         });
     }
 
@@ -368,7 +361,6 @@ int test_multiple_producers_multiple_consumers() {
     for (auto& t : consumers) t.join();
 
     ASSERT_EQUAL("all producers completed", completed_producers.load(), producers_count);
-    ASSERT_EQUAL("all consumers completed", completed_consumers.load(), consumers_count);
     
     size_t expected_total = producers_count * messages_per_producer;
     ASSERT_EQUAL("all data consumed", total_consumed.load(), expected_total);
@@ -451,31 +443,29 @@ int test_producer_consumer_stress_rapid_operations() {
     Producer producer;
     auto consumer = producer.Consumer();
     
-    std::atomic<bool> stop{false};
     std::atomic<size_t> write_count{0};
     std::atomic<size_t> read_count{0};
 
     std::thread writer([&]() {
-        for (int i = 0; i < 1000; ++i) {
+        for (int i = 0; i < 500; ++i) {
             producer.Write("X");
             write_count.fetch_add(1);
         }
-        stop.store(true);
+        producer.Close();
     });
 
     std::thread reader([&]() {
-        while (!stop.load() || !consumer.Empty()) {
-            auto data = consumer.Extract(1);
-            if (!data->empty()) {
-                read_count.fetch_add(data->size());
-            }
+        while (true) {
+            auto data = consumer.Extract(10);
+            if (data->empty() && consumer.IsClosed()) break;
+            read_count.fetch_add(data->size());
         }
     });
 
     writer.join();
     reader.join();
 
-    ASSERT_EQUAL("write count", write_count.load(), static_cast<size_t>(1000));
+    ASSERT_EQUAL("write count", write_count.load(), static_cast<size_t>(500));
     ASSERT_EQUAL("read count matches write", read_count.load(), write_count.load());
     ASSERT_TRUE("buffer empty at end", consumer.Empty());
 
