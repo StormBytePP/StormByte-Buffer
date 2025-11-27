@@ -109,6 +109,11 @@ namespace StormByte::Memory::Buffer {
 			void Clear() noexcept;
 
 			/**
+			 * @brief Close the FIFO for further writes
+			 */
+			inline void Close() noexcept { m_closed.store(true); }
+
+			/**
 			 * 	@brief Ensure capacity is at least @p newCapacity; may relinearize.
 			 *  @param newCapacity Minimum capacity requested.
 			 */
@@ -133,6 +138,11 @@ namespace StormByte::Memory::Buffer {
 			 *  @note Reading all when contiguous (head == 0) returns bytes via move.
 			 */
 			std::vector<std::byte> Read(std::size_t count = 0);
+
+			/**
+			 * @brief Whether the FIFO is closed for further writes
+			 */
+			inline bool IsClosed() const noexcept { return m_closed.load(); }	
 
 		protected:
 			/**
@@ -159,6 +169,11 @@ namespace StormByte::Memory::Buffer {
 			 * @brief Number of bytes currently stored.
 			 */
 			std::atomic<std::size_t> m_size {0};
+
+			/**
+			 * @brief Whether the FIFO is closed for further writes
+			 */
+			std::atomic<bool> m_closed {false};
 
 		private:
 			/**

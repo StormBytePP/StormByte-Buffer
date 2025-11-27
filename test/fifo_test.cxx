@@ -216,6 +216,29 @@ int test_fifo_full_flag() {
     RETURN_TEST("test_fifo_full_flag", 0);
 }
 
+int test_fifo_closed_noop_on_empty() {
+    FIFO fifo(8);
+    fifo.Close();
+    ASSERT_TRUE("closed flag set", fifo.IsClosed());
+    fifo.Write(std::string("DATA"));
+    ASSERT_TRUE("no write after close (empty)", fifo.Empty());
+    ASSERT_EQUAL("size remains zero", fifo.Size(), static_cast<std::size_t>(0));
+    RETURN_TEST("test_fifo_closed_noop_on_empty", 0);
+}
+
+int test_fifo_closed_noop_on_nonempty() {
+    FIFO fifo(8);
+    fifo.Write(std::string("ABC"));
+    ASSERT_EQUAL("pre-close size", fifo.Size(), static_cast<std::size_t>(3));
+    fifo.Close();
+    ASSERT_TRUE("closed flag set", fifo.IsClosed());
+    fifo.Write(std::string("DEF"));
+    ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
+    auto out = fifo.Read();
+    ASSERT_EQUAL("content unchanged after close write", std::string(reinterpret_cast<const char*>(out.data()), out.size()), std::string("ABC"));
+    RETURN_TEST("test_fifo_closed_noop_on_nonempty", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -234,6 +257,10 @@ int main() {
     result += test_fifo_write_vector_and_rvalue();
     result += test_fifo_read_default_all();
     result += test_fifo_full_flag_transitions();
+
+    // Closed FIFO behavior
+    result += test_fifo_closed_noop_on_empty();
+    result += test_fifo_closed_noop_on_nonempty();
 
     // Memory stress test
     result += test_fifo_memory_stress();
