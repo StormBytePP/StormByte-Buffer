@@ -11,6 +11,7 @@
 
 #include <StormByte/memory/visibility.h>
 
+#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <ranges>
@@ -157,7 +158,7 @@ namespace StormByte::Memory::Buffer {
 			/**
 			 * @brief Number of bytes currently stored.
 			 */
-			std::size_t m_size {0};
+			std::atomic<std::size_t> m_size {0};
 
 		private:
 			/**

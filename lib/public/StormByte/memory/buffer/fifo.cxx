@@ -6,9 +6,12 @@ using namespace StormByte::Memory::Buffer;
 
 FIFO::FIFO(std::size_t capacity) noexcept: m_buffer(capacity), m_initialCapacity(capacity), m_head(0), m_tail(0), m_size(0) {}
 
-FIFO::FIFO(const FIFO& other) noexcept: m_buffer(other.m_buffer), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail), m_size(other.m_size) {}
+FIFO::FIFO(const FIFO& other) noexcept: m_buffer(other.m_buffer), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
+	m_size.store(other.m_size);
+}
 
-FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail), m_size(other.m_size) {
+FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
+	m_size.store(other.m_size);
 	other.m_head = other.m_tail = other.m_size = 0;
     other.m_initialCapacity = 0;
 }
@@ -19,7 +22,7 @@ FIFO& FIFO::operator=(const FIFO& other) noexcept {
 		m_initialCapacity = other.m_initialCapacity;
 		m_head = other.m_head;
 		m_tail = other.m_tail;
-		m_size = other.m_size;
+		m_size.store(other.m_size);
 	}
 	return *this;
 }
@@ -30,7 +33,7 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 		m_initialCapacity = other.m_initialCapacity;
 		m_head = other.m_head;
 		m_tail = other.m_tail;
-		m_size = other.m_size;
+		m_size.store(other.m_size);
 		other.m_head = other.m_tail = other.m_size = 0;
 		other.m_initialCapacity = 0;
 	}
@@ -91,7 +94,8 @@ void FIFO::Write(const std::string& data) {
 }
 
 std::vector<std::byte> FIFO::Read(std::size_t count) {
-	const std::size_t toRead = count > 0 ? std::min(count, m_size) : m_size;
+	const std::size_t current_size = m_size.load();
+	const std::size_t toRead = count > 0 ? std::min(count, current_size) : current_size;
 	std::vector<std::byte> out;
 	if (toRead == 0) return out;
 	// Zero-copy fast path: entire content contiguous from head == 0
@@ -124,7 +128,7 @@ void FIFO::GrowToFit(std::size_t required) {
 void FIFO::RelinearizeInto(std::vector<std::byte>& dst) const {
 	if (m_size == 0) return;
 	const std::size_t cap = m_buffer.size();
-	const std::size_t first = std::min(m_size, cap - m_head);
+	const std::size_t first = std::min(m_size.load(), cap - m_head);
 	std::copy_n(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_head), first, dst.begin());
 	const std::size_t second = m_size - first;
 	if (second) {
