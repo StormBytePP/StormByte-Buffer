@@ -98,7 +98,7 @@ namespace StormByte::Buffer {
              * @details Notifies waiting consumers after writing.
              * @see FIFO::Write()
              */
-            void Write(const std::vector<std::byte>& data) override;
+            bool Write(const std::vector<std::byte>& data) override;
 
             /**
              * @brief Thread-safe version of FIFO::Write().
@@ -106,7 +106,7 @@ namespace StormByte::Buffer {
              * @details Notifies waiting consumers after writing.
              * @see FIFO::Write()
              */
-            void Write(const std::string& data);
+            bool Write(const std::string& data);
 
             /**
              * @brief Thread-safe blocking version of FIFO::Read().

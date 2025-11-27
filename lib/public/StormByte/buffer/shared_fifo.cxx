@@ -20,11 +20,12 @@ void SharedFIFO::Reserve(std::size_t newCapacity) {
     FIFO::Reserve(newCapacity);
 }
 
-void SharedFIFO::Write(const std::vector<std::byte>& data) {
+bool SharedFIFO::Write(const std::vector<std::byte>& data) {
+	bool result;
     {
         std::scoped_lock<std::mutex> lock(m_mutex);
         if (m_closed.load() || data.empty()) {
-            // noop
+            result = false;
         } else {
             const std::size_t count = data.size();
             const std::size_t required = m_size.load() + count;
@@ -35,17 +36,19 @@ void SharedFIFO::Write(const std::vector<std::byte>& data) {
                 FIFO::Reserve(newCap);
             }
             // With capacity ensured, delegate to base write (won't re-enter Reserve)
-            FIFO::Write(data);
+            result = FIFO::Write(data);
         }
     }
     m_cv.notify_all();
+	return result;
 }
 
-void SharedFIFO::Write(const std::string& data) {
+bool SharedFIFO::Write(const std::string& data) {
+	bool result;
     {
         std::scoped_lock<std::mutex> lock(m_mutex);
         if (data.empty() || m_closed.load()) {
-            // mirror base behavior: noop on closed or empty
+            result = false;
         } else {
             std::vector<std::byte> tmp;
             tmp.resize(data.size());
@@ -57,10 +60,11 @@ void SharedFIFO::Write(const std::string& data) {
                 while (newCap < required) newCap *= 2;
                 FIFO::Reserve(newCap);
             }
-            FIFO::Write(tmp);
+            result = FIFO::Write(tmp);
         }
     }
     m_cv.notify_all();
+	return result;
 }
 
 std::vector<std::byte> SharedFIFO::Read(std::size_t count) {

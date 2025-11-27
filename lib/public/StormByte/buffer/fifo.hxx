@@ -132,7 +132,7 @@ namespace StormByte::Buffer {
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see Write(const std::string&), IsClosed()
 			 */
-			virtual void Write(const std::vector<std::byte>& data);
+			virtual bool Write(const std::vector<std::byte>& data);
 
 			/**
 			 * @brief Write a string to the buffer.
@@ -141,7 +141,7 @@ namespace StormByte::Buffer {
 			 *          to the buffer. Equivalent to Write(std::vector<std::byte>).
 			 * @see Write(const std::vector<std::byte>&)
 			 */
-			void Write(const std::string& data);
+			bool Write(const std::string& data);
 
 			/**
 			 * @brief Non-destructive read from the buffer.

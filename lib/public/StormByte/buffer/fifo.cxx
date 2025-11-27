@@ -69,10 +69,10 @@ void FIFO::Reserve(std::size_t newCapacity) {
 	m_tail = m_size;
 }
 
-void FIFO::Write(const std::vector<std::byte>& data) {
-	if (m_closed.load()) return;
+bool FIFO::Write(const std::vector<std::byte>& data) {
+	if (m_closed.load()) return false;
 	std::size_t count = data.size();
-	if (count == 0) return;
+	if (count == 0) return false;
 	GrowToFit(m_size + count);
 	if (m_buffer.empty()) {
 		// Ensure we have capacity after growth attempt
@@ -87,15 +87,16 @@ void FIFO::Write(const std::vector<std::byte>& data) {
 	}
 	m_tail = (m_tail + count) % cap;
 	m_size += count;
+	return true;
 }
 
-void FIFO::Write(const std::string& data) {
-	if (m_closed.load()) return;
-	if (data.empty()) return;
+bool FIFO::Write(const std::string& data) {
+	if (m_closed.load()) return false;
+	if (data.empty()) return false;
 	std::vector<std::byte> tmp;
 	tmp.resize(data.size());
 	std::copy_n(reinterpret_cast<const std::byte*>(data.data()), data.size(), tmp.begin());
-	Write(tmp);
+	return Write(tmp);
 }
 
 std::vector<std::byte> FIFO::Read(std::size_t count) {
