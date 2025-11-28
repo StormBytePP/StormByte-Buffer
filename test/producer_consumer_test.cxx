@@ -1018,6 +1018,24 @@ int test_producer_consumer_available_bytes_threaded() {
     RETURN_TEST("test_producer_consumer_available_bytes_threaded", 0);
 }
 
+int test_producer_consumer_partial_read_eof() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    const std::string message = "123456789012345678901234567890"; // 30 bytes
+    producer.Write(message);
+    producer.Close();
+
+    // Consumer requests 50 bytes, but only 30 are available
+    auto data = consumer.Read(50);
+    ASSERT_TRUE("partial read returns data", data.has_value());
+    ASSERT_EQUAL("partial read size", data->size(), static_cast<std::size_t>(30));
+    ASSERT_EQUAL("partial read content", StormByte::String::FromByteVector(*data), message);
+    ASSERT_TRUE("consumer is at EoF after partial read", consumer.EoF());
+
+    RETURN_TEST("test_producer_consumer_partial_read_eof", 0);
+}
+
 int main() {
     int result = 0;
     
@@ -1058,6 +1076,7 @@ int main() {
     result += test_burst_writes_with_reserve();
     result += test_producer_consumer_available_bytes();
     result += test_producer_consumer_available_bytes_threaded();
+    result += test_producer_consumer_partial_read_eof();
 
     if (result == 0) {
         std::cout << "All Producer/Consumer tests passed!" << std::endl;
