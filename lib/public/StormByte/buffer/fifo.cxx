@@ -1,216 +1,177 @@
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/string.hxx>
 
 #include <algorithm>
 
 using namespace StormByte::Buffer;
 
-FIFO::FIFO(std::size_t capacity) noexcept: m_buffer(capacity), m_initialCapacity(capacity), m_head(0), m_tail(0), m_size(0) {}
+FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0), m_closed(false) {}
 
-FIFO::FIFO(const FIFO& other) noexcept: m_buffer(other.m_buffer), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
-	m_size.store(other.m_size);
-	m_read_position.store(other.m_read_position.load());
+FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0), m_closed(false) {
+	Copy(other);
 }
 
-FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)), m_initialCapacity(other.m_initialCapacity), m_head(other.m_head), m_tail(other.m_tail) {
-	m_size.store(other.m_size);
-	m_read_position.store(other.m_read_position.load());
-	other.m_head = other.m_tail = other.m_size = 0;
-	other.m_read_position.store(0);
-    other.m_initialCapacity = 0;
+FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)),
+m_position_offset(other.m_position_offset), m_closed(other.m_closed) {
+	other.m_position_offset = 0;
+	other.m_closed = true;
 }
 
-FIFO& FIFO::operator=(const FIFO& other) noexcept {
+FIFO::~FIFO() {
+	Clear();
+}
+
+FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
-		m_buffer = other.m_buffer;
-		m_initialCapacity = other.m_initialCapacity;
-		m_head = other.m_head;
-		m_tail = other.m_tail;
-		m_size.store(other.m_size);
-		m_read_position.store(other.m_read_position.load());
+		Clear();
+		Copy(other);
 	}
 	return *this;
 }
 
 FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	if (this != &other) {
+		Clear();
 		m_buffer = std::move(other.m_buffer);
-		m_initialCapacity = other.m_initialCapacity;
-		m_head = other.m_head;
-		m_tail = other.m_tail;
-		m_size.store(other.m_size);
-		m_read_position.store(other.m_read_position.load());
-		other.m_head = other.m_tail = other.m_size = 0;
-		other.m_read_position.store(0);
-		other.m_initialCapacity = 0;
+		m_position_offset = other.m_position_offset;
+		m_closed = other.m_closed;
+		other.m_position_offset = 0;
+		other.m_closed = true;
 	}
 	return *this;
 }
 
 std::size_t FIFO::AvailableBytes() const noexcept {
-	const std::size_t current_size = m_size.load();
-	const std::size_t read_pos = m_read_position.load();
-	return (read_pos <= current_size) ? (current_size - read_pos) : 0;
+	const std::size_t current_size = m_buffer.size();
+	return (m_position_offset <= current_size) ? (current_size - m_position_offset) : 0;
 }
 
-std::size_t FIFO::Capacity() const noexcept {
+std::size_t FIFO::Size() const noexcept {
 	return m_buffer.size();
 }
 
-void FIFO::Clear() noexcept {
-	// Erase logical contents and ensure reserved capacity equals initial request
-	m_buffer.clear();
-	if (m_initialCapacity > 0) {
-		m_buffer.resize(m_initialCapacity);
-	}
-	m_head = m_tail = m_size = 0;
-	m_read_position.store(0);
+bool FIFO::Empty() const noexcept {
+	return m_buffer.empty();
 }
 
-void FIFO::Reserve(std::size_t newCapacity) {
-	if (newCapacity <= m_buffer.size()) return;
-	std::vector<std::byte> dst(newCapacity);
-	RelinearizeInto(dst);
-	m_buffer.swap(dst);
-	m_head = 0;
-	m_tail = m_size;
+void FIFO::Clear() noexcept {
+	m_buffer.clear();
+	m_position_offset = 0;
+}
+
+void FIFO::Clean() noexcept {
+	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
+		m_buffer.erase(m_buffer.begin(), m_buffer.begin() + m_position_offset);
+		m_position_offset = 0;
+	}
+}
+
+void FIFO::Close() noexcept {
+	m_closed = true;
 }
 
 bool FIFO::Write(const std::vector<std::byte>& data) {
-	if (m_closed.load()) return false;
-	std::size_t count = data.size();
-	if (count == 0) return false;
-	GrowToFit(m_size + count);
-	if (m_buffer.empty()) {
-		// Ensure we have capacity after growth attempt
-		Reserve(count);
-	}
-	const std::size_t cap = m_buffer.size();
-	const std::size_t first = std::min(count, cap - m_tail);
-	std::copy_n(data.data(), first, m_buffer.begin() + static_cast<std::ptrdiff_t>(m_tail));
-	const std::size_t second = count - first;
-	if (second) {
-		std::copy_n(data.data() + static_cast<std::ptrdiff_t>(first), second, m_buffer.begin());
-	}
-	m_tail = (m_tail + count) % cap;
-	m_size += count;
+	if (IsClosed()) return false;
+	if (!data.empty())
+		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 	return true;
 }
 
 bool FIFO::Write(const std::string& data) {
-	if (m_closed.load()) return false;
-	if (data.empty()) return false;
-	std::vector<std::byte> tmp;
-	tmp.resize(data.size());
-	std::copy_n(reinterpret_cast<const std::byte*>(data.data()), data.size(), tmp.begin());
-	return Write(tmp);
+	return Write(StormByte::String::ToByteVector(data));
 }
 
-ExpectedData<InsufficientData> FIFO::Read(std::size_t count) {
-	const std::size_t current_size = m_size.load();
-	const std::size_t read_pos = m_read_position.load();
+ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
+	const std::size_t available = AvailableBytes();
 	
-	// Calculate available data from read position
-	const std::size_t available = (read_pos <= current_size) ? (current_size - read_pos) : 0;
+	// count=0 means "read all available"
+	const std::size_t read_size = (count == 0) ? available : std::min(count, available);
 	
-	// If count is specified and there's not enough data, return error
-	if (count > 0 && count > available) {
+	// If requesting specific count (count > 0) but no data available, return error
+	if (count > 0 && available == 0) {
 		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
 	}
 	
-	// If count is 0, read all available data
-	const std::size_t toRead = count > 0 ? count : available;
-	
-	std::vector<std::byte> out;
-	if (toRead == 0) return out;
-	
-	out.resize(toRead);
-	const std::size_t cap = m_buffer.size();
-	
-	// Calculate actual position in circular buffer
-	const std::size_t actual_pos = (m_head + read_pos) % cap;
-	
-	const std::size_t first = std::min(toRead, cap - actual_pos);
-	std::copy_n(m_buffer.begin() + static_cast<std::ptrdiff_t>(actual_pos), first, out.begin());
-	const std::size_t second = toRead - first;
-	if (second) {
-		std::copy_n(m_buffer.begin(), second, out.begin() + static_cast<std::ptrdiff_t>(first));
+	// If FIFO is closed and requesting more than available, return error
+	if (m_closed && count > available) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data in closed FIFO"));
 	}
 	
-	// Update read position atomically
-	m_read_position.fetch_add(toRead);
+	// Empty read is success
+	if (read_size == 0) {
+		return std::vector<std::byte>();
+	}
+
+	// Read from current position using iterator constructor for efficiency
+	auto start_it = m_buffer.begin() + m_position_offset;
+	auto end_it = start_it + read_size;
+	std::vector<std::byte> result(start_it, end_it);
 	
-	return out;
+	// Advance read position
+	m_position_offset += read_size;
+	
+	return result;
 }
 
 ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
-	const std::size_t current_size = m_size.load();
+	// Extract always reads from the beginning (head), not from current read position
+	const std::size_t buffer_size = m_buffer.size();
 	
-	// If count is specified and there's not enough data, return error
-	if (count > 0 && count > current_size) {
+	// count=0 means "extract all available"
+	const std::size_t extract_size = (count == 0) ? buffer_size : std::min(count, buffer_size);
+	
+	// If requesting specific count (count > 0) but no data available, return error
+	if (count > 0 && buffer_size == 0) {
 		return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
 	}
 	
-	// If count is 0, extract all available data
-	const std::size_t toRead = count > 0 ? count : current_size;
+	// If FIFO is closed and requesting more than available, return error
+	if (m_closed && count > buffer_size) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data in closed FIFO"));
+	}
 	
-	std::vector<std::byte> out;
-	if (toRead == 0) return out;
-	// Zero-copy fast path: entire content contiguous from head == 0
-	if (toRead == m_size && m_head == 0) {
-		m_buffer.resize(m_size);
-		out = std::move(m_buffer);
-		m_head = m_tail = m_size = 0;
-		m_read_position.store(0);
-		return out;
+	// Empty extract is success
+	if (extract_size == 0) {
+		return std::vector<std::byte>();
 	}
-	out.resize(toRead);
-	const std::size_t cap = m_buffer.size();
-	const std::size_t first = std::min(toRead, cap - m_head);
-	std::copy_n(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_head), first, out.begin());
-	const std::size_t second = toRead - first;
-	if (second) {
-		std::copy_n(m_buffer.begin(), second, out.begin() + static_cast<std::ptrdiff_t>(first));
-	}
-	m_head = (m_head + toRead) % cap;
-	m_size -= toRead;
-	// Adjust read position if it points beyond extracted data
-	const std::size_t current_read_pos = m_read_position.load();
-	if (current_read_pos >= toRead) {
-		m_read_position.fetch_sub(toRead);
-	} else {
-		m_read_position.store(0);
-	}
-	return out;
+
+	// Extract from beginning using iterator constructor for efficiency
+	std::vector<std::byte> result(m_buffer.begin(), m_buffer.begin() + extract_size);
+	
+	// Delete extracted bytes from the front of the deque
+	m_buffer.erase(m_buffer.begin(), m_buffer.begin() + extract_size);
+	
+	// Adjust the read position: if it was ahead of what we extracted, move it back
+	m_position_offset = (m_position_offset > extract_size) ? (m_position_offset - extract_size) : 0;
+	
+	return result;
 }
 
-void FIFO::GrowToFit(std::size_t required) {
-	if (required <= m_buffer.size()) return;
-	std::size_t newCap = m_buffer.empty() ? 64 : m_buffer.size();
-	while (newCap < required) newCap *= 2;
-	Reserve(newCap);
+bool FIFO::IsClosed() const noexcept {
+	return m_closed;
 }
 
-void FIFO::Seek(const std::size_t& position, const Position& mode) {
-	const std::size_t current_size = m_size.load();
+void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+	std::ptrdiff_t new_offset;
 	
 	if (mode == Position::Absolute) {
-		// Set read position to absolute offset from head, clamped to [0, size]
-		m_read_position.store(std::min(position, current_size));
+		new_offset = offset;
 	} else { // Position::Relative
-		const std::size_t current_pos = m_read_position.load();
-		// Calculate new position, clamping to valid range
-		const std::size_t new_pos = current_pos + position;
-		m_read_position.store(std::min(new_pos, current_size));
+		new_offset = static_cast<std::ptrdiff_t>(m_position_offset) + offset;
+	}
+	
+	// Clamp to valid range [0, buffer.size()]
+	if (new_offset < 0) {
+		m_position_offset = 0;
+	} else if (static_cast<std::size_t>(new_offset) > m_buffer.size()) {
+		m_position_offset = m_buffer.size();
+	} else {
+		m_position_offset = static_cast<std::size_t>(new_offset);
 	}
 }
 
-void FIFO::RelinearizeInto(std::vector<std::byte>& dst) const {
-	if (m_size == 0) return;
-	const std::size_t cap = m_buffer.size();
-	const std::size_t first = std::min(m_size.load(), cap - m_head);
-	std::copy_n(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_head), first, dst.begin());
-	const std::size_t second = m_size - first;
-	if (second) {
-		std::copy_n(m_buffer.begin(), second, dst.begin() + static_cast<std::ptrdiff_t>(first));
-	}
+void FIFO::Copy(const FIFO& other) noexcept {
+	m_buffer = other.m_buffer;
+	m_position_offset = other.m_position_offset;
+	m_closed = other.m_closed;
 }

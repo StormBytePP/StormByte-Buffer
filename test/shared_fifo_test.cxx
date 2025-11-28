@@ -17,7 +17,7 @@ static std::string toString(const std::vector<std::byte>& v) {
 }
 
 int test_shared_fifo_producer_consumer_blocking() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     std::atomic<bool> done{false};
     const std::string payload = "ABCDEFGHIJ"; // 10 bytes
 
@@ -50,7 +50,7 @@ int test_shared_fifo_producer_consumer_blocking() {
 }
 
 int test_shared_fifo_extract_blocking_and_close() {
-    SharedFIFO fifo(4);
+    SharedFIFO fifo;
     std::atomic<bool> woke{false};
     std::atomic<bool> saw_closed{false};
     std::size_t extracted_size = 12345; // sentinel
@@ -74,7 +74,7 @@ int test_shared_fifo_extract_blocking_and_close() {
 }
 
 int test_shared_fifo_concurrent_seek_and_read() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     fifo.Write(std::string("0123456789"));
 
     std::atomic<bool> seeker_done{false};
@@ -117,7 +117,7 @@ int test_shared_fifo_concurrent_seek_and_read() {
 }
 
 int test_shared_fifo_extract_adjusts_read_position_concurrency() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     fifo.Write(std::string("ABCDEFGH"));
 
     std::string r_before, r_after;
@@ -143,7 +143,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 }
 
 int test_shared_fifo_multi_producer_single_consumer_counts() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     const int chunks = 200;
     std::atomic<bool> p1_done{false}, p2_done{false};
 
@@ -186,7 +186,7 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
 }
 
 int test_shared_fifo_multiple_consumers_total_coverage() {
-    SharedFIFO fifo(16);
+    SharedFIFO fifo;
     const int total = 1000;
     // Producer writes a predictable sequence of 'X'
     auto producer = std::thread([&]() -> void {
@@ -223,7 +223,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 }
 
 int test_shared_fifo_close_suppresses_writes() {
-    SharedFIFO fifo(4);
+    SharedFIFO fifo;
     fifo.Write(std::string("ABC"));
     ASSERT_EQUAL("pre-close size", fifo.Size(), static_cast<std::size_t>(3));
     fifo.Close();
@@ -235,7 +235,7 @@ int test_shared_fifo_close_suppresses_writes() {
 }
 
 int test_shared_fifo_wrap_boundary_blocking() {
-    SharedFIFO fifo(5);
+    SharedFIFO fifo;
     fifo.Write("ABCDE");
     auto r1 = fifo.Read(3); // should block for 3, returns ABC
     ASSERT_EQUAL("read ABC", toString(*r1), std::string("ABC"));
@@ -253,7 +253,7 @@ int test_shared_fifo_wrap_boundary_blocking() {
 }
 
 int test_shared_fifo_growth_under_contention() {
-    SharedFIFO fifo(1);
+    SharedFIFO fifo;
     const int iters = 100;
     std::atomic<bool> done{false};
     auto producer = std::thread([&]() -> void {
@@ -284,7 +284,7 @@ int test_shared_fifo_growth_under_contention() {
 }
 
 int test_shared_fifo_read_insufficient_closed_returns_available() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     fifo.Write("ABC");
     fifo.Close();
     
@@ -299,7 +299,7 @@ int test_shared_fifo_read_insufficient_closed_returns_available() {
 }
 
 int test_shared_fifo_extract_insufficient_closed_returns_available() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     fifo.Write("HELLO");
     fifo.Close();
     
@@ -314,7 +314,7 @@ int test_shared_fifo_extract_insufficient_closed_returns_available() {
 }
 
 int test_shared_fifo_blocking_read_insufficient_not_closed() {
-    SharedFIFO fifo(8);
+    SharedFIFO fifo;
     fifo.Write("12");
     
     std::atomic<bool> read_started{false};
@@ -407,6 +407,35 @@ int test_shared_fifo_available_bytes_concurrent() {
     RETURN_TEST("test_shared_fifo_available_bytes_concurrent", 0);
 }
 
+int test_shared_fifo_read_closed_no_data_nonblocking() {
+    SharedFIFO fifo;
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
+    
+    // Calling Read on already-closed empty FIFO should return empty vector (since it returns immediately)
+    // But to truly test the non-blocking case where it's already closed before Read is called,
+    // Read(10) with count>0 should wait, wake up immediately because closed, and return empty
+    auto result = fifo.Read(10);
+    ASSERT_TRUE("Read returns value (empty vector)", result.has_value());
+    ASSERT_TRUE("Read returns empty vector", result->empty());
+    
+    RETURN_TEST("test_shared_fifo_read_closed_no_data_nonblocking", 0);
+}
+
+int test_shared_fifo_extract_closed_no_data_nonblocking() {
+    SharedFIFO fifo;
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
+    
+    auto result = fifo.Extract(10);
+    ASSERT_TRUE("Extract returns value (empty vector)", result.has_value());
+    ASSERT_TRUE("Extract returns empty vector", result->empty());
+    
+    RETURN_TEST("test_shared_fifo_extract_closed_no_data_nonblocking", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -423,6 +452,8 @@ int main() {
     result += test_shared_fifo_blocking_read_insufficient_not_closed();
     result += test_shared_fifo_available_bytes_basic();
     result += test_shared_fifo_available_bytes_concurrent();
+    result += test_shared_fifo_read_closed_no_data_nonblocking();
+    result += test_shared_fifo_extract_closed_no_data_nonblocking();
 
     if (result == 0) {
         std::cout << "SharedFIFO tests passed!" << std::endl;

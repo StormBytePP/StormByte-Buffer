@@ -11,7 +11,7 @@ using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 
 int test_fifo_write_read_vector() {
-    FIFO fifo(2);
+    FIFO fifo;
     std::string s = "Hello";
     fifo.Write(s);
     auto out = fifo.Extract(s.size());
@@ -22,7 +22,7 @@ int test_fifo_write_read_vector() {
 }
 
 int test_fifo_wrap_around() {
-    FIFO fifo(5);
+    FIFO fifo;
     fifo.Write("ABCDE");
     auto r1 = fifo.Extract(2); // now head moves, tail at end
     ASSERT_EQUAL("test_fifo_wrap_around r1", StormByte::String::FromByteVector(*r1), std::string("AB"));
@@ -41,7 +41,7 @@ static std::string makePattern(std::size_t n) {
 }
 
 int test_fifo_buffer_stress() {
-    FIFO fifo(64);
+    FIFO fifo;
     std::mt19937_64 rng(12345);
     std::uniform_int_distribution<int> small(1, 256);
     std::uniform_int_distribution<int> large(512, 4096);
@@ -84,29 +84,27 @@ int test_fifo_buffer_stress() {
 }
 
 int test_fifo_default_ctor() {
-    FIFO fifo; // default capacity = 0
+    FIFO fifo;
     ASSERT_TRUE("default ctor empty", fifo.Empty());
     ASSERT_EQUAL("default ctor size", fifo.Size(), static_cast<std::size_t>(0));
-    ASSERT_EQUAL("default ctor capacity", fifo.Capacity(), static_cast<std::size_t>(0));
     RETURN_TEST("test_fifo_default_ctor", 0);
 }
 
-int test_fifo_capacity_ctor() {
-    FIFO fifo(8);
-    ASSERT_EQUAL("capacity ctor capacity", fifo.Capacity(), static_cast<std::size_t>(8));
+int test_fifo_write_basic() {
+    FIFO fifo;
     fifo.Write(std::string("1234"));
-    ASSERT_EQUAL("capacity ctor size", fifo.Size(), static_cast<std::size_t>(4));
-    RETURN_TEST("test_fifo_capacity_ctor", 0);
+    ASSERT_EQUAL("write size", fifo.Size(), static_cast<std::size_t>(4));
+    RETURN_TEST("test_fifo_write_basic", 0);
 }
 
 int test_fifo_copy_ctor_assign() {
-    FIFO a(4);
+    FIFO a;
     a.Write(std::string("AB"));
     FIFO b(a); // copy ctor
     ASSERT_EQUAL("copy ctor size", b.Size(), a.Size());
     auto out = b.Extract(2);
     ASSERT_EQUAL("copy ctor content", StormByte::String::FromByteVector(*out), std::string("AB"));
-    FIFO c(1);
+    FIFO c;
     c = a; // copy assign
     ASSERT_EQUAL("copy assign size", c.Size(), a.Size());
     auto out2 = c.Extract(2);
@@ -125,22 +123,22 @@ int test_fifo_move_ctor_assign() {
     RETURN_TEST("test_fifo_move_ctor_assign", 0);
 }
 
-int test_fifo_clear_restore_capacity() {
-    FIFO fifo(16);
+int test_fifo_clear() {
+    FIFO fifo;
     fifo.Write(std::string(100, 'A'));
     fifo.Clear();
     ASSERT_TRUE("clear empty", fifo.Empty());
-    ASSERT_EQUAL("clear capacity restored", fifo.Capacity(), static_cast<std::size_t>(16));
-    RETURN_TEST("test_fifo_clear_restore_capacity", 0);
+    ASSERT_EQUAL("clear size", fifo.Size(), static_cast<std::size_t>(0));
+    RETURN_TEST("test_fifo_clear", 0);
 }
 
-int test_fifo_reserve() {
-    FIFO fifo(2);
-    fifo.Reserve(32);
-    ASSERT_EQUAL("reserve capacity", fifo.Capacity(), static_cast<std::size_t>(32));
+int test_fifo_write_multiple() {
+    FIFO fifo;
     fifo.Write(std::string(10, 'Z'));
-    ASSERT_EQUAL("reserve size", fifo.Size(), static_cast<std::size_t>(10));
-    RETURN_TEST("test_fifo_reserve", 0);
+    ASSERT_EQUAL("write size", fifo.Size(), static_cast<std::size_t>(10));
+    fifo.Write(std::string(5, 'Y'));
+    ASSERT_EQUAL("size after second write", fifo.Size(), static_cast<std::size_t>(15));
+    RETURN_TEST("test_fifo_write_multiple", 0);
 }
 
 int test_fifo_write_vector_and_rvalue() {
@@ -178,19 +176,18 @@ int test_fifo_adopt_storage_move_write() {
     RETURN_TEST("test_fifo_adopt_storage_move_write", 0);
 }
 
-int test_fifo_reserve_and_clear() {
-    FIFO fifo(1);
-    fifo.Reserve(16);
-    ASSERT_EQUAL("test_fifo_reserve_and_clear capacity", fifo.Capacity(), static_cast<std::size_t>(16));
+int test_fifo_clear_with_data() {
+    FIFO fifo;
     fifo.Write(StormByte::String::ToByteVector("X"));
+    ASSERT_FALSE("has data before clear", fifo.Empty());
     fifo.Clear();
-    ASSERT_TRUE("test_fifo_reserve_and_clear empty", fifo.Empty());
-    ASSERT_EQUAL("test_fifo_reserve_and_clear size", fifo.Size(), static_cast<std::size_t>(0));
-    RETURN_TEST("test_fifo_reserve_and_clear", 0);
+    ASSERT_TRUE("empty after clear", fifo.Empty());
+    ASSERT_EQUAL("size is zero", fifo.Size(), static_cast<std::size_t>(0));
+    RETURN_TEST("test_fifo_clear_with_data", 0);
 }
 
 int test_fifo_closed_noop_on_empty() {
-    FIFO fifo(8);
+    FIFO fifo;
     fifo.Close();
     ASSERT_TRUE("closed flag set", fifo.IsClosed());
     fifo.Write(std::string("DATA"));
@@ -200,7 +197,7 @@ int test_fifo_closed_noop_on_empty() {
 }
 
 int test_fifo_closed_noop_on_nonempty() {
-    FIFO fifo(8);
+    FIFO fifo;
     fifo.Write(std::string("ABC"));
     ASSERT_EQUAL("pre-close size", fifo.Size(), static_cast<std::size_t>(3));
     fifo.Close();
@@ -272,7 +269,7 @@ int test_fifo_read_all_nondestructive() {
 }
 
 int test_fifo_read_with_wrap() {
-    FIFO fifo(5);
+    FIFO fifo;
     fifo.Write("ABCDE");
     fifo.Extract(2); // Remove AB, head at position 2
     fifo.Write("12"); // Wraps around
@@ -386,7 +383,7 @@ int test_fifo_seek_after_extract() {
 }
 
 int test_fifo_seek_with_wrap() {
-    FIFO fifo(10);
+    FIFO fifo;
     fifo.Write("ABCDEFGHIJ");
     
     // Extract 5 bytes (removes ABCDE, head at position 5 in buffer)
@@ -531,8 +528,8 @@ int test_fifo_available_bytes() {
     RETURN_TEST("test_fifo_available_bytes", 0);
 }
 
-int test_fifo_available_bytes_with_wrap() {
-    FIFO fifo(8);
+int test_fifo_available_bytes_after_ops() {
+    FIFO fifo;
     
     fifo.Write("ABCDEFGH");
     ASSERT_EQUAL("initial available", fifo.AvailableBytes(), static_cast<std::size_t>(8));
@@ -556,18 +553,68 @@ int test_fifo_available_bytes_with_wrap() {
     RETURN_TEST("test_fifo_available_bytes_with_wrap", 0);
 }
 
+int test_fifo_read_closed_no_data() {
+    FIFO fifo;
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
+    
+    auto result = fifo.Read(10);
+    ASSERT_TRUE("Read returns Unexpected", !result.has_value());
+    
+    RETURN_TEST("test_fifo_read_closed_no_data", 0);
+}
+
+int test_fifo_extract_closed_no_data() {
+    FIFO fifo;
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
+    
+    auto result = fifo.Extract(10);
+    ASSERT_TRUE("Extract returns Unexpected", !result.has_value());
+    
+    RETURN_TEST("test_fifo_extract_closed_no_data", 0);
+}
+
+int test_fifo_read_closed_insufficient_data() {
+    FIFO fifo;
+    fifo.Write("ABC");
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
+    
+    auto result = fifo.Read(10);
+    ASSERT_TRUE("Read(10) returns Unexpected when only 3 available", !result.has_value());
+    
+    RETURN_TEST("test_fifo_read_closed_insufficient_data", 0);
+}
+
+int test_fifo_extract_closed_insufficient_data() {
+    FIFO fifo;
+    fifo.Write("ABC");
+    fifo.Close();
+    ASSERT_TRUE("fifo is closed", fifo.IsClosed());
+    ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
+    
+    auto result = fifo.Extract(10);
+    ASSERT_TRUE("Extract(10) returns Unexpected when only 3 available", !result.has_value());
+    
+    RETURN_TEST("test_fifo_extract_closed_insufficient_data", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
     result += test_fifo_wrap_around();
     result += test_fifo_adopt_storage_move_write();
-    result += test_fifo_reserve_and_clear();
+    result += test_fifo_clear_with_data();
     result += test_fifo_default_ctor();
-    result += test_fifo_capacity_ctor();
+    result += test_fifo_write_basic();
     result += test_fifo_copy_ctor_assign();
     result += test_fifo_move_ctor_assign();
-    result += test_fifo_clear_restore_capacity();
-    result += test_fifo_reserve();
+    result += test_fifo_clear();
+    result += test_fifo_write_multiple();
     result += test_fifo_write_vector_and_rvalue();
     result += test_fifo_read_default_all();
     result += test_fifo_closed_noop_on_empty();
@@ -587,7 +634,11 @@ int main() {
     result += test_fifo_extract_insufficient_data_error();
     result += test_fifo_read_after_position_beyond_size();
     result += test_fifo_available_bytes();
-    result += test_fifo_available_bytes_with_wrap();
+    result += test_fifo_available_bytes_after_ops();
+    result += test_fifo_read_closed_no_data();
+    result += test_fifo_extract_closed_no_data();
+    result += test_fifo_read_closed_insufficient_data();
+    result += test_fifo_extract_closed_insufficient_data();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

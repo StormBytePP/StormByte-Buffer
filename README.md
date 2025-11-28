@@ -54,18 +54,16 @@ make
 
 The Buffer module provides a comprehensive set of classes for efficient data buffering, thread-safe producer-consumer patterns, and multi-stage data processing pipelines.
 
-#### FIFO (Ring Buffer)
+#### FIFO
 
-A byte-oriented circular buffer with automatic growth on demand. Not thread-safe by itself.
+A byte-oriented buffer with automatic growth on demand. Not thread-safe by itself.
 
-- **Purpose**: Basic ring buffer for sequential byte storage and retrieval
+- **Purpose**: Basic buffer for sequential byte storage and retrieval
 - **Key Features**: 
-  - Wrap-aware writes and reads
   - Non-destructive `Read()` with seek support
   - Destructive `Extract()` for consuming data
-  - Zero-copy fast path when data is contiguous
-  - `Clear()` restores initial capacity
-- **API**: `Size()`, `Capacity()`, `Empty()`, `Clear()`, `Reserve(n)`, `Write()`, `Read(count)`, `Extract(count)`, `Seek()`
+  - `Clear()` empties the buffer
+- **API**: `Size()`, `Empty()`, `Clear()`, `Write()`, `Read(count)`, `Extract(count)`, `Seek()`
 
 **Usage example:**
 
@@ -100,7 +98,7 @@ int main() {
 
 Thread-safe version of FIFO with blocking semantics for concurrent access.
 
-- **Purpose**: Thread-safe ring buffer for multi-threaded applications
+- **Purpose**: Thread-safe buffer for multi-threaded applications
 - **Key Features**:
   - All FIFO operations are thread-safe
   - `Read()` and `Extract()` block until data is available

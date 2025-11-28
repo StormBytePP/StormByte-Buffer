@@ -13,6 +13,16 @@ using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
 
+// Toggle between Read (non-destructive) and Extract (destructive) for testing
+// Comment out to use Extract instead of Read
+#define USE_READ
+
+#ifdef USE_READ
+    #define CONSUME(consumer, count) (consumer).Read(count)
+#else
+    #define CONSUME(consumer, count) (consumer).Extract(count)
+#endif
+
 int test_pipeline_empty() {
     Pipeline pipeline;
     
@@ -24,9 +34,9 @@ int test_pipeline_empty() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Give threads time to execute
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("empty pipeline has data", data.has_value());
     ASSERT_EQUAL("empty pipeline content", StormByte::String::FromByteVector(*data), std::string("TEST"));
     
@@ -38,8 +48,8 @@ int test_pipeline_single_stage() {
     
     // Single stage: uppercase transformation
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 for (auto& c : str) c = std::toupper(c);
@@ -56,9 +66,9 @@ int test_pipeline_single_stage() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("single stage has data", data.has_value());
     ASSERT_EQUAL("single stage uppercase", StormByte::String::FromByteVector(*data), std::string("HELLO WORLD"));
     
@@ -70,8 +80,8 @@ int test_pipeline_two_stages() {
     
     // Stage 1: uppercase
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 for (auto& c : str) c = std::toupper(c);
@@ -83,8 +93,8 @@ int test_pipeline_two_stages() {
     
     // Stage 2: replace spaces with underscores
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 std::replace(str.begin(), str.end(), ' ', '_');
@@ -103,7 +113,7 @@ int test_pipeline_two_stages() {
     // Wait for processing
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("two stages has data", data.has_value());
     ASSERT_EQUAL("two stages transformation", StormByte::String::FromByteVector(*data), std::string("HELLO_WORLD_TEST"));
     
@@ -115,8 +125,8 @@ int test_pipeline_three_stages() {
     
     // Stage 1: uppercase
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 for (auto& c : str) c = std::toupper(c);
@@ -128,8 +138,8 @@ int test_pipeline_three_stages() {
     
     // Stage 2: replace spaces
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 std::replace(str.begin(), str.end(), ' ', '-');
@@ -142,8 +152,8 @@ int test_pipeline_three_stages() {
     // Stage 3: add prefix and suffix
     pipeline.AddPipe([](Consumer in, Producer out) {
         out.Write("[");
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
             }
@@ -161,7 +171,7 @@ int test_pipeline_three_stages() {
     // Wait for processing
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("three stages has data", data.has_value());
     ASSERT_EQUAL("three stages transformation", StormByte::String::FromByteVector(*data), std::string("[TEST-DATA]"));
     
@@ -173,8 +183,8 @@ int test_pipeline_incremental_processing() {
     
     // Stage that processes data incrementally
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(1); // Extract one byte at a time
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 1); // Read one byte at a time
             if (data && !data->empty()) {
                 char c = static_cast<char>((*data)[0]);
                 c = std::toupper(c);
@@ -193,7 +203,7 @@ int test_pipeline_incremental_processing() {
     // Wait for processing
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("incremental has data", data.has_value());
     ASSERT_EQUAL("incremental processing", StormByte::String::FromByteVector(*data), std::string("ABC"));
     
@@ -205,8 +215,8 @@ int test_pipeline_filter_stage() {
     
     // Stage that filters out non-alphabetic characters
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 std::string filtered;
@@ -230,9 +240,9 @@ int test_pipeline_filter_stage() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("filter has data", data.has_value());
     ASSERT_EQUAL("filter stage", StormByte::String::FromByteVector(*data), std::string("HelloWorld"));
     
@@ -244,8 +254,8 @@ int test_pipeline_multiple_writes() {
     
     // Stage that duplicates each piece of data
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
                 out.Write(*data);
@@ -261,9 +271,9 @@ int test_pipeline_multiple_writes() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("multiple writes has data", data.has_value());
     ASSERT_EQUAL("multiple writes", StormByte::String::FromByteVector(*data), std::string("ABAB"));
     
@@ -274,8 +284,8 @@ int test_pipeline_empty_input() {
     Pipeline pipeline;
     
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
             }
@@ -289,9 +299,9 @@ int test_pipeline_empty_input() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("empty input has result", data.has_value());
     ASSERT_EQUAL("empty input size", data->size(), static_cast<std::size_t>(0));
     
@@ -304,8 +314,8 @@ int test_pipeline_large_data() {
     // Stage that counts characters
     pipeline.AddPipe([](Consumer in, Producer out) {
         std::size_t count = 0;
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 count += data->size();
             }
@@ -325,7 +335,7 @@ int test_pipeline_large_data() {
     // Wait for processing
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("large data has result", data.has_value());
     ASSERT_EQUAL("large data count", StormByte::String::FromByteVector(*data), std::string("10000"));
     
@@ -338,8 +348,8 @@ int test_pipeline_reuse() {
     // Stage that adds prefix
     pipeline.AddPipe([](Consumer in, Producer out) {
         out.Write(">");
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
             }
@@ -354,9 +364,9 @@ int test_pipeline_reuse() {
         input1.Close();
         
         Consumer result1 = pipeline.Process(input1.Consumer());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         
-        auto data1 = result1.Extract(0);
+        auto data1 = result1.Read(0);
         ASSERT_TRUE("reuse first has data", data1.has_value());
         ASSERT_EQUAL("reuse first result", StormByte::String::FromByteVector(*data1), std::string(">TEST1"));
     }
@@ -368,9 +378,9 @@ int test_pipeline_reuse() {
         input2.Close();
         
         Consumer result2 = pipeline.Process(input2.Consumer());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         
-        auto data2 = result2.Extract(0);
+        auto data2 = result2.Read(0);
         ASSERT_TRUE("reuse second has data", data2.has_value());
         ASSERT_EQUAL("reuse second result", StormByte::String::FromByteVector(*data2), std::string(">TEST2"));
     }
@@ -382,8 +392,8 @@ int test_pipeline_copy_constructor() {
     Pipeline pipeline1;
     
     pipeline1.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 for (auto& c : str) c = std::toupper(c);
@@ -403,9 +413,9 @@ int test_pipeline_copy_constructor() {
     Consumer result = pipeline2.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("copy constructor has data", data.has_value());
     ASSERT_EQUAL("copy constructor works", StormByte::String::FromByteVector(*data), std::string("TEST"));
     
@@ -416,8 +426,8 @@ int test_pipeline_move_constructor() {
     Pipeline pipeline1;
     
     pipeline1.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::string str = StormByte::String::FromByteVector(*data);
                 for (auto& c : str) c = std::tolower(c);
@@ -437,9 +447,9 @@ int test_pipeline_move_constructor() {
     Consumer result = pipeline2.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("move constructor has data", data.has_value());
     ASSERT_EQUAL("move constructor works", StormByte::String::FromByteVector(*data), std::string("test"));
     
@@ -450,8 +460,8 @@ int test_pipeline_addpipe_move() {
     Pipeline pipeline;
     
     auto func = [](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
             }
@@ -469,9 +479,9 @@ int test_pipeline_addpipe_move() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("addpipe move has data", data.has_value());
     ASSERT_EQUAL("addpipe move works", StormByte::String::FromByteVector(*data), std::string("MOVE"));
     
@@ -486,8 +496,8 @@ int test_pipeline_word_count() {
         std::size_t word_count = 0;
         std::string buffer;
         
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 buffer += StormByte::String::FromByteVector(*data);
             }
@@ -514,9 +524,9 @@ int test_pipeline_word_count() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("word count has data", data.has_value());
     ASSERT_EQUAL("word count result", StormByte::String::FromByteVector(*data), std::string("6"));
     
@@ -530,8 +540,8 @@ int test_pipeline_reverse_string() {
     pipeline.AddPipe([](Consumer in, Producer out) {
         std::string buffer;
         
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 buffer += StormByte::String::FromByteVector(*data);
             }
@@ -549,9 +559,9 @@ int test_pipeline_reverse_string() {
     Consumer result = pipeline.Process(input.Consumer());
     
     // Wait for processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("reverse has data", data.has_value());
     ASSERT_EQUAL("reverse result", StormByte::String::FromByteVector(*data), std::string("FEDCBA"));
     
@@ -563,8 +573,8 @@ int test_pipeline_streaming_data() {
     
     // Pass through with small delay to simulate processing
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 out.Write(*data);
             }
@@ -592,7 +602,7 @@ int test_pipeline_streaming_data() {
     // Wait for all processing
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("streaming has data", data.has_value());
     ASSERT_EQUAL("streaming result", StormByte::String::FromByteVector(*data), std::string("Part1Part2Part3"));
     
@@ -604,8 +614,8 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 1: Add 1 to each byte
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
                 result.reserve(data->size());
@@ -620,8 +630,8 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 2: Multiply by 2
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
                 result.reserve(data->size());
@@ -636,8 +646,8 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 3: Divide by 2
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
                 result.reserve(data->size());
@@ -652,8 +662,8 @@ int test_pipeline_byte_arithmetic() {
     
     // Stage 4: Subtract 1
     pipeline.AddPipe([](Consumer in, Producer out) {
-        while (!in.IsClosed() || !in.Empty()) {
-            auto data = in.Extract(0);
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
                 std::vector<std::byte> result;
                 result.reserve(data->size());
@@ -680,7 +690,7 @@ int test_pipeline_byte_arithmetic() {
     // Wait for processing
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     
-    auto data = result.Extract(0);
+    auto data = CONSUME(result, 0);
     ASSERT_TRUE("byte arithmetic has data", data.has_value());
     ASSERT_EQUAL("byte arithmetic size", data->size(), static_cast<std::size_t>(5));
     

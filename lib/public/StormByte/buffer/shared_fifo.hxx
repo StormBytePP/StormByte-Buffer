@@ -56,7 +56,7 @@ namespace StormByte::Buffer {
              * @param capacity Initial number of slots to allocate in the ring buffer.
              *        Behaves like @ref FIFO: capacity may grow geometrically as needed.
              */
-            explicit SharedFIFO(std::size_t capacity = 0) noexcept : FIFO(capacity) {}
+            SharedFIFO() noexcept = default;
 
             SharedFIFO(const SharedFIFO&) = delete;
             SharedFIFO& operator=(const SharedFIFO&) = delete;
@@ -72,89 +72,67 @@ namespace StormByte::Buffer {
              * @name Thread-safe overrides
              * @{
              */
+			void Close() noexcept override;
 
-            /**
-             * @brief Thread-safe version of FIFO::AvailableBytes().
-             * @return The number of bytes available for non-destructive reading.
-             * @details Returns the number of bytes that can be read from the current
-             *          read position without blocking. Thread-safe.
-             * @see FIFO::AvailableBytes()
-             */
-            std::size_t AvailableBytes() const noexcept;
+			/**
+			 * @brief Thread-safe blocking read from the buffer.
+			 * @param count Number of bytes to read; 0 reads all available immediately.
+			 * @return A vector containing the requested bytes, or error.
+			 * @details Blocks until @p count bytes are available from the current read position,
+			 *          or until the FIFO is closed. If count == 0, returns immediately with
+			 *          all available data. If closed before count bytes available, returns error.
+			 * @see FIFO::Read(), Wait()
+			 */
+			ExpectedData<InsufficientData> Read(std::size_t count = 0) const override;
 
-            /**
-             * @brief Thread-safe version of FIFO::Capacity().
-             * @return The current allocated capacity in bytes.
-             * @see FIFO::Capacity()
-             */
-            std::size_t Capacity() const noexcept override;
+			/**
+			 * @brief Thread-safe blocking extract from the buffer.
+			 * @param count Number of bytes to extract; 0 extracts all available immediately.
+			 * @return A vector containing the extracted bytes, or error.
+			 * @details Blocks until @p count bytes are available, or until the FIFO is closed.
+			 *          If count == 0, returns immediately with all available data and removes it.
+			 *          If closed before count bytes available, returns error.
+			 * @see FIFO::Extract(), Wait()
+			 */
+			ExpectedData<InsufficientData> Extract(std::size_t count = 0) override;
 
-            /**
-             * @brief Thread-safe version of FIFO::Clear().
-             * @details Clears all data and notifies waiting threads.
-             * @see FIFO::Clear()
-             */
-            void Clear() noexcept override;
+			/**
+			 * @brief Thread-safe write to the buffer.
+			 * @param data Byte vector to append to the FIFO.
+			 * @return true if written, false if closed.
+			 * @details Thread-safe version that notifies waiting readers after write.
+			 * @see FIFO::Write()
+			 */
+			bool Write(const std::vector<std::byte>& data) override;
 
-            /**
-             * @brief Thread-safe version of FIFO::Reserve().
-             * @param newCapacity Minimum capacity to ensure (in bytes).
-             * @see FIFO::Reserve()
-             */
-            void Reserve(std::size_t newCapacity) override;
+			/**
+			 * @brief Thread-safe write to the buffer.
+			 * @param data String to append to the FIFO.
+			 * @return true if written, false if closed.
+			 * @details Thread-safe version that notifies waiting readers after write.
+			 * @see FIFO::Write()
+			 */
+			bool Write(const std::string& data) override;
 
-            /**
-             * @brief Thread-safe version of FIFO::Write().
-             * @param data Byte vector to append.
-             * @details Notifies waiting consumers after writing.
-             * @see FIFO::Write()
-             */
-            bool Write(const std::vector<std::byte>& data) override;
+			/**
+			 * @brief Thread-safe clear of all buffer contents.
+			 * @see FIFO::Clear()
+			 */
+			void Clear() noexcept override;
 
-            /**
-             * @brief Thread-safe version of FIFO::Write().
-             * @param data String to append.
-             * @details Notifies waiting consumers after writing.
-             * @see FIFO::Write()
-             */
-            bool Write(const std::string& data);
+			/**
+			 * @brief Thread-safe clean of buffer data from start to read position.
+			 * @see FIFO::Clean()
+			 */
+			void Clean() noexcept override;
 
-            /**
-             * @brief Thread-safe blocking version of FIFO::Read().
-             * @param count Number of bytes to read; 0 reads all available without blocking.
-             * @return A vector containing the requested bytes.
-             * @details **Blocks** until count bytes are available or buffer is closed.
-             *          If count=0, returns immediately with available data.
-             * @see FIFO::Read(), Consumer::Read()
-             */
-            ExpectedData<InsufficientData> Read(std::size_t count = 0) override;
-
-            /**
-             * @brief Thread-safe blocking version of FIFO::Extract().
-             * @param count Number of bytes to extract; 0 extracts all available without blocking.
-             * @return A vector containing the extracted bytes.
-             * @details **Blocks** until count bytes are available or buffer is closed.
-             *          If count=0, returns immediately with available data.
-             * @see FIFO::Extract(), Consumer::Extract()
-             */
-            ExpectedData<InsufficientData> Extract(std::size_t count = 0) override;
+			/**
+			 * @brief Thread-safe seek operation.
+			 * @details Notifies waiting readers after seeking.
+			 * @see FIFO::Seek()
+			 */
+			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
             /** @} */
-
-            /**
-             * @brief Thread-safe version of FIFO::Seek().
-             * @param position The offset value to apply.
-             * @param mode Position::Absolute or Position::Relative.
-             * @details Notifies waiting readers after seeking.
-             * @see FIFO::Seek()
-             */
-            void Seek(const std::size_t& position, const Position& mode) override;
-
-            /**
-             * @brief Close the FIFO and notify waiters.
-             * @details Sets the closed flag. Further writes are ignored. Wakes all
-             *          threads blocked in @ref Read() or @ref Extract().
-             */
-            void Close() noexcept;
 
         private:
             /**
@@ -165,11 +143,11 @@ namespace StormByte::Buffer {
              * @note Wakes and returns when @ref Close() is called, even if the
              *       requested @p n bytes are not available.
              */
-            void Wait(std::size_t n, std::unique_lock<std::mutex>& lock);
+            void Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const;
 
             /** @brief Internal mutex guarding all state mutations and reads. */
             mutable std::mutex m_mutex;
             /** @brief Condition variable used to block until data is available or closed. */
-            std::condition_variable m_cv;
+            mutable std::condition_variable_any m_cv;
     };
 }

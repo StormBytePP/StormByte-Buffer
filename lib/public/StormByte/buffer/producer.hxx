@@ -72,14 +72,6 @@ namespace StormByte::Buffer {
 			inline void Close() noexcept { m_buffer->Close(); }
 
 			/**
-			 * @brief Pre-allocate buffer capacity.
-			 * @param newCapacity Minimum capacity to ensure (in bytes).
-			 * @details Avoids reallocation during writes.
-			 * @see SharedFIFO::Reserve()
-			 */
-			inline void Reserve(std::size_t newCapacity) { m_buffer->Reserve(newCapacity); };
-
-			/**
 			 * @brief Write bytes to the buffer.
 			 * @param data Byte vector to append.
 			 * @details Appends data to buffer. Ignored if closed. Notifies waiting consumers.

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <StormByte/buffer/exception.hxx>
 #include <StormByte/expected.hxx>
 
