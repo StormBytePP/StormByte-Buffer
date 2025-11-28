@@ -8,7 +8,9 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for different buffers
+ * The Buffer namespace provides classes and utilities for byte buffers,
+ * including FIFO buffers, thread-safe shared buffers, producer-consumer
+ * interfaces, and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
     /**

@@ -4,7 +4,7 @@ StormByte is a comprehensive, cross-platform C++ library aimed at easing system 
 
 ## Features
 
-- **Buffer Operations**: Handles different typesd of buffers
+- **Buffer Operations**: FIFO buffers, thread-safe shared buffers, producer-consumer interfaces, and pipelines
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The Buffer module provides a comprehensive set of classes for efficient data buf
 
 #### FIFO
 
-A byte-oriented buffer with automatic growth on demand. Not thread-safe by itself.
+A byte-oriented buffer backed by `std::deque<std::byte>` with automatic growth on demand. Not thread-safe by itself.
 
 - **Purpose**: Basic buffer for sequential byte storage and retrieval
 - **Key Features**: 
@@ -74,7 +74,7 @@ using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 
 int main() {
-    FIFO fifo(16);                          // 16-byte initial capacity
+    FIFO fifo;                              // FIFO with dynamic growth
     fifo.Write("Hello World");
     
     // Non-destructive read
@@ -265,8 +265,8 @@ int main() {
     
     Consumer result = pipeline.Process(input.Consumer());
     
-    // Wait and read result
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait and read result without sleeps (poll closure)
+    while (!result.IsClosed()) { std::this_thread::yield(); }
     auto final_data = result.Extract(0);
     if (final_data) {
         std::string output(reinterpret_cast<const char*>(final_data->data()), final_data->size());
@@ -277,7 +277,7 @@ int main() {
 
 ### Error Handling
 
-The library uses `std::expected` for error handling in `Read()` and `Extract()` operations:
+The library uses `std::expected`-like (`StormByte::Expected`) for error handling in `Read()` and `Extract()` operations:
 
 ```cpp
 auto data = fifo.Read(100);  // Request more than available

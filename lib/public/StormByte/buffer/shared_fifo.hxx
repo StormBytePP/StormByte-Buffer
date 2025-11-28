@@ -9,8 +9,8 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for different buffer types
- * including FIFO ring buffers, thread-safe shared buffers, and producer-consumer patterns.
+ * The Buffer namespace provides classes and utilities for byte buffers,
+ * including FIFO buffers, thread-safe shared buffers, and producer-consumer patterns.
  */
 namespace StormByte::Buffer {
     /**
@@ -20,8 +20,8 @@ namespace StormByte::Buffer {
      * @par Overview
      *  SharedFIFO wraps the non-thread-safe @ref FIFO with a mutex and a
      *  condition variable to provide safe concurrent access from multiple
-     *  producer/consumer threads. It preserves the byte-oriented ring-buffer
-     *  semantics of @ref FIFO while adding blocking behavior for reads and
+    *  producer/consumer threads. It preserves the byte-oriented FIFO
+    *  semantics of @ref FIFO while adding blocking behavior for reads and
      *  extracts.
      *
      * @par Blocking semantics
@@ -53,8 +53,8 @@ namespace StormByte::Buffer {
         public:
             /**
              * @brief Construct a SharedFIFO with optional initial capacity.
-             * @param capacity Initial number of slots to allocate in the ring buffer.
-             *        Behaves like @ref FIFO: capacity may grow geometrically as needed.
+             * @param capacity Initial number of bytes to allocate in the buffer.
+             *        Behaves like @ref FIFO and may grow as needed.
              */
             SharedFIFO() noexcept = default;
 

@@ -11,27 +11,25 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for different buffer types
- * including FIFO ring buffers, thread-safe shared buffers, and producer-consumer patterns.
+ * The Buffer namespace provides classes and utilities for byte buffers,
+ * including FIFO buffers, thread-safe shared buffers, and producer-consumer patterns.
  */
 namespace StormByte::Buffer {
 	/**
 	 * @class FIFO
-	 * @brief Byte-oriented ring buffer with grow-on-demand.
+	* @brief Byte-oriented FIFO buffer with grow-on-demand.
 	 *
 	 * @par Overview
-	 *  A circular buffer implemented atop @c std::vector<std::byte> that tracks
-	 *  head/tail indices and current size. It grows geometrically to fit writes
-	 *  and supports efficient reads even across wrap boundaries.
+	*  A contiguous growable buffer implemented atop @c std::deque<std::byte> that tracks
+	*  a logical read position. It grows automatically to fit writes and supports
+	*  efficient non-destructive reads and destructive extracts.
 	 *
 	 * @par Thread safety
 	 *  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO.
 	 *
 	 * @par Buffer behavior
-	 *  The constructor-requested capacity is remembered and restored by @ref Clear().
-	 *  When empty, an rvalue write adopts storage wholesale to avoid copies.
-	 *  Reading the entire content when it is contiguous (head == 0) uses a
-	 *  zero-copy fast path via move semantics.
+	*  The buffer supports clearing and cleaning operations, a movable read position
+	*  for non-destructive reads, and a closed state to signal end-of-writes.
 	 *
 	 * @see SharedFIFO for thread-safe version
 	 * @see Producer and Consumer for higher-level producer-consumer pattern
