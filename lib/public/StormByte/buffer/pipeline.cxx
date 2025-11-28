@@ -13,19 +13,33 @@ void Pipeline::AddPipe(PipeFunction&& pipe) {
 	m_pipes.push_back(std::move(pipe));
 }
 
-Consumer Pipeline::Process(Consumer buffer) const noexcept {
+void Pipeline::SetError() noexcept {
+	for (auto& producer : m_producers) {
+		producer.SetError();
+	}
+}
+
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode) noexcept {
 	Consumer last_result = buffer;
 
 	for (const auto& pipe: m_pipes) {
 		Producer current_result;
 
-		// Launch a detached thread for each pipe function
-		std::thread([pipe, current_result, last_result]() {
+		if (mode == ExecutionMode::Sync) {
 			pipe(last_result, current_result);
-		}).detach();
+			// Update the buffer chain to the result's consumer
+			last_result = current_result.Consumer();
+		}
+		else {
+			// Launch a detached thread for each pipe function
+			std::thread([pipe, current_result, last_result]() {
+				pipe(last_result, current_result);
+			}).detach();
+		}
 
 		// Update the buffer chain to the result's consumer
 		last_result = current_result.Consumer();
+		m_producers.push_back(std::move(current_result));
 	}
 
 	return last_result;

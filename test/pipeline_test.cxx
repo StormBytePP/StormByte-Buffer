@@ -41,7 +41,7 @@ int test_pipeline_empty() {
     input.Close();
     
     // Empty pipeline should just pass through
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -72,7 +72,7 @@ int test_pipeline_single_stage() {
     input.Write("hello world");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -116,7 +116,7 @@ int test_pipeline_two_stages() {
     input.Write("hello world test");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -173,7 +173,7 @@ int test_pipeline_three_stages() {
     input.Write("test data");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -204,7 +204,7 @@ int test_pipeline_incremental_processing() {
     input.Write("abc");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -242,7 +242,7 @@ int test_pipeline_filter_stage() {
     input.Write("Hello123World456!");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -272,7 +272,7 @@ int test_pipeline_multiple_writes() {
     input.Write("AB");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -299,7 +299,7 @@ int test_pipeline_empty_input() {
     Producer input;
     input.Close(); // Close without writing
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -332,7 +332,7 @@ int test_pipeline_large_data() {
     input.Write(large_data);
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -364,7 +364,7 @@ int test_pipeline_reuse() {
         input1.Write("TEST1");
         input1.Close();
         
-        Consumer result1 = pipeline.Process(input1.Consumer());
+        Consumer result1 = pipeline.Process(input1.Consumer(), StormByte::Buffer::ExecutionMode::Async);
         wait_for_pipeline_completion(result1);
         
         auto data1 = result1.Read(0);
@@ -378,7 +378,7 @@ int test_pipeline_reuse() {
         input2.Write("TEST2");
         input2.Close();
         
-        Consumer result2 = pipeline.Process(input2.Consumer());
+        Consumer result2 = pipeline.Process(input2.Consumer(), StormByte::Buffer::ExecutionMode::Async);
         wait_for_pipeline_completion(result2);
         
         auto data2 = result2.Read(0);
@@ -411,7 +411,7 @@ int test_pipeline_copy_constructor() {
     input.Write("test");
     input.Close();
     
-    Consumer result = pipeline2.Process(input.Consumer());
+    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -444,7 +444,7 @@ int test_pipeline_move_constructor() {
     input.Write("TEST");
     input.Close();
     
-    Consumer result = pipeline2.Process(input.Consumer());
+    Consumer result = pipeline2.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -475,7 +475,7 @@ int test_pipeline_addpipe_move() {
     input.Write("MOVE");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -519,7 +519,7 @@ int test_pipeline_word_count() {
     input.Write("Hello world this is a test");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -553,7 +553,7 @@ int test_pipeline_reverse_string() {
     input.Write("ABCDEF");
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -591,7 +591,7 @@ int test_pipeline_streaming_data() {
         input.Close();
     });
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     writer.join();
     
@@ -680,7 +680,7 @@ int test_pipeline_byte_arithmetic() {
     input.Write(input_data);
     input.Close();
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     wait_for_pipeline_completion(result);
     
@@ -987,7 +987,7 @@ int test_pipeline_large_concurrent_stress() {
         input.Close();
     });
     
-    Consumer result = pipeline.Process(input.Consumer());
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
     
     writer.join();
     
@@ -1031,6 +1031,105 @@ int test_pipeline_large_concurrent_stress() {
     RETURN_TEST("test_pipeline_large_concurrent_stress", 0);
 }
 
+int test_pipeline_sync_execution() {
+    Pipeline pipeline;
+
+    std::string order;
+
+    // Stage 1: uppercase and record order
+    pipeline.AddPipe([&order](Consumer in, Producer out) {
+        order.push_back('1');
+        while (!in.EoF()) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::string str = StormByte::String::FromByteVector(*data);
+                for (auto& c : str) c = std::toupper(c);
+                out.Write(str);
+            }
+        }
+        out.Close();
+    });
+
+    // Stage 2: replace spaces and record order
+    pipeline.AddPipe([&order](Consumer in, Producer out) {
+        order.push_back('2');
+        while (!in.EoF()) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::string str = StormByte::String::FromByteVector(*data);
+                std::replace(str.begin(), str.end(), ' ', '-');
+                out.Write(str);
+            }
+        }
+        out.Close();
+    });
+
+    Producer input;
+    input.Write("sync mode test");
+    input.Close();
+
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Sync);
+
+    // In Sync mode, processing should have completed already
+    ASSERT_FALSE("sync result writable", result.IsWritable());
+
+    auto data = CONSUME(result, 0);
+    ASSERT_TRUE("sync has data", data.has_value());
+    ASSERT_EQUAL("sync transformation", StormByte::String::FromByteVector(*data), std::string("SYNC-MODE-TEST"));
+
+    // Ensure stages ran in order 1 then 2 (sequential)
+    ASSERT_EQUAL("sync stage order", order, std::string("12"));
+
+    RETURN_TEST("test_pipeline_sync_execution", 0);
+}
+
+int test_pipeline_interrupted_by_seterror() {
+    Pipeline pipeline;
+
+    // Construct a long pipeline with stages that check writability and bail fast on error
+    for (int i = 0; i < 8; ++i) {
+        pipeline.AddPipe([](Consumer in, Producer out) {
+            while (!in.EoF()) {
+                auto data = CONSUME(in, 0);
+                if (data && !data->empty()) {
+                    // Simulate some work but check for cancellation via IsWritable()
+                    for (int k = 0; k < 200; ++k) {
+                        if (!out.IsWritable()) {
+                            return; // interrupted
+                        }
+                        std::this_thread::yield();
+                    }
+                    // Attempt to write; if interrupted, Write may fail or be ignored
+                    if (!out.IsWritable()) return;
+                    out.Write(*data);
+                }
+            }
+            if (out.IsWritable()) out.Close();
+        });
+    }
+
+    // Prepare a reasonably large input
+    Producer input;
+    std::string payload(50000, 'X');
+    input.Write(payload);
+    input.Close();
+
+    Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async);
+
+    // Immediately signal error to interrupt the pipeline
+    pipeline.SetError();
+
+    // Wait for consumers to observe unwritable state
+    wait_for_pipeline_completion(result);
+
+    // With early interruption, final buffer should have no data and be at EOF
+    ASSERT_FALSE("interrupted not writable", result.IsWritable());
+    ASSERT_TRUE("interrupted eof", result.EoF());
+    ASSERT_EQUAL("interrupted size zero", result.AvailableBytes(), static_cast<std::size_t>(0));
+
+    RETURN_TEST("test_pipeline_interrupted_by_seterror", 0);
+}
+
 int main() {
     int result = 0;
     result += test_pipeline_empty();
@@ -1051,6 +1150,8 @@ int main() {
     result += test_pipeline_streaming_data();
     result += test_pipeline_byte_arithmetic();
     result += test_pipeline_large_concurrent_stress();
+    result += test_pipeline_sync_execution();
+    result += test_pipeline_interrupted_by_seterror();
 
     if (result == 0) {
         std::cout << "Pipeline tests passed!" << std::endl;

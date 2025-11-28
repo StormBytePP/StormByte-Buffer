@@ -45,4 +45,23 @@ namespace StormByte::Buffer {
 	 * @see Consumer, Producer, Pipeline
 	 */
 	using PipeFunction = std::function<void(Consumer, Producer)>;
+
+	/**
+	 * @brief Execution mode selector for pipeline processing.
+	 *
+	 * @details Defines how pipeline stages are scheduled when invoking
+	 *          Pipeline::Process(). Use to control concurrency behavior:
+	 *          - ExecutionMode::Sync  : All stages execute sequentially in the
+	 *                                   caller's thread (no detached threads).
+	 *          - ExecutionMode::Async : Each stage executes concurrently in its
+	 *                                   own detached thread (previous default behavior).
+	 *
+	 * @note Async maximizes throughput via parallel stage execution; Sync can
+	 *       simplify debugging and deterministic ordering.
+	 * @see Pipeline::Process()
+	 */
+	enum class STORMBYTE_BUFFER_PUBLIC ExecutionMode {
+		Sync,   ///< Sequential single-threaded execution of all stages.
+		Async   ///< Concurrent detached-thread execution per stage.
+	};
 }

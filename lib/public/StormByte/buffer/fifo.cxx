@@ -76,7 +76,7 @@ void FIFO::SetError() noexcept {
 }
 
 bool FIFO::EoF() const noexcept {
-	return m_error || ( m_closed && AvailableBytes() == 0 );
+	return !IsReadable() || ( !IsWritable() && AvailableBytes() == 0 );
 }
 
 bool FIFO::Write(const std::vector<std::byte>& data) {
