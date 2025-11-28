@@ -13,6 +13,9 @@ using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
 
+// Configure the size of large data test (in kilobytes)
+#define LARGE_TEST_SIZE_KB 1024
+
 // Toggle between Read (non-destructive) and Extract (destructive) for testing
 // Comment out to use Extract instead of Read
 #define USE_READ
@@ -695,6 +698,339 @@ int test_pipeline_byte_arithmetic() {
     RETURN_TEST("test_pipeline_byte_arithmetic", 0);
 }
 
+int test_pipeline_large_concurrent_stress() {
+    Pipeline pipeline;
+    
+    // Stage 1: XOR with 0x55
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0x55});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 2: Add 17 to each byte
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) + 17));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 3: NOT (bitwise complement)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(~byte);
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 4: XOR with 0xAA
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0xAA});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 5: Multiply by 3 (mod 256)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) * 3));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 6: Rotate left by 3 bits
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    uint8_t val = static_cast<uint8_t>(byte);
+                    result.push_back(static_cast<std::byte>((val << 3) | (val >> 5)));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 7: Subtract 42
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) - 42));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 8: XOR with 0x33
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0x33});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 9: UNDO - XOR with 0x33 (XOR is self-inverse)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0x33});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 10: UNDO - Add 42 (reverse of subtract 42)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) + 42));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 11: UNDO - Rotate right by 3 bits (reverse of rotate left)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    uint8_t val = static_cast<uint8_t>(byte);
+                    result.push_back(static_cast<std::byte>((val >> 3) | (val << 5)));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 12: UNDO - Multiply by 171 (modular inverse of 3 mod 256)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) * 171));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 13: UNDO - XOR with 0xAA (XOR is self-inverse)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0xAA});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 14: UNDO - NOT (bitwise complement is self-inverse)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(~byte);
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 15: UNDO - Subtract 17 (reverse of add 17)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(static_cast<std::byte>(static_cast<uint8_t>(byte) - 17));
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Stage 16: UNDO - XOR with 0x55 (XOR is self-inverse)
+    pipeline.AddPipe([](Consumer in, Producer out) {
+        while (!in.IsClosed() || in.AvailableBytes() > 0) {
+            auto data = CONSUME(in, 0);
+            if (data && !data->empty()) {
+                std::vector<std::byte> result;
+                result.reserve(data->size());
+                for (const auto& byte : *data) {
+                    result.push_back(byte ^ std::byte{0x55});
+                }
+                out.Write(result);
+            }
+        }
+        out.Close();
+    });
+    
+    // Create large test data
+    const std::size_t data_size = LARGE_TEST_SIZE_KB * 1024;
+    std::vector<std::byte> input_data;
+    input_data.reserve(data_size);
+    
+    // Fill with pseudo-random pattern for better testing
+    for (std::size_t i = 0; i < data_size; ++i) {
+        input_data.push_back(static_cast<std::byte>((i * 31 + 17) % 256));
+    }
+    
+    Producer input;
+    
+    // Writer thread: writes data in chunks (faster than pipeline processing)
+    std::thread writer([&input, &input_data]() {
+        const std::size_t chunk_size = 4096; // 4KB chunks
+        std::size_t offset = 0;
+        
+        while (offset < input_data.size()) {
+            std::size_t to_write = std::min(chunk_size, input_data.size() - offset);
+            std::vector<std::byte> chunk(input_data.begin() + offset, input_data.begin() + offset + to_write);
+            input.Write(chunk);
+            offset += to_write;
+            // Writer is faster - no delay needed, just yield
+            std::this_thread::yield();
+        }
+        input.Close();
+    });
+    
+    Consumer result = pipeline.Process(input.Consumer());
+    
+    writer.join();
+    
+    // Wait for pipeline completion without sleeps
+    wait_for_pipeline_completion(result);
+    
+    // Read result in chunks (slower reader)
+    std::vector<std::byte> output_data;
+    output_data.reserve(data_size);
+    
+    while (result.AvailableBytes() > 0) {
+        auto chunk = CONSUME(result, 2048); // 2KB chunks (smaller than writer)
+        if (chunk && !chunk->empty()) {
+            output_data.insert(output_data.end(), chunk->begin(), chunk->end());
+        }
+        std::this_thread::yield();
+    }
+    
+    // Verify size
+    ASSERT_EQUAL("large stress test size", output_data.size(), data_size);
+    
+    // Verify data integrity - after 16 stages (8 transforms + 8 inverse), should match original
+    bool data_matches = true;
+    std::size_t first_mismatch = 0;
+    for (std::size_t i = 0; i < data_size; ++i) {
+        if (input_data[i] != output_data[i]) {
+            data_matches = false;
+            first_mismatch = i;
+            break;
+        }
+    }
+    
+    if (!data_matches) {
+        std::cout << "Data mismatch at byte " << first_mismatch 
+                  << ": expected " << static_cast<int>(input_data[first_mismatch])
+                  << ", got " << static_cast<int>(output_data[first_mismatch]) << std::endl;
+    }
+    
+    ASSERT_TRUE("large stress test data integrity", data_matches);
+    
+    RETURN_TEST("test_pipeline_large_concurrent_stress", 0);
+}
+
 int main() {
     int result = 0;
     result += test_pipeline_empty();
@@ -714,6 +1050,7 @@ int main() {
     result += test_pipeline_reverse_string();
     result += test_pipeline_streaming_data();
     result += test_pipeline_byte_arithmetic();
+    result += test_pipeline_large_concurrent_stress();
 
     if (result == 0) {
         std::cout << "Pipeline tests passed!" << std::endl;
