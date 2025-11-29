@@ -45,10 +45,8 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, std::shar
 
 	// Use pre-created producers corresponding to each pipe
 	if (m_pipes.empty()) {
-		// If there are not any stages, we do a passthrough but we close the write end
-		Producer passthrough_producer(buffer);
-		passthrough_producer.Close();
-		return passthrough_producer.Consumer(); // no stages, passthrough
+		// If there are not any stages, we do a passthrough
+		return buffer;
 	}
 
 	// Reset producers to ensure a fresh run when reusing the pipeline
