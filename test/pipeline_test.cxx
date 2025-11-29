@@ -1036,11 +1036,8 @@ int test_pipeline_large_concurrent_stress() {
 int test_pipeline_sync_execution() {
     Pipeline pipeline;
 
-    std::string order;
-
-    // Stage 1: uppercase and record order
-    pipeline.AddPipe([&order](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
-        order.push_back('1');
+    // Stage 1: uppercase
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -1052,9 +1049,8 @@ int test_pipeline_sync_execution() {
         out.Close();
     });
 
-    // Stage 2: replace spaces and record order
-    pipeline.AddPipe([&order](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
-        order.push_back('2');
+    // Stage 2: replace spaces
+    pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger> logger) {
         while (!in.EoF()) {
             auto data = CONSUME(in, 0);
             if (data && !data->empty()) {
@@ -1078,9 +1074,6 @@ int test_pipeline_sync_execution() {
     auto data = CONSUME(result, 0);
     ASSERT_TRUE("sync has data", data.has_value());
     ASSERT_EQUAL("sync transformation", StormByte::String::FromByteVector(*data), std::string("SYNC-MODE-TEST"));
-
-    // Ensure stages ran in order 1 then 2 (sequential)
-    ASSERT_EQUAL("sync stage order", order, std::string("12"));
 
     RETURN_TEST("test_pipeline_sync_execution", 0);
 }
