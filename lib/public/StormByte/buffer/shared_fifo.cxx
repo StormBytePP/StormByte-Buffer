@@ -22,7 +22,10 @@ void SharedFIFO::SetError() noexcept {
 void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 	if (n == 0) return;
 	m_cv.wait(lock, [&] {
+		// Wake when closed or error state set so waiters don't remain blocked
+		// indefinitely when the FIFO is no longer usable.
 		if (m_closed) return true;
+		if (m_error) return true;
 		const std::size_t sz = m_buffer.size();
 		const std::size_t rp = m_position_offset;
 		return sz >= rp + n; // at least n bytes available from current read position

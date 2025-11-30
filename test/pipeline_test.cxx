@@ -10,6 +10,17 @@
 #include <cctype>
 #include <algorithm>
 
+// Platform-specific yield: on Windows, use a short sleep to avoid scheduler
+// granularity issues. Some CI or test environments define `WINDOWS`; prefer
+// the common `_WIN32` macro but also accept `WINDOWS` if present.
+inline void thread_yield_or_sleep() {
+#if defined(_WIN32) || defined(WINDOWS)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#else
+    std::this_thread::yield();
+#endif
+}
+
 using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
@@ -36,7 +47,7 @@ StormByte::Logger::Log logging = StormByte::Logger::Log(logging_stream, StormByt
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
     while (consumer.IsWritable()) {
-        std::this_thread::yield();
+        thread_yield_or_sleep();
     }
 }
 
@@ -989,7 +1000,7 @@ int test_pipeline_large_concurrent_stress() {
             input.Write(chunk);
             offset += to_write;
             // Writer is faster - no delay needed, just yield
-            std::this_thread::yield();
+            thread_yield_or_sleep();
         }
         input.Close();
     });
@@ -998,7 +1009,7 @@ int test_pipeline_large_concurrent_stress() {
     
     writer.join();
     
-    // Wait for pipeline completion without sleeps
+        // Wait for pipeline completion without sleeps
     wait_for_pipeline_completion(result);
     
     // Read result in chunks (slower reader)
@@ -1010,7 +1021,7 @@ int test_pipeline_large_concurrent_stress() {
         if (chunk && !chunk->empty()) {
             output_data.insert(output_data.end(), chunk->begin(), chunk->end());
         }
-        std::this_thread::yield();
+        thread_yield_or_sleep();
     }
     
     // Verify size
@@ -1097,7 +1108,7 @@ int test_pipeline_interrupted_by_seterror() {
                         if (!out.IsWritable()) {
                             return; // interrupted
                         }
-                        std::this_thread::yield();
+                        thread_yield_or_sleep();
                     }
                     // Attempt to write; if interrupted, Write may fail or be ignored
                     if (!out.IsWritable()) return;
