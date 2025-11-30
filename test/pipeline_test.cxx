@@ -27,7 +27,11 @@ using StormByte::Buffer::Consumer;
     #define CONSUME(consumer, count) (consumer).Extract(count)
 #endif
 
-StormByte::Logger::Log logging = StormByte::Logger::Log(std::cout, StormByte::Logger::Level::LowLevel);
+// Use an in-memory stream for tests to avoid slow console I/O and heavy
+// header formatting during hot loops. Tests are verbose during development
+// so pick a reasonable emission level.
+static std::ostringstream logging_stream;
+StormByte::Logger::Log logging = StormByte::Logger::Log(logging_stream, StormByte::Logger::Level::Info);
 
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
