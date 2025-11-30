@@ -1,6 +1,7 @@
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/logger/log.hxx>
 #include <StormByte/string.hxx>
+#include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
@@ -9,17 +10,6 @@
 #include <chrono>
 #include <cctype>
 #include <algorithm>
-
-// Platform-specific yield: on Windows, use a short sleep to avoid scheduler
-// granularity issues. Some CI or test environments define `WINDOWS`; prefer
-// the common `_WIN32` macro but also accept `WINDOWS` if present.
-inline void thread_yield_or_sleep() {
-#if defined(_WIN32) || defined(WINDOWS)
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-#else
-    std::this_thread::yield();
-#endif
-}
 
 using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
@@ -47,7 +37,7 @@ StormByte::Logger::Log logging = StormByte::Logger::Log(logging_stream, StormByt
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
     while (consumer.IsWritable()) {
-        thread_yield_or_sleep();
+        StormByte::System::Yield();
     }
 }
 
@@ -1000,7 +990,7 @@ int test_pipeline_large_concurrent_stress() {
             input.Write(chunk);
             offset += to_write;
             // Writer is faster - no delay needed, just yield
-            thread_yield_or_sleep();
+            StormByte::System::Yield();
         }
         input.Close();
     });
@@ -1021,7 +1011,7 @@ int test_pipeline_large_concurrent_stress() {
         if (chunk && !chunk->empty()) {
             output_data.insert(output_data.end(), chunk->begin(), chunk->end());
         }
-        thread_yield_or_sleep();
+        StormByte::System::Yield();
     }
     
     // Verify size
@@ -1108,7 +1098,7 @@ int test_pipeline_interrupted_by_seterror() {
                         if (!out.IsWritable()) {
                             return; // interrupted
                         }
-                        thread_yield_or_sleep();
+                        StormByte::System::Yield();
                     }
                     // Attempt to write; if interrupted, Write may fail or be ignored
                     if (!out.IsWritable()) return;
