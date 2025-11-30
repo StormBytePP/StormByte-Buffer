@@ -39,7 +39,7 @@ void Pipeline::SetError() noexcept {
 	}
 }
 
-Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, std::shared_ptr<Logger> logger) noexcept {
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log& log) noexcept {
 	// This guards double calls and do not harm in the first call
 	WaitForCompletion();
 
@@ -69,22 +69,22 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, std::shar
 
 		// First N-1 stages: create a background thread and store it.
 		if (i < m_pipes.size() - 1) {
-			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, logger]() mutable {
-				pipe(in, out, logger);
+			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, &log]() mutable {
+				pipe(in, out, log);
 			});
 			continue;
 		}
 
 		// Last stage: detached/threaded only for Async; for Sync run inline.
 		if (mode == ExecutionMode::Async) {
-			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, logger]() mutable {
-				pipe(in, out, logger);
+			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, &log]() mutable {
+				pipe(in, out, log);
 			});
 		} else {
 			// Run last stage inline for Sync semantics. After returning from
 			// this call we join all worker threads to ensure deterministic
 			// completion.
-			m_pipes[i](stage_in, stage_out, logger);
+			m_pipes[i](stage_in, stage_out, log);
 			for (auto &t : m_threads) {
 				if (t.joinable()) t.join();
 			}

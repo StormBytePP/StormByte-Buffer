@@ -1,12 +1,11 @@
 #pragma once
 
 #include <StormByte/buffer/exception.hxx>
+#include <StormByte/logger/log.hxx>
 #include <StormByte/expected.hxx>
-#include <StormByte/logger.hxx>
 
 #include <cstddef>
 #include <functional>
-#include <memory>
 #include <vector>
 
 /**
@@ -46,7 +45,7 @@ namespace StormByte::Buffer {
 	 * 
 	 * @see Consumer, Producer, Pipeline
 	 */
-	using PipeFunction = std::function<void(Consumer, Producer, std::shared_ptr<Logger>)>;
+	using PipeFunction = std::function<void(Consumer, Producer, Logger::Log&)>;
 
 	/**
 	 * @brief Execution mode selector for pipeline processing.

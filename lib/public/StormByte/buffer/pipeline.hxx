@@ -190,6 +190,7 @@ namespace StormByte::Buffer {
              * @param buffer Consumer providing input data to the first pipeline stage.
              * @param mode Execution mode: ExecutionMode::Async (concurrent detached threads) or
              *             ExecutionMode::Sync (sequential execution in caller thread).
+			 * @param log Logger instance for logging within pipeline stages.
              * @return Consumer for reading the final output from the last pipeline stage.
              * 
              * @details Async: Launches all pipeline stages concurrently in detached threads. Sync:
@@ -222,7 +223,7 @@ namespace StormByte::Buffer {
              *
              * @see AddPipe(), Consumer, Producer, ExecutionMode
              */
-            Consumer												Process(Consumer buffer, const ExecutionMode& mode, std::shared_ptr<Logger> logger) noexcept;
+            Consumer												Process(Consumer buffer, const ExecutionMode& mode, Logger::Log& log) noexcept;
 
         private:
             std::vector<PipeFunction> m_pipes;						///< Vector of pipe functions
