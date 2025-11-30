@@ -1,7 +1,6 @@
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/logger/log.hxx>
 #include <StormByte/string.hxx>
-#include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
@@ -37,7 +36,7 @@ StormByte::Logger::Log logging = StormByte::Logger::Log(logging_stream, StormByt
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
     while (consumer.IsWritable()) {
-        StormByte::System::Yield();
+        std::this_thread::yield();
     }
 }
 
@@ -989,8 +988,8 @@ int test_pipeline_large_concurrent_stress() {
             std::vector<std::byte> chunk(input_data.begin() + offset, input_data.begin() + offset + to_write);
             input.Write(chunk);
             offset += to_write;
-            // Writer is faster - no delay needed, just yield
-            StormByte::System::Yield();
+            // Writer is faster - no delay needed, just yield();
+            std::this_thread::yield();
         }
         input.Close();
     });
@@ -1011,7 +1010,7 @@ int test_pipeline_large_concurrent_stress() {
         if (chunk && !chunk->empty()) {
             output_data.insert(output_data.end(), chunk->begin(), chunk->end());
         }
-        StormByte::System::Yield();
+        std::this_thread::yield();
     }
     
     // Verify size
@@ -1098,7 +1097,7 @@ int test_pipeline_interrupted_by_seterror() {
                         if (!out.IsWritable()) {
                             return; // interrupted
                         }
-                        StormByte::System::Yield();
+                        std::this_thread::yield();
                     }
                     // Attempt to write; if interrupted, Write may fail or be ignored
                     if (!out.IsWritable()) return;
