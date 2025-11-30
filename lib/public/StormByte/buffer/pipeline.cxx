@@ -39,7 +39,7 @@ void Pipeline::SetError() noexcept {
 	}
 }
 
-Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log& log) noexcept {
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) noexcept {
 	// This guards double calls and do not harm in the first call
 	WaitForCompletion();
 
