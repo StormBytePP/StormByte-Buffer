@@ -6,7 +6,7 @@ file(GLOB_RECURSE STORMBYTE_BUFFER_SOURCES CONFIGURE_DEPEND "${CMAKE_CURRENT_LIS
 # Library
 add_library(StormByte-Buffer SHARED ${STORMBYTE_BUFFER_SOURCES})
 add_library(StormByte::Buffer ALIAS StormByte-Buffer)
-target_link_libraries(StormByte-Buffer PUBLIC StormByte StormByte-Logger)
+target_link_libraries(StormByte-Buffer PUBLIC StormByte::Logger)
 set_target_properties(StormByte-Buffer PROPERTIES
 	LINKER_LANGUAGE CXX
 	SOVERSION		${CMAKE_PROJECT_VERSION}
