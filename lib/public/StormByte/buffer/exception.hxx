@@ -32,4 +32,15 @@ namespace StormByte::Buffer {
         public:
             using Exception::Exception;
     };
+
+	/**
+	 * @class ReaderExhausted
+	 * @brief Exception class for reader exhaustion errors.
+	 * The `ReaderExhausted` exception is thrown when a read operation is attempted
+	 * on a function that will not return more data, indicating that the reader has been exhausted.
+	 */
+	class STORMBYTE_BUFFER_PUBLIC ReaderExhausted: public Exception {
+		public:
+			using Exception::Exception;
+	};
 }

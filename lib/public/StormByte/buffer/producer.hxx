@@ -24,7 +24,7 @@ namespace StormByte::Buffer {
      *  All write operations are thread-safe as they delegate to the underlying
      *  SharedFIFO which is fully thread-safe.
      */
-    class STORMBYTE_BUFFER_PUBLIC Producer final {
+    class STORMBYTE_BUFFER_PUBLIC Producer {
         public:
             /**
              * @brief Construct a Producer with a new SharedFIFO buffer.
@@ -68,7 +68,7 @@ namespace StormByte::Buffer {
             /**
              * @brief Destructor.
              */
-            ~Producer() = default;
+            virtual ~Producer() = default;
 
 			/**
 			 * @brief Close the buffer for further writes.

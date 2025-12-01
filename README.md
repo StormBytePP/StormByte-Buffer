@@ -200,6 +200,71 @@ int main() {
 }
 ```
 
+#### ExternalProducer
+
+`ExternalProducer` is a convenience wrapper that enables feeding data into a `Producer` from
+an external callback. It runs a background thread which repeatedly calls an `ExternalReader`
+callback and writes the returned bytes into the underlying buffer. The callback type is:
+
+```cpp
+using ExternalReader = std::function<ExpectedData<ReaderExhausted>(void)>;
+```
+
+Semantics:
+- The callback should return a `std::vector<std::byte>` on success. Returning an empty
+    vector is a valid value and signals end-of-data (EOF) to the `ExternalProducer` — the
+    producer will call `Close()` and stop reading.
+- To signal a read error, return an unexpected value: `StormByte::Unexpected(ReaderExhausted(...))`.
+    The `ExternalProducer` will set the buffer error state (`SetError()`) and stop processing.
+
+Use cases include bridging to legacy APIs, file/network readers, or systems that supply
+data via callback semantics.
+
+Example (simple reader that returns a sequence of chunks, then EOF):
+
+```cpp
+#include <StormByte/buffer/external_producer.hxx>
+#include <StormByte/string.hxx>
+
+using StormByte::Buffer::ExternalProducer;
+using StormByte::Buffer::ExpectedData;
+using StormByte::Buffer::ReaderExhausted;
+
+int main() {
+        std::vector<std::string> chunks = {"Hello", "-", "External", "-", "Producer"};
+
+        // ExternalReader: return next chunk as bytes; return empty vector to indicate EOF
+        auto reader = [chunks = std::move(chunks), idx = std::size_t{0}]() mutable -> ExpectedData<ReaderExhausted> {
+                if (idx < chunks.size()) {
+                        return StormByte::String::ToByteVector(chunks[idx++]);
+                }
+                // EOF: return empty vector
+                return std::vector<std::byte>();
+        };
+
+        ExternalProducer ext(reader);
+        auto consumer = ext.Consumer();
+
+        // Consume until EOF
+        std::string collected;
+        while (!consumer.EoF() || consumer.AvailableBytes() > 0) {
+                auto data = consumer.Extract(0);
+                if (data && !data->empty()) {
+                        collected += StormByte::String::FromByteVector(*data);
+                }
+        }
+
+        // collected == "Hello-External-Producer"
+}
+```
+
+Notes:
+- The `ExternalProducer` spawns a thread on construction and joins it on destruction.
+- If the reader returns an error (`StormByte::Unexpected(ReaderExhausted(...))`), the
+    `ExternalProducer` will call `SetError()` on the buffer so consumers observing the
+    buffer will wake and receive an error from blocking reads.
+
+
 #### Pipeline
 
 Multi-stage data processing pipeline with concurrent execution of stages.
