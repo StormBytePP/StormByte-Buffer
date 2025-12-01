@@ -538,6 +538,71 @@ int main() {
     result += test_shared_fifo_extract_closed_no_data_nonblocking();
 	result += test_sharedfifo_equality();
     result += test_shared_fifo_write_whole_fifo();
+    // HexDump tests (status + FIFO dump)
+    {
+        // Test 1: 5-line hexdump like FIFO test
+        SharedFIFO sf;
+        std::string s = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd";
+        sf.Write(s);
+        std::string dump = sf.HexDump(8, 0);
+
+        std::string expected;
+        expected += "Status: opened, ready\n";
+        expected += "Read Position: 0\n";
+        expected += "00000000: 30 31 32 33 34 35 36 37   01234567\n";
+        expected += "00000008: 38 39 41 42 43 44 45 46   89ABCDEF\n";
+        expected += "00000010: 47 48 49 4A 4B 4C 4D 4E   GHIJKLMN\n";
+        expected += "00000018: 4F 50 51 52 53 54 55 56   OPQRSTUV\n";
+        expected += "00000020: 57 58 59 5A 61 62 63 64   WXYZabcd";
+
+        ASSERT_EQUAL("test_shared_hexdump exact match", expected, dump);
+    }
+
+    {
+        // Test 2: hexdump starting at offset 5
+        SharedFIFO sf;
+        std::string s = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd";
+        sf.Write(s);
+        sf.Seek(5, Position::Absolute);
+        std::string dump = sf.HexDump(8, 0);
+
+        std::string expected;
+        expected += "Status: opened, ready\n";
+        expected += "Read Position: 5\n";
+        expected += "00000005: 35 36 37 38 39 41 42 43   56789ABC\n";
+        expected += "0000000D: 44 45 46 47 48 49 4A 4B   DEFGHIJK\n";
+        expected += "00000015: 4C 4D 4E 4F 50 51 52 53   LMNOPQRS\n";
+        expected += "0000001D: 54 55 56 57 58 59 5A 61   TUVWXYZa\n";
+        expected += "00000025: 62 63 64                  bcd";
+
+        ASSERT_EQUAL("test_shared_hexdump_offset exact match", expected, dump);
+    }
+
+    {
+        // Test 3: mixed printable and non-printable
+        SharedFIFO sf;
+        std::vector<std::byte> v;
+        v.push_back(std::byte{0x41}); // 'A'
+        v.push_back(std::byte{0x00}); // NUL
+        v.push_back(std::byte{0x1F}); // non-print
+        v.push_back(std::byte{0x20}); // space
+        v.push_back(std::byte{0x41}); // 'A'
+        v.push_back(std::byte{0x7E}); // '~'
+        v.push_back(std::byte{0x7F}); // DEL
+        v.push_back(std::byte{0x80}); // non-print
+        v.push_back(std::byte{0xFF}); // non-print
+        v.push_back(std::byte{0x30}); // '0'
+        sf.Write(std::move(v));
+        std::string dump = sf.HexDump(8, 0);
+
+        std::string expected;
+        expected += "Status: opened, ready\n";
+        expected += "Read Position: 0\n";
+        expected += "00000000: 41 00 1F 20 41 7E 7F 80   A.. A~..\n";
+        expected += std::string("00000008: FF 30") + std::string(21, ' ') + ".0";
+
+        ASSERT_EQUAL("test_shared_hexdump_mixed exact match", expected, dump);
+    }
 
     if (result == 0) {
         std::cout << "SharedFIFO tests passed!" << std::endl;

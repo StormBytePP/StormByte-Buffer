@@ -58,12 +58,40 @@ namespace StormByte::Buffer {
              */
             SharedFIFO() noexcept;
 
+            /**
+             * @brief Copy and move constructors are deleted.
+             * @details `SharedFIFO` contains synchronization primitives and
+             *          shared internal state (mutex, condition variable, etc.).
+             *          Copying or moving instances would require careful transfer
+             *          or duplication of these primitives which is unsafe and
+             *          error-prone. To avoid accidental misuse and subtle
+             *          concurrency bugs these constructors are explicitly
+             *          deleted. If duplication of the stored bytes is required,
+             *          copy the data via the base `FIFO` and construct a new
+             *          `SharedFIFO`.
+             */
             SharedFIFO(const SharedFIFO&) = delete;
-            SharedFIFO& operator=(const SharedFIFO&) = delete;
+            
             SharedFIFO(SharedFIFO&&) = delete;
-            SharedFIFO& operator=(SharedFIFO&&) = delete;
+            
+            /**
+             * @brief Virtual destructor.
+             */
+            virtual ~SharedFIFO() = default;
 
             /**
+             * @brief Copy and move assignment operators are deleted.
+             * @details Assigning one `SharedFIFO` to another would imply transferring
+             *          or duplicating ownership of internal synchronization primitives
+             *          (mutex/condition variable) and internal buffer state. This
+             *          is unsafe and therefore these operators are explicitly
+             *          deleted. Use explicit data-copy via `FIFO` if needed.
+             */
+            SharedFIFO& operator=(const SharedFIFO&) = delete;
+
+            SharedFIFO& operator=(SharedFIFO&&) = delete;
+
+			/**
              * @brief Equality comparison (thread-safe).
              *
              * Compares this `SharedFIFO` with `other` while holding both internal
@@ -81,10 +109,6 @@ namespace StormByte::Buffer {
                 return !(*this == other);
             }
 
-            /**
-             * @brief Virtual destructor.
-             */
-            virtual ~SharedFIFO() = default;
 
             /**
              * @name Thread-safe overrides
@@ -216,6 +240,25 @@ namespace StormByte::Buffer {
 			 * @see Close(), SetError(), IsReadable()
 			 */
 			inline bool IsWritable() const noexcept { return !m_closed && !m_error; }
+
+            /**
+             * @brief Produce a thread-safe hexdump of the buffer.
+             * @param collumns Number of columns per line (0 -> default 16).
+             * @param byte_limit Maximum number of bytes to include (0 -> no limit).
+             * @return A formatted dump string. Does not append a trailing newline.
+             * @details Acquires the internal mutex for reading so the dump represents
+             *          a consistent snapshot. The returned string begins with a
+             *          status line of the form `Status: opened|closed, ready|error`\n
+            *          followed by the same output produced by `FIFO::HexDump()`.
+            *
+            * @code{.text}
+            * // Example output:
+            * // Status: opened, ready
+            * // Read Position: 0
+            * // 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
+            * @endcode
+            */
+            std::string HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept;
 
         private:
             bool m_closed;    	///< Whether the SharedFIFO is closed for further writes.

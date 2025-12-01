@@ -1,6 +1,10 @@
 #include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/string.hxx>
 
+#include <sstream>
+#include <iomanip>
+#include <cctype>
+
 using namespace StormByte::Buffer;
 
 SharedFIFO::SharedFIFO() noexcept: FIFO(), m_closed(false), m_error(false) {}
@@ -148,4 +152,48 @@ void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const 
 bool SharedFIFO::EoF() const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return m_error || (m_closed && AvailableBytes() == 0);
+}
+
+std::string SharedFIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
+	bool fifo_closed, fifo_status;
+	std::vector<std::byte> snapshot;
+	std::size_t start_offset = 0;
+	{
+		// Acquire read lock to produce a consistent snapshot
+		std::unique_lock<std::mutex> lock(m_mutex);
+		fifo_closed = m_closed;
+		fifo_status = m_error;
+
+		// Determine available bytes from current read position and apply byte_limit
+		const std::size_t available = AvailableBytes();
+		const std::size_t to_copy = (byte_limit > 0) ? std::min(available, byte_limit) : available;
+
+		if (to_copy > 0) {
+			start_offset = m_position_offset;
+			auto start_it = m_buffer.begin() + start_offset;
+			auto end_it = start_it + to_copy;
+			snapshot.assign(start_it, end_it);
+		}
+	}
+	// Build status line
+	std::string status = "Status: ";
+	status += (fifo_closed ? "closed" : "opened");
+	status += ", ";
+	status += (fifo_status ? "error" : "ready");
+
+	// If nothing to dump, return just the status
+	if (snapshot.empty()) return status;
+
+	// Format the hex dump from the snapshot using the shared FIFO helper.
+	const std::size_t cols = (collumns == 0) ? 16 : collumns;
+	const std::string lines = FIFO::FormatHexLines(snapshot, start_offset, cols);
+
+	if (lines.empty()) return status; // defensive: shouldn't happen since we checked snapshot
+
+	std::ostringstream oss;
+	oss << status << '\n';
+	oss << "Read Position: " << start_offset << '\n';
+	oss << lines;
+
+	return oss.str();
 }

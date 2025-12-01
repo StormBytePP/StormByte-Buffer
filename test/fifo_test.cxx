@@ -606,6 +606,77 @@ int test_fifo_move_steal_preserves_read_position() {
     RETURN_TEST("test_fifo_move_steal_preserves_read_position", 0);
 }
 
+int test_fifo_hexdump() {
+    FIFO fifo;
+    // 40 bytes total -> with 8 columns this produces 5 lines
+    std::string s = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd";
+    fifo.Write(s);
+
+    // Request a hexdump starting at read position 0 with 8 columns
+    std::string dump = fifo.HexDump(8, 0);
+
+    // Exact expected output constructed to match FIFO::HexDump formatting
+    std::string expected;
+    expected += "Read Position: 0\n";
+    expected += "00000000: 30 31 32 33 34 35 36 37   01234567\n";
+    expected += "00000008: 38 39 41 42 43 44 45 46   89ABCDEF\n";
+    expected += "00000010: 47 48 49 4A 4B 4C 4D 4E   GHIJKLMN\n";
+    expected += "00000018: 4F 50 51 52 53 54 55 56   OPQRSTUV\n";
+    expected += "00000020: 57 58 59 5A 61 62 63 64   WXYZabcd";
+
+    ASSERT_EQUAL("test_fifo_hexdump exact match", expected, dump);
+    RETURN_TEST("test_fifo_hexdump", 0);
+}
+
+int test_fifo_hexdump_offset() {
+    FIFO fifo;
+    std::string s = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd";
+    fifo.Write(s);
+
+    // Move read position to 5 and produce a hexdump (8 columns)
+    fifo.Seek(5, Position::Absolute);
+    std::string dump = fifo.HexDump(8, 0);
+
+    std::string expected;
+    expected += "Read Position: 5\n";
+    expected += "00000005: 35 36 37 38 39 41 42 43   56789ABC\n";
+    expected += "0000000D: 44 45 46 47 48 49 4A 4B   DEFGHIJK\n";
+    expected += "00000015: 4C 4D 4E 4F 50 51 52 53   LMNOPQRS\n";
+    expected += "0000001D: 54 55 56 57 58 59 5A 61   TUVWXYZa\n";
+    expected += "00000025: 62 63 64                  bcd";
+
+    ASSERT_EQUAL("test_fifo_hexdump_offset exact match", expected, dump);
+    RETURN_TEST("test_fifo_hexdump_offset", 0);
+}
+
+int test_fifo_hexdump_mixed() {
+    FIFO fifo;
+    // Mix printable and non-printable bytes
+    std::vector<std::byte> v;
+    v.push_back(std::byte{0x41}); // 'A'
+    v.push_back(std::byte{0x00}); // NUL
+    v.push_back(std::byte{0x1F}); // unit separator (non-print)
+    v.push_back(std::byte{0x20}); // space
+    v.push_back(std::byte{0x41}); // 'A'
+    v.push_back(std::byte{0x7E}); // '~'
+    v.push_back(std::byte{0x7F}); // DEL (non-print)
+    v.push_back(std::byte{0x80}); // non-print
+    v.push_back(std::byte{0xFF}); // non-print
+    v.push_back(std::byte{0x30}); // '0'
+    fifo.Write(std::move(v));
+
+    std::string dump = fifo.HexDump(8, 0);
+
+    std::string expected;
+    expected += "Read Position: 0\n";
+    expected += "00000000: 41 00 1F 20 41 7E 7F 80   A.. A~..\n";
+    // Second line: two bytes (FF 30) then padding (6 missing cols -> 18 spaces) and two separation spaces before ASCII
+    expected += std::string("00000008: FF 30") + std::string(21, ' ') + ".0";
+
+    ASSERT_EQUAL("test_fifo_hexdump_mixed exact match", expected, dump);
+    RETURN_TEST("test_fifo_hexdump_mixed", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -639,6 +710,9 @@ int main() {
 	result += test_fifo_equality();
     result += test_fifo_write_whole_fifo();
     result += test_fifo_move_steal_preserves_read_position();
+    result += test_fifo_hexdump();
+    result += test_fifo_hexdump_offset();
+    result += test_fifo_hexdump_mixed();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

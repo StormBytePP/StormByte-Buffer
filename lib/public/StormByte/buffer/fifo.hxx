@@ -239,6 +239,39 @@ namespace StormByte::Buffer {
 			 */
 			virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept;
 
+			/**
+			 * @brief Produce a hexdump of the unread contents starting at the current read position.
+			 * @param collumns Number of bytes per line (0 -> default 16).
+			 * @param byte_limit Maximum number of bytes to include (0 -> no limit).
+			 * @return A formatted string that begins with `Read Position: <offset>` followed by
+			 *         the hex/ASCII lines. The returned string does not include a trailing
+			 *         newline.
+			 * @details The hexdump is produced from a snapshot of the unread bytes and does not
+			 *          modify the FIFO's read position. Offsets printed on each line are
+			 *          absolute offsets (from the start of the underlying buffer). Formatting
+			 *          of the hex/ASCII lines is performed by `FormatHexLines()` to ensure
+			 *          consistent output between `FIFO` and `SharedFIFO`.
+			 *
+			 * @code{.text}
+			 * // Example output:
+			 * // Read Position: 0
+			 * // 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
+			 * @endcode
+			 */
+			virtual std::string HexDump(const std::size_t& collumns = 16, const std::size_t& byte_limit = 0) const noexcept;
+
+			/**
+			 * @brief Format a hex dump from an arbitrary byte sequence.
+			 * @param data Byte vector to format.
+			 * @param start_offset Absolute offset to use for the left-hand offsets.
+			 * @param collumns Number of columns per line (defaults to 16 when 0).
+			 * @return Formatted hex lines joined by '\n' (no trailing newline).
+			 * @note This is a public helper so other components can reuse the same
+			 *       formatting logic. It returns only the hex/ASCII block and does
+			 *       not include any header lines such as "Read Position".
+			 */
+			static std::string FormatHexLines(const std::vector<std::byte>& data, std::size_t start_offset, std::size_t collumns = 16) noexcept;
+
 		protected:
 			/**
 			 * @brief Internal deque storing the buffer data.
@@ -252,6 +285,8 @@ namespace StormByte::Buffer {
 			 * This position is automatically adjusted when data is extracted via @ref Extract().
 			 */
 			mutable std::size_t m_position_offset;
+
+			
 
 		private:
 			void Copy(const FIFO& other) noexcept;

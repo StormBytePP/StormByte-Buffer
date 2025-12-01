@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <iterator>
+#include <sstream>
+#include <iomanip>
+#include <cctype>
 
 using namespace StormByte::Buffer;
 
@@ -199,6 +202,73 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	} else {
 		m_position_offset = static_cast<std::size_t>(new_offset);
 	}
+}
+
+std::string FIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
+	// Build a snapshot of the unread bytes (respecting byte_limit) and delegate
+	// the per-line formatting to the shared helper so formatting logic is
+	// centralized and consistent with SharedFIFO.
+	const std::size_t cols = (collumns == 0) ? 16 : collumns;
+	const std::size_t start = m_position_offset;
+	const std::size_t end = (byte_limit > 0) ? std::min(m_buffer.size(), start + byte_limit) : m_buffer.size();
+
+	std::vector<std::byte> snapshot;
+	if (end > start) {
+		snapshot.assign(m_buffer.begin() + start, m_buffer.begin() + end);
+	}
+
+	std::ostringstream oss;
+	oss << "Read Position: " << m_position_offset;
+
+	if (!snapshot.empty()) {
+		oss << '\n';
+		const std::string lines = FIFO::FormatHexLines(snapshot, start, cols);
+		oss << lines;
+	}
+
+	return oss.str();
+}
+
+std::string FIFO::FormatHexLines(const std::vector<std::byte>& data, std::size_t start_offset, std::size_t collumns) noexcept {
+	const std::size_t cols = (collumns == 0) ? 16 : collumns;
+	const int offset_width = 8;
+
+	std::vector<std::string> lines;
+	for (std::size_t i = 0; i < data.size(); i += cols) {
+		const std::size_t line_end = std::min(data.size(), i + cols);
+		std::ostringstream line;
+
+		line << std::hex << std::uppercase << std::setw(offset_width) << std::setfill('0') << (start_offset + i) << ": " << std::dec << std::setfill(' ');
+
+		// hex bytes
+		for (std::size_t j = i; j < i + cols; ++j) {
+			if (j < line_end) {
+				const unsigned int val = static_cast<unsigned int>(std::to_integer<unsigned char>(data[j]));
+				line << std::hex << std::setw(2) << std::setfill('0') << std::uppercase << val << ' ' << std::dec;
+			} else {
+				line << "   ";
+			}
+		}
+
+		line << "  ";
+
+		// ASCII
+		for (std::size_t j = i; j < line_end; ++j) {
+			const unsigned char c = std::to_integer<unsigned char>(data[j]);
+			if (std::isprint(c)) line << static_cast<char>(c);
+			else line << '.';
+		}
+
+		lines.push_back(line.str());
+	}
+
+	std::ostringstream oss;
+	for (size_t li = 0; li < lines.size(); ++li) {
+		oss << lines[li];
+		if (li + 1 < lines.size()) oss << '\n';
+	}
+
+	return oss.str();
 }
 
 void FIFO::Copy(const FIFO& other) noexcept {
