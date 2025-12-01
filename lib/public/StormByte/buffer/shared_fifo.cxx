@@ -44,56 +44,42 @@ void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 
 ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
-	if (count != 0) {
-		Wait(count, lock);
-		if (m_error) {
-			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
-		}
-		if (m_closed) {
-			const std::size_t available = m_buffer.size() - m_position_offset;
-			// When closed, requesting more than available is an error.
-			if (available < count) {
-				return StormByte::Unexpected(InsufficientData("Insufficient data to read (closed)"));
-			}
-		}
-	} else {
-		// count == 0: non-blocking read of all available — still fail if in error state
-		if (m_error) {
-			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
-		}
-		// If closed and no bytes available, return an empty vector (value)
-		if (m_closed) {
-			const std::size_t available = m_buffer.size() - m_position_offset;
-			if (available == 0) return std::vector<std::byte>{};
-		}
+	const std::size_t available = AvailableBytes();
+
+	if (m_error)
+		return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+
+	if (m_closed && available == 0) {
+		// If closed and no data available, return EOF indication (empty read)
+		return StormByte::Unexpected(InsufficientData("End of file reached"));
 	}
 
-	return FIFO::Read(count);
+	std::size_t real_count = count == 0 ? available : count;
+
+	if (!m_closed && real_count > available) {
+		// When not closed, requesting more than available must wait.
+		// Wait() will block until enough data is written or buffer is closed/error.
+		Wait(real_count, lock);
+	}
+	
+	// If closed it acts like FIFO: requesting more than available is an error.
+	return FIFO::Read(real_count);
 }
 
 ExpectedData<InsufficientData> SharedFIFO::Extract(std::size_t count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
-	if (count != 0) {
-		if (m_error) {
-			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
-		}
-		Wait(count, lock);
-		if (m_closed) {
-			const std::size_t available = m_buffer.size() - m_position_offset;
-			if (available < count) {
-				return StormByte::Unexpected(InsufficientData("Insufficient data to extract (closed)"));
-			}
-		}
-	} else {
-		if (m_error) {
-			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
-		}
-		if (m_closed && m_buffer.empty()) {
-			return std::vector<std::byte>{};
-		}
-	}
+	if (m_error)
+		return StormByte::Unexpected(InsufficientData("Buffer in error state"));
 
-	return FIFO::Extract(count);
+	std::size_t real_count = count == 0 ? AvailableBytes() : count;
+
+	if (!m_closed && count > AvailableBytes()) {
+		// When not closed, requesting more than available must wait.
+		// Wait() will block until enough data is written or buffer is closed/error.
+		Wait(real_count, lock);
+	}
+	// If closed it acts like FIFO: requesting more than available is an error.
+	return FIFO::Extract(real_count);
 }
 
 bool SharedFIFO::Write(const std::vector<std::byte>& data) {

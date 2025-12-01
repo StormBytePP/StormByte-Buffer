@@ -311,8 +311,16 @@ int test_pipeline_empty_input() {
     wait_for_pipeline_completion(result);
     
     auto data = CONSUME(result, 0);
-    ASSERT_TRUE("empty input has result", data.has_value());
-    ASSERT_EQUAL("empty input size", data->size(), static_cast<std::size_t>(0));
+    // New FIFO semantics: requesting 0 when no data may return an error
+    // (InsufficientData) instead of an empty value. Accept either:
+    // - a successful empty result, or
+    // - an error indicating EOF/no-data. In the latter case ensure EoF()
+    // reports no more data.
+    if (!data) {
+        ASSERT_TRUE("empty pipeline reached EOF", result.EoF());
+    } else {
+        ASSERT_EQUAL("empty input size", data->size(), static_cast<std::size_t>(0));
+    }
     
     RETURN_TEST("test_pipeline_empty_input", 0);
 }

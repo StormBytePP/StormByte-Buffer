@@ -586,6 +586,26 @@ int test_fifo_write_whole_fifo() {
     RETURN_TEST("test_fifo_write_whole_fifo", 0);
 }
 
+int test_fifo_move_steal_preserves_read_position() {
+    FIFO src;
+    src.Write(std::string("ABCDE"));
+    // Non-destructive read advances read position to 2 (reads "AB")
+    auto r = src.Read(2);
+    ASSERT_TRUE("advance read returned", r.has_value());
+
+    // Destination empty: move-append should steal internal storage and preserve read position
+    FIFO dst;
+    bool ok = dst.Write(std::move(src));
+    ASSERT_TRUE("move write returned true", ok);
+
+    // Now reading all available from destination should return "CDE"
+    auto out = dst.Read(0);
+    ASSERT_TRUE("dst read returned", out.has_value());
+    ASSERT_EQUAL("dst remaining after move preserves position", StormByte::String::FromByteVector(*out), std::string("CDE"));
+
+    RETURN_TEST("test_fifo_move_steal_preserves_read_position", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -618,6 +638,7 @@ int main() {
     result += test_fifo_available_bytes_after_ops();
 	result += test_fifo_equality();
     result += test_fifo_write_whole_fifo();
+    result += test_fifo_move_steal_preserves_read_position();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

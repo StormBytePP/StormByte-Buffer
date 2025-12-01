@@ -101,6 +101,8 @@ bool FIFO::Write(FIFO&& other) noexcept {
 	}
 
 	if (m_buffer.empty()) {
+		// Preserve the source read position when stealing its storage.
+		m_position_offset = other.m_position_offset;
 		m_buffer = std::move(other.m_buffer);
 		other.m_position_offset = 0;
 		return true;
@@ -120,61 +122,44 @@ bool FIFO::Write(const std::string& data) {
 ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 	const std::size_t available = AvailableBytes();
 
-	// Semantics for FIFO core:
-	// - count == 0: read all available; if none available => error
-	// - count > 0: if none available => error; if count > available => error
-	std::size_t read_size = 0;
-	if (count == 0) {
-		if (available == 0) {
-			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
-		}
-		read_size = available;
-	} else {
-		if (available == 0) {
-			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
-		}
-		if (count > available) {
-			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
-		}
-		read_size = count;
+	if (available == 0) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+	}
+
+	std::size_t real_count = count == 0 ? available : count;
+	if (real_count > available) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
 	}
 
 	// Read from current position using iterator constructor for efficiency
 	auto start_it = m_buffer.begin() + m_position_offset;
-	auto end_it = start_it + read_size;
+	auto end_it = start_it + real_count;
 	std::vector<std::byte> result(start_it, end_it);
 	
 	// Advance read position
-	m_position_offset += read_size;
+	m_position_offset += real_count;
 	
 	return result;
 }
 
 ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
-	const std::size_t buffer_size = m_buffer.size();
+	const std::size_t available = AvailableBytes();
 
-	std::size_t extract_size = 0;
-	if (count > AvailableBytes()) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
+	if (available == 0) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
 	}
-	if (count == 0) {
-		if (buffer_size == 0) {
-			return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
-		}
-		extract_size = buffer_size;
-	} else {
-		if (buffer_size == 0) {
-			return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
-		}
-		extract_size = count;
+
+	std::size_t real_count = count == 0 ? available : count;
+	if (real_count > available) {
+		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
 	}
 
 	// Fast-path: extracting the whole deque and we're already at position 0.
 	// Copy into result and clear the deque — this avoids the deque front-range
 	// erase which can be more expensive than a full clear of its segments.
-	if (m_position_offset == 0 && extract_size == m_buffer.size()) {
+	if (m_position_offset == 0 && real_count == m_buffer.size()) {
 		std::vector<std::byte> result;
-		result.reserve(extract_size);
+		result.reserve(real_count);
 		result.insert(result.end(), m_buffer.begin(), m_buffer.end()); // unavoidable copy
 		m_buffer.clear();
 		m_position_offset = 0;
@@ -182,13 +167,13 @@ ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
 	}
 
 	// Extract from beginning using iterator constructor for efficiency
-	std::vector<std::byte> result(m_buffer.begin(), m_buffer.begin() + extract_size);
+	std::vector<std::byte> result(m_buffer.begin(), m_buffer.begin() + real_count);
 
 	// Delete extracted bytes from the front of the deque
-	m_buffer.erase(m_buffer.begin(), m_buffer.begin() + extract_size);
+	m_buffer.erase(m_buffer.begin(), m_buffer.begin() + real_count);
 
 	// Adjust the read position: if it was ahead of what we extracted, move it back
-	m_position_offset = (m_position_offset > extract_size) ? (m_position_offset - extract_size) : 0;
+	m_position_offset = (m_position_offset > real_count) ? (m_position_offset - real_count) : 0;
 
 	return result;
 }
