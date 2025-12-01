@@ -11,6 +11,7 @@
 
 using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::Position;
+using StormByte::Buffer::FIFO;
 
 static std::string toString(const std::vector<std::byte>& v) {
     return StormByte::String::FromByteVector(v);
@@ -489,6 +490,34 @@ int test_sharedfifo_equality() {
     RETURN_TEST("test_sharedfifo_equality", 0);
 }
 
+int test_shared_fifo_write_whole_fifo() {
+    SharedFIFO shared;
+    FIFO src;
+    src.Write(std::string("ONE"));
+    // Move read position to ensure const-write still appends the whole buffer
+    [[maybe_unused]] auto r = src.Read(1);
+
+    // Write the whole FIFO into shared
+    bool ok = shared.Write(src);
+    ASSERT_TRUE("shared fifo write whole returned true", ok);
+
+    // Extract and validate
+    auto all = shared.Extract();
+    ASSERT_TRUE("shared extract returned", all.has_value());
+    ASSERT_EQUAL("shared fifo write whole content", toString(*all), std::string("ONE"));
+
+    // rvalue move-append: source should be empty afterward
+    FIFO src2;
+    src2.Write(std::string("TWO"));
+    ok = shared.Write(std::move(src2));
+    ASSERT_TRUE("shared fifo write whole rvalue returned true", ok);
+    auto all2 = shared.Extract();
+    ASSERT_TRUE("shared extract2 returned", all2.has_value());
+    ASSERT_EQUAL("shared fifo write whole rvalue content", toString(*all2), std::string("TWO"));
+
+    RETURN_TEST("test_shared_fifo_write_whole_fifo", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -508,6 +537,7 @@ int main() {
     result += test_shared_fifo_read_closed_no_data_nonblocking();
     result += test_shared_fifo_extract_closed_no_data_nonblocking();
 	result += test_sharedfifo_equality();
+    result += test_shared_fifo_write_whole_fifo();
 
     if (result == 0) {
         std::cout << "SharedFIFO tests passed!" << std::endl;

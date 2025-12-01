@@ -2,6 +2,7 @@
 #include <StormByte/string.hxx>
 
 #include <algorithm>
+#include <iterator>
 
 using namespace StormByte::Buffer;
 
@@ -75,6 +76,40 @@ bool FIFO::EoF() const noexcept {
 
 bool FIFO::Write(const std::vector<std::byte>& data) {
 	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+	return true;
+}
+
+bool FIFO::Write(const FIFO& other) {
+	// Append the entire contents of the other FIFO (including bytes
+	// before/at its read position). This preserves the full buffer
+	// contents rather than only the unread portion.
+	if (other.m_buffer.empty()) {
+		return true; // nothing to append
+	}
+
+	m_buffer.insert(m_buffer.end(), other.m_buffer.begin(), other.m_buffer.end());
+	return true;
+}
+
+bool FIFO::Write(FIFO&& other) noexcept {
+	// Append the entire contents of the rvalue FIFO. If the destination is
+	// empty we can steal the deque via move (O(1)). Otherwise move-insert
+	// the elements and leave `other` empty.
+	if (other.m_buffer.empty()) {
+		other.m_position_offset = 0;
+		return true;
+	}
+
+	if (m_buffer.empty()) {
+		m_buffer = std::move(other.m_buffer);
+		other.m_position_offset = 0;
+		return true;
+	}
+
+	// General case: move-append the whole deque
+	m_buffer.insert(m_buffer.end(), std::make_move_iterator(other.m_buffer.begin()), std::make_move_iterator(other.m_buffer.end()));
+	other.m_buffer.clear();
+	other.m_position_offset = 0;
 	return true;
 }
 

@@ -552,6 +552,40 @@ int test_fifo_equality() {
     RETURN_TEST("test_fifo_equality", 0);
 }
 
+int test_fifo_write_whole_fifo() {
+    FIFO src;
+    src.Write(std::string("HELLO"));
+    // Advance read position to ensure const-write appends full buffer (including read bytes)
+    [[maybe_unused]] auto r = src.Read(2);
+
+    FIFO dst;
+    dst.Write(std::string("START"));
+    const std::size_t before = dst.Size();
+
+    // Append entire source FIFO (const reference)
+    dst.Write(src);
+
+    ASSERT_EQUAL("fifo write whole size", dst.Size(), before + src.Size());
+
+    // Extract full destination content and validate
+    auto all = dst.Extract();
+    ASSERT_TRUE("extract all returned", all.has_value());
+    std::string content = StormByte::String::FromByteVector(*all);
+    ASSERT_EQUAL("fifo write whole content", content, std::string("STARTHELLO"));
+
+    // rvalue write: move-append into dst and ensure source becomes empty
+    FIFO src2;
+    src2.Write(std::string("WORLD"));
+    dst.Write(std::move(src2));
+    // After move-append, dst should end with WORLD
+    auto tail = dst.Extract();
+    ASSERT_TRUE("extract tail returned", tail.has_value());
+    std::string tail_s = StormByte::String::FromByteVector(*tail);
+    ASSERT_EQUAL("fifo write whole rvalue content", tail_s, std::string("WORLD"));
+
+    RETURN_TEST("test_fifo_write_whole_fifo", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -583,6 +617,7 @@ int main() {
     result += test_fifo_available_bytes();
     result += test_fifo_available_bytes_after_ops();
 	result += test_fifo_equality();
+    result += test_fifo_write_whole_fifo();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

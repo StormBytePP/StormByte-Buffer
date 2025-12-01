@@ -132,6 +132,31 @@ namespace StormByte::Buffer {
 			virtual bool Write(const std::vector<std::byte>& data);
 
 			/**
+			 * @brief Append the full contents of another FIFO to this buffer.
+			 * @param other FIFO whose entire stored byte sequence will be appended.
+			 * @return true on success.
+			 * @details This overload appends all bytes from `other.m_buffer` (from
+			 * its beginning to end). The const-reference overload does not modify
+			 * the `other` FIFO; it simply copies or inserts the bytes into this
+			 * FIFO. Use the rvalue overload to transfer ownership when possible.
+			 */
+
+			virtual bool Write(const FIFO& other);
+
+			/**
+			 * @brief Append the full contents of an rvalue FIFO into this buffer.
+			 * @param other FIFO to move from; its contents will be transferred.
+			 * @return true on success.
+			 * @details This rvalue overload will attempt to perform an efficient
+			 * move of `other`'s internal storage. If this FIFO is empty it may
+			 * steal `other`'s underlying deque (O(1)). Otherwise it will move-insert
+			 * the elements from `other` and leave `other` in a valid empty state.
+			 * Marked `noexcept` to allow strong exception-safety guarantees for
+			 * callers relying on non-throwing move operations.
+			 */
+			virtual bool Write(FIFO&& other) noexcept;
+
+			/**
 			 * @brief Write a string to the buffer.
 			 * @param data String whose bytes will be written into the FIFO.
 			 * @details Convenience method that converts the string to bytes and appends

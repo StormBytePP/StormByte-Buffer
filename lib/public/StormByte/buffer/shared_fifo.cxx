@@ -113,6 +113,34 @@ bool SharedFIFO::Write(const std::string& data) {
 	return Write(StormByte::String::ToByteVector(data));
 }
 
+bool SharedFIFO::Write(const FIFO& other) {
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		// Reject writes when closed or in error state.
+		if (m_closed || m_error) return false;
+		// Delegate to base FIFO implementation to append the full contents.
+		FIFO::Write(other);
+	}
+	// Notify waiters after performing the write.
+	m_cv.notify_all();
+	return true;
+}
+
+bool SharedFIFO::Write(FIFO&& other) noexcept {
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		// Reject writes when closed or in error state.
+		if (m_closed || m_error) return false;
+		// Delegate to base FIFO rvalue overload; it will perform efficient
+		// move/steal semantics when possible and leave `other` in a valid
+		// empty state.
+		FIFO::Write(std::move(other));
+	}
+	// Notify waiters after performing the write.
+	m_cv.notify_all();
+	return true;
+}
+
 void SharedFIFO::Clear() noexcept {
 	std::scoped_lock<std::mutex> lock(m_mutex);
 	FIFO::Clear();

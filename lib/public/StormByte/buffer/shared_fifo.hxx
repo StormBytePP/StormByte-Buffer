@@ -141,6 +141,27 @@ namespace StormByte::Buffer {
 			 */
             bool Write(const std::vector<std::byte>& data);
 
+            /**
+             * @brief Thread-safe append of another FIFO's full contents.
+             * @param other FIFO whose contents will be appended (const reference).
+             * @return true if the write succeeded, false if the SharedFIFO is closed or in error.
+             * @details Acquires the internal mutex, checks `m_closed` and `m_error`,
+             * then delegates to the base `FIFO::Write(const FIFO&)` to append the
+             * entire contents of `other`. Notifies waiting readers after the write.
+             */
+            bool Write(const FIFO& other) override;
+
+            /**
+             * @brief Thread-safe append by moving another FIFO's full contents.
+             * @param other FIFO rvalue whose contents will be moved into this SharedFIFO.
+             * @return true if the write succeeded, false if the SharedFIFO is closed or in error.
+             * @details Acquires the internal mutex, checks `m_closed` and `m_error`,
+             * then delegates to the base `FIFO::Write(FIFO&&)` to perform an
+             * efficient move/steal of `other`'s contents. Notifies waiting readers
+             * after the write. Marked `noexcept` to reflect the base rvalue overload.
+             */
+            bool Write(FIFO&& other) noexcept override;
+
 			/**
 			 * @brief Thread-safe write to the buffer.
 			 * @param data String to append to the FIFO.
