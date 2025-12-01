@@ -128,39 +128,58 @@ ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 
 ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
 	// Extract always reads from the beginning (head), not from current read position
-	const std::size_t buffer_size = m_buffer.size();
 
 	if (!IsReadable()) {
 		return StormByte::Unexpected(InsufficientData("FIFO is not readable"));
 	}
-	
+
+	// If requesting all data and there is a non-zero read position, compact
+	// unread bytes to the front first so we can apply the fast-path.
+	if (count == 0 && m_position_offset > 0) {
+		Clean(); // moves unread bytes to front and sets m_position_offset = 0
+	}
+
+	const std::size_t buffer_size = m_buffer.size();
+
 	// count=0 means "extract all available"
 	const std::size_t extract_size = (count == 0) ? buffer_size : std::min(count, buffer_size);
-	
+
 	// If requesting specific count (count > 0) but no data available, return error
 	if (count > 0 && buffer_size == 0) {
 		return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
 	}
-	
+
 	// If FIFO is closed and requesting more than available, return error
 	if (m_closed && count > buffer_size) {
 		return StormByte::Unexpected(InsufficientData("Insufficient data in closed FIFO"));
 	}
-	
+
 	// Empty extract is success
 	if (extract_size == 0) {
 		return std::vector<std::byte>();
 	}
 
+	// Fast-path: extracting the whole deque and we're already at position 0.
+	// Copy into result and clear the deque — this avoids the deque front-range
+	// erase which can be more expensive than a full clear of its segments.
+	if (m_position_offset == 0 && extract_size == m_buffer.size()) {
+		std::vector<std::byte> result;
+		result.reserve(extract_size);
+		result.insert(result.end(), m_buffer.begin(), m_buffer.end()); // unavoidable copy
+		m_buffer.clear();
+		m_position_offset = 0;
+		return result;
+	}
+
 	// Extract from beginning using iterator constructor for efficiency
 	std::vector<std::byte> result(m_buffer.begin(), m_buffer.begin() + extract_size);
-	
+
 	// Delete extracted bytes from the front of the deque
 	m_buffer.erase(m_buffer.begin(), m_buffer.begin() + extract_size);
-	
+
 	// Adjust the read position: if it was ahead of what we extracted, move it back
 	m_position_offset = (m_position_offset > extract_size) ? (m_position_offset - extract_size) : 0;
-	
+
 	return result;
 }
 
