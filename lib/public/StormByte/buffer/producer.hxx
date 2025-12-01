@@ -104,6 +104,14 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Write(), Close()
 			 */
 			inline bool Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
+
+			/**
+			 * @brief Write another FIFO's contents to the buffer.
+			 * @param other FIFO whose contents to append.
+			 * @details Appends all data from `other` to the buffer. Ignored if closed.
+			 * @see SharedFIFO::Write(), Close()
+			 */
+			inline bool Write(const FIFO& other) { return m_buffer->Write(other); }
 			
 			/**
 			 * @brief Write a string to the buffer.
