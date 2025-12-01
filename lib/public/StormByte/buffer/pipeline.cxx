@@ -33,13 +33,13 @@ void Pipeline::AddPipe(PipeFunction&& pipe) {
 	m_threads.reserve(m_pipes.size() + 1);
 }
 
-void Pipeline::SetError() noexcept {
+void Pipeline::SetError() const noexcept {
 	for (auto& producer : m_producers) {
 		producer.SetError();
 	}
 }
 
-Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) noexcept {
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) const noexcept {
 	// This guards double calls and do not harm in the first call
 	WaitForCompletion();
 
@@ -95,7 +95,7 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::L
 	return m_producers.back().Consumer();
 }
 
-void Pipeline::WaitForCompletion() {
+void Pipeline::WaitForCompletion() const noexcept {
 	for (std::size_t i = 0; i < m_threads.size(); ++i) {
 		if (m_threads[i].joinable()) {
 			m_threads[i].join();

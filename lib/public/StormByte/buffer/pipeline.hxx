@@ -183,7 +183,7 @@ namespace StormByte::Buffer {
             void 													AddPipe(PipeFunction&& pipe);
 
 			// Sets error on all internal pipes which which make them to stop being writable and thus exit prematurely
-			void 													SetError() noexcept;
+			void 													SetError() const noexcept;
 
             /**
              * @brief Execute the pipeline on input data.
@@ -223,17 +223,17 @@ namespace StormByte::Buffer {
              *
              * @see AddPipe(), Consumer, Producer, ExecutionMode
              */
-            Consumer												Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) noexcept;
+            Consumer												Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) const noexcept;
 
         private:
             std::vector<PipeFunction> m_pipes;						///< Vector of pipe functions
-			std::vector<Producer> m_producers;						///< Vector of intermediate consumers
-			std::vector<std::thread> m_threads;						///< Vector of threads for execution
+			mutable std::vector<Producer> m_producers;				///< Vector of intermediate consumers
+			mutable std::vector<std::thread> m_threads;				///< Vector of threads for execution
 
 			/**
 			 * @brief Wait for all pipeline threads to complete.
 			 * @details Joins the last thread (if async mode) to ensure pipeline completion and clear threads for next run
 			 */
-			void 													WaitForCompletion();
+			void 													WaitForCompletion() const noexcept;
     };
 }
