@@ -677,6 +677,36 @@ int test_fifo_hexdump_mixed() {
     RETURN_TEST("test_fifo_hexdump_mixed", 0);
 }
 
+int test_fifo_skip_basic() {
+    FIFO fifo;
+    fifo.Write(std::string("ABCDEFG"));
+    fifo.Skip(3);
+    ASSERT_EQUAL("skip basic size", fifo.Size(), static_cast<std::size_t>(4));
+    auto out = fifo.Extract();
+    ASSERT_TRUE("extract after skip returned", out.has_value());
+    ASSERT_EQUAL("extract after skip content", StormByte::String::FromByteVector(*out), std::string("DEFG"));
+    RETURN_TEST("test_fifo_skip_basic", 0);
+}
+
+int test_fifo_skip_with_readpos() {
+    FIFO fifo;
+    fifo.Write(std::string("0123456789"));
+
+    // Move read position forward
+    auto r = fifo.Read(3);
+    ASSERT_TRUE("read before skip", r.has_value());
+
+    // Skip 4 bytes from head
+    fifo.Skip(4);
+
+    // After skipping, remaining should be from original index 7..9 => "789"
+    ASSERT_EQUAL("size after skip with readpos", fifo.Size(), static_cast<std::size_t>(3));
+    auto out = fifo.Extract();
+    ASSERT_TRUE("extract after skip with readpos returned", out.has_value());
+    ASSERT_EQUAL("content after skip with readpos", StormByte::String::FromByteVector(*out), std::string("789"));
+    RETURN_TEST("test_fifo_skip_with_readpos", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -713,6 +743,8 @@ int main() {
     result += test_fifo_hexdump();
     result += test_fifo_hexdump_offset();
     result += test_fifo_hexdump_mixed();
+    result += test_fifo_skip_basic();
+    result += test_fifo_skip_with_readpos();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

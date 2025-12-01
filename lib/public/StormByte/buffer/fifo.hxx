@@ -239,6 +239,10 @@ namespace StormByte::Buffer {
 			 */
 			virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept;
 
+			// Removes count bytes from the read position
+			// A value of 0 is a noop, clamped to AvailableBytes()
+			virtual void Skip(const std::size_t& count) noexcept;
+
 			/**
 			 * @brief Produce a hexdump of the unread contents starting at the current read position.
 			 * @param collumns Number of bytes per line (0 -> default 16).

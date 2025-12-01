@@ -132,19 +132,47 @@ bool SharedFIFO::Write(FIFO&& other) noexcept {
 }
 
 void SharedFIFO::Clear() noexcept {
-	std::scoped_lock<std::mutex> lock(m_mutex);
-	FIFO::Clear();
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		FIFO::Clear();
+	}
+	m_cv.notify_all();
 }
 
 void SharedFIFO::Clean() noexcept {
-	std::scoped_lock<std::mutex> lock(m_mutex);
-	FIFO::Clean();
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		FIFO::Clean();
+	}
+	m_cv.notify_all();
 }
 
 void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		FIFO::Seek(offset, mode);
+	}
+	m_cv.notify_all();
+}
+
+void SharedFIFO::Skip(const std::size_t& count) noexcept {
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+
+		// Replicate FIFO::Skip logic but call the non-virtual FIFO::Clean()
+		// to avoid invoking the overridden SharedFIFO::Clean() while holding
+		// the mutex (which would deadlock trying to re-lock the same mutex).
+		if (count == 0) {
+			// noop
+		} else {
+			if (m_position_offset + count >= m_buffer.size())
+				m_position_offset = m_buffer.size();
+			else
+				m_position_offset += count;
+
+			// call base class Clean directly (non-virtual) while still holding lock
+			FIFO::Clean();
+		}
 	}
 	m_cv.notify_all();
 }

@@ -213,6 +213,8 @@ namespace StormByte::Buffer {
 			 * @see FIFO::Seek()
 			 */
             void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept;
+
+			void Skip(const std::size_t& count) noexcept override;
             /** @} */
 
             /**

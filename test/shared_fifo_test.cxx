@@ -518,6 +518,35 @@ int test_shared_fifo_write_whole_fifo() {
     RETURN_TEST("test_shared_fifo_write_whole_fifo", 0);
 }
 
+int test_shared_fifo_skip_basic() {
+    SharedFIFO sf;
+    sf.Write(std::string("ABCDEFG"));
+    sf.Skip(3);
+    ASSERT_EQUAL("shared skip basic size", sf.Size(), static_cast<std::size_t>(4));
+    auto out = sf.Extract();
+    ASSERT_TRUE("shared extract after skip returned", out.has_value());
+    ASSERT_EQUAL("shared extract after skip content", toString(*out), std::string("DEFG"));
+    RETURN_TEST("test_shared_fifo_skip_basic", 0);
+}
+
+int test_shared_fifo_skip_with_readpos() {
+    SharedFIFO sf;
+    sf.Write(std::string("0123456789"));
+
+    // Non-destructive read to move read position
+    auto r = sf.Read(3);
+    ASSERT_TRUE("shared read before skip", r.has_value());
+
+    // Skip removes four bytes from head (adjusting for read position)
+    sf.Skip(4);
+
+    ASSERT_EQUAL("shared size after skip with readpos", sf.Size(), static_cast<std::size_t>(3));
+    auto out = sf.Extract();
+    ASSERT_TRUE("shared extract after skip with readpos returned", out.has_value());
+    ASSERT_EQUAL("shared content after skip with readpos", toString(*out), std::string("789"));
+    RETURN_TEST("test_shared_fifo_skip_with_readpos", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -538,6 +567,8 @@ int main() {
     result += test_shared_fifo_extract_closed_no_data_nonblocking();
 	result += test_sharedfifo_equality();
     result += test_shared_fifo_write_whole_fifo();
+    result += test_shared_fifo_skip_basic();
+    result += test_shared_fifo_skip_with_readpos();
     // HexDump tests (status + FIFO dump)
     {
         // Test 1: 5-line hexdump like FIFO test

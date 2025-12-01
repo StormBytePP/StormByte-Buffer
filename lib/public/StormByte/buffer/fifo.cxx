@@ -204,6 +204,20 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
+void FIFO::Skip(const std::size_t& count) noexcept {
+	// Advance read position by count, clamped to buffer size
+	if (count == 0) {
+		return; // noop
+	}
+
+	if (m_position_offset + count >= m_buffer.size())
+		m_position_offset = m_buffer.size();
+	else
+		m_position_offset += count;
+
+	Clean();
+}
+
 std::string FIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
 	// Build a snapshot of the unread bytes (respecting byte_limit) and delegate
 	// the per-line formatting to the shared helper so formatting logic is
