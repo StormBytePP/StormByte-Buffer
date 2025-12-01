@@ -17,112 +17,59 @@
 namespace StormByte::Buffer {
     /**
      * @class Pipeline
-     * @brief Multi-stage data processing pipeline with concurrent execution.
+     * @brief Multi-stage data-processing pipeline with optional concurrent execution.
      *
      * @par Overview
-     *  Pipeline orchestrates a sequence of transformation functions (PipeFunction) that process
-     *  data through multiple stages. Each stage runs concurrently in its own detached thread,
-     *  enabling parallel processing of data as it flows through the pipeline.
+     * Pipeline manages a sequence of transformation functions (PipeFunction) that move
+     * data through multiple stages. Each stage may run concurrently (Async mode) or
+     * sequentially (Sync mode). Intermediate buffers between stages are thread-safe
+     * SharedFIFO instances and are managed automatically by the pipeline.
      *
-     * @par Pipeline Functions
-     *  Each pipeline function (PipeFunction) has the signature:
-     *  @code
-     *  void function(Consumer input, Producer output)
-     *  @endcode
-     *  - @b input: Consumer to read data from the previous stage (or initial input)
-     *  - @b output: Producer to write processed data for the next stage
+     * @par Pipe function signature
+     * A pipeline stage must be a callable with the signature:
+     * @code{.cpp}
+     * void stage_fn(Consumer input, Producer output);
+     * @endcode
+     * - Read from `input` using `Read()` / `Extract()`
+     * - Write processed bytes to `output` using `Write()`
+     * - Close or `SetError()` the `output` when the stage finishes
      *
-     *  Functions should:
-     *  - Read data from the input Consumer using Read() or Extract()
-     *  - Process the data according to their transformation logic
-     *  - Write results to the output Producer using Write()
-     *  - Close the output Producer when finished to signal completion
+     * @par Execution modes
+     * - `ExecutionMode::Async` (default): each stage is launched in its own detached
+     *   thread. Stages process data concurrently and communicate via SharedFIFO buffers.
+     * - `ExecutionMode::Sync` : stages run sequentially in the caller's thread; no
+     *   detached threads are created.
      *
-    * @par Execution Mode
-    *  Behavior depends on @ref ExecutionMode passed to Process():
-    *  - ExecutionMode::Async: (default concurrent style) Each pipeline function is launched
-    *    in a separate detached thread. Stages execute concurrently, limited only by data
-    *    availability and scheduling.
-    *  - ExecutionMode::Sync: All pipeline functions execute sequentially in the caller's
-    *    thread. Each stage must finish before the next begins; no detached threads created.
-    *
-    *  Async mode steps:
-    *   1. Each pipeline function is launched in a separate detached thread
-    *   2. All stages execute concurrently, limited only by data availability
-    *   3. Data flows from stage to stage through thread-safe SharedFIFO buffers
-    *   4. Each stage blocks on Read/Extract until data is available from the previous stage
-    *   5. Stages can process data incrementally as it becomes available
+     * @par Example (conceptual, Async mode)
+     * @code{.cpp}
+     * Pipeline pipeline;
+     * pipeline.AddPipe([](Consumer in, Producer out) {
+     *     while (!in.EoF()) {
+     *         auto data = in.Extract(1024);
+     *         if (data && !data->empty()) {
+     *             // transform data
+     *             out.Write(*data);
+     *         }
+     *     }
+     *     out.Close();
+     * });
+     * // Process input -> returns Consumer for final output
+     * Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logger);
+     * @endcode
      *
-     * @par Thread Safety and Synchronization
-     *  - All intermediate buffers are thread-safe SharedFIFO instances
-     *  - Buffer lifetime is managed automatically via std::shared_ptr
-     *  - Threads synchronize implicitly through blocking Read/Extract operations
-     *  - No explicit synchronization primitives are needed in pipeline functions
+     * @par Error handling
+     * Stages should catch and handle errors locally. To propagate failure, a stage
+     * may call `SetError()` on its output buffer; downstream stages will observe
+     * the buffer's unreadable/closed state via `EoF()` and can react accordingly.
      *
-    * @par Data Flow Example (Async mode shown)
-     *  @code
-     *  Pipeline pipeline;
-     *  
-    *  // Stage 1: Read raw data and uppercase it
-    *  pipeline.AddPipe([](Consumer in, Producer out) {
-    *      while (!in.EoF()) {
-     *          auto data = in.Extract(1024);
-     *          if (data) {
-     *              std::string str(reinterpret_cast<const char*>(data->data()), data->size());
-     *              for (auto& c : str) c = std::toupper(c);
-     *              out.Write(str);
-     *          }
-     *      }
-     *      out.Close();
-     *  });
-     *  
-    *  // Stage 2: Filter and write result
-    *  pipeline.AddPipe([](Consumer in, Producer out) {
-    *      while (!in.EoF()) {
-     *          auto data = in.Extract(0);
-     *          if (data && !data->empty()) {
-     *              // Process and write filtered data
-     *              out.Write(*data);
-     *          }
-     *      }
-     *      out.Close();
-     *  });
-     *  
-     *  // Process data through pipeline
-     *  Producer input;
-     *  input.Write("hello world");
-     *  input.Close();
-     *  
-    *  Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async);
-     *  auto final_data = result.Extract(0);
-     *  @endcode
+     * @par Best practices
+     * - Always `Close()` your stage's `output` when finished (or call `SetError()` on failure).
+     * - Prefer simple, focused transformations per stage.
+     * - Use Sync mode for deterministic debugging; use Async for throughput on multi-core systems.
+     * - When using Async mode, ensure any captured data remains valid for the lifetime
+     *   of the detached thread (use value captures or `std::shared_ptr`).
      *
-    * @par Error Handling
-    *  - Functions should handle errors internally
-    *  - To signal errors, a stage can Close() or SetError() its output buffer
-    *  - Subsequent stages detect completion via EoF() and can handle accordingly
-    *  - Functions must not throw exceptions (undefined behavior)
-     *
-    * @par Best Practices
-    *  - Always Close() the output Producer when a stage completes (or SetError() on failure)
-    *  - Check EoF() on input Consumer to detect when previous stage finished
-    *  - Use Extract(0) to read all available data without blocking
-    *  - Use Extract(count) with count > 0 to block until specific amount available
-    *  - Keep pipeline functions simple and focused on one transformation
-    *  - Prefer Sync mode for debugging; Async for throughput
-     *
-    * @par Performance Considerations
-    *  - Async: All stages run concurrently, maximizing throughput on multi-core systems
-    *  - Sync : No thread creation overhead; deterministic ordering
-    *  - Buffers grow automatically to accommodate data flow
-    *  - Blocking operations minimize busy-waiting
-    *  - Async detached threads mean pipeline setup returns immediately
-     *
-    * @warning Async: Pipeline functions run in detached threads. Ensure all captured data
-    *          remains valid for the thread's lifetime (use value capture or shared_ptr).
-    *          Sync: Functions run inline; standard lifetimes apply.
-     *
-    * @see PipeFunction, Consumer, Producer, SharedFIFO, ExecutionMode
+     * @see PipeFunction, Consumer, Producer, SharedFIFO, ExecutionMode
      */
     class STORMBYTE_BUFFER_PUBLIC Pipeline final {
         public:
@@ -182,8 +129,17 @@ namespace StormByte::Buffer {
              */
             void 													AddPipe(PipeFunction&& pipe);
 
-			// Sets error on all internal pipes which which make them to stop being writable and thus exit prematurely
-			void 													SetError() const noexcept;
+            /**
+             * @brief Mark all internal pipeline stages as errored, causing them to stop accepting writes.
+             *
+             * @details This notifies every internal pipe so they transition to an error state and become
+             *          unwritable; readers will observe end-of-data once existing buffered data is consumed.
+             *          The method is `const` because it performs thread-safe signaling on shared state, not
+             *          logical mutation of the pipeline object itself.
+             *
+             * @note The operation is thread-safe and may be called concurrently.
+             */
+            void 													SetError() const noexcept;
 
             /**
              * @brief Execute the pipeline on input data.
