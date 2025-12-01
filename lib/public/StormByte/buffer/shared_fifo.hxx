@@ -56,7 +56,7 @@ namespace StormByte::Buffer {
              * @param capacity Initial number of bytes to allocate in the buffer.
              *        Behaves like @ref FIFO and may grow as needed.
              */
-            SharedFIFO() noexcept = default;
+            SharedFIFO() noexcept;
 
             SharedFIFO(const SharedFIFO&) = delete;
             SharedFIFO& operator=(const SharedFIFO&) = delete;
@@ -97,7 +97,7 @@ namespace StormByte::Buffer {
 			 *          are ignored. The buffer remains readable until all data is consumed.
 			 * @see FIFO::Close(), IsWritable()
 			 */
-			void Close() noexcept override;
+            void Close() noexcept;
 
 			/**
 			 * @brief Thread-safe error state setting.
@@ -105,31 +105,32 @@ namespace StormByte::Buffer {
 			 *          waiting threads. Subsequent writes are ignored and reads will fail.
 			 * @see FIFO::SetError(), IsReadable(), IsWritable()
 			 */
-			void SetError() noexcept override;
+            void SetError() noexcept;
 
-			/**
-			 * @brief Thread-safe blocking read from the buffer.
-			 * @param count Number of bytes to read; 0 reads all available immediately.
-			 * @return A vector containing the requested bytes, or error.
-			 * @details Blocks until @p count bytes are available from the current read position,
-			 *          or until the buffer becomes unreadable (closed or error). If count == 0,
-			 *          returns immediately with all available data. If buffer becomes unreadable
-			 *          before count bytes available, returns error.
-			 * @see FIFO::Read(), Wait(), IsReadable()
-			 */
-			ExpectedData<InsufficientData> Read(std::size_t count = 0) const override;
+            /**
+             * @brief Thread-safe blocking read from the buffer.
+             * @param count Number of bytes to read; 0 reads all available immediately.
+             * @return A vector containing the requested bytes, or error.
+             * @details Blocks until @p count bytes are available from the current read position,
+             *          or until the buffer becomes unreadable (closed or error). If buffer
+             *          becomes unreadable before the requested bytes are available the call
+             *          returns an error. See the base `FIFO::Read()` for the core (content-only)
+             *          semantics.
+             * @see FIFO::Read(), Wait(), IsReadable()
+             */
+            ExpectedData<InsufficientData> Read(std::size_t count = 0) const;
 
-			/**
-			 * @brief Thread-safe blocking extract from the buffer.
-			 * @param count Number of bytes to extract; 0 extracts all available immediately.
-			 * @return A vector containing the extracted bytes, or error.
-			 * @details Blocks until @p count bytes are available, or until the buffer becomes
-			 *          unreadable (closed or error). If count == 0, returns immediately with
-			 *          all available data and removes it. If buffer becomes unreadable before
-			 *          count bytes available, returns error.
-			 * @see FIFO::Extract(), Wait(), IsReadable()
-			 */
-			ExpectedData<InsufficientData> Extract(std::size_t count = 0) override;
+            /**
+             * @brief Thread-safe blocking extract from the buffer.
+             * @param count Number of bytes to extract; 0 extracts all available immediately.
+             * @return A vector containing the extracted bytes, or error.
+             * @details Blocks until @p count bytes are available, or until the buffer becomes
+             *          unreadable (closed or error). If buffer becomes unreadable before the
+             *          requested bytes are available the call returns an error. See the base
+             *          `FIFO::Extract()` for the core (content-only) semantics.
+             * @see FIFO::Extract(), Wait(), IsReadable()
+             */
+            ExpectedData<InsufficientData> Extract(std::size_t count = 0);
 
 			/**
 			 * @brief Thread-safe write to the buffer.
@@ -138,7 +139,7 @@ namespace StormByte::Buffer {
 			 * @details Thread-safe version that notifies waiting readers after write.
 			 * @see FIFO::Write()
 			 */
-			bool Write(const std::vector<std::byte>& data) override;
+            bool Write(const std::vector<std::byte>& data);
 
 			/**
 			 * @brief Thread-safe write to the buffer.
@@ -147,29 +148,58 @@ namespace StormByte::Buffer {
 			 * @details Thread-safe version that notifies waiting readers after write.
 			 * @see FIFO::Write()
 			 */
-			bool Write(const std::string& data) override;
+            bool Write(const std::string& data);
 
 			/**
 			 * @brief Thread-safe clear of all buffer contents.
 			 * @see FIFO::Clear()
 			 */
-			void Clear() noexcept override;
+            void Clear() noexcept;
 
 			/**
 			 * @brief Thread-safe clean of buffer data from start to read position.
 			 * @see FIFO::Clean()
 			 */
-			void Clean() noexcept override;
+            void Clean() noexcept;
 
 			/**
 			 * @brief Thread-safe seek operation.
 			 * @details Notifies waiting readers after seeking.
 			 * @see FIFO::Seek()
 			 */
-			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
+            void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept;
             /** @} */
 
+            /**
+             * @brief Check if the reader has reached end-of-file.
+             * @return true if buffer is closed or in error state and no bytes available.
+             * @details Returns true when the buffer has been closed or set to error
+             *          and there are no available bytes remaining.
+             */
+            bool EoF() const noexcept override;
+
+			/**
+			 * @brief Check if the buffer is readable (not in error state).
+			 * @return true if readable, false if buffer is in error state.
+			 * @details A buffer becomes unreadable when SetError() is called. Use in
+			 *          combination with AvailableBytes() to check if there is data
+			 *          pending to read.
+			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
+			 */
+			inline bool IsReadable() const noexcept { return !m_error; }
+
+			/**
+			 * @brief Check if the buffer is writable (not closed and not in error state).
+			 * @return true if writable, false if closed or in error state.
+			 * @details A buffer becomes unwritable when Close() or SetError() is called.
+			 * @see Close(), SetError(), IsReadable()
+			 */
+			inline bool IsWritable() const noexcept { return !m_closed && !m_error; }
+
         private:
+            bool m_closed;    	///< Whether the SharedFIFO is closed for further writes.
+            bool m_error;    	///< Whether the SharedFIFO is in an error state.
+
             /**
              * @brief Wait until at least @p n bytes are available from the current read position
              *        (or buffer becomes unreadable).

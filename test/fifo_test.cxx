@@ -186,29 +186,6 @@ int test_fifo_clear_with_data() {
     RETURN_TEST("test_fifo_clear_with_data", 0);
 }
 
-int test_fifo_closed_noop_on_empty() {
-    FIFO fifo;
-    fifo.Close();
-    ASSERT_FALSE("not writable", fifo.IsWritable());
-    ASSERT_FALSE("failed write operation", fifo.Write(std::string("DATA")));
-    ASSERT_TRUE("no write after close (empty)", fifo.Empty());
-    ASSERT_EQUAL("size remains zero", fifo.Size(), static_cast<std::size_t>(0));
-    RETURN_TEST("test_fifo_closed_noop_on_empty", 0);
-}
-
-int test_fifo_closed_noop_on_nonempty() {
-    FIFO fifo;
-    fifo.Write(std::string("ABC"));
-    ASSERT_EQUAL("pre-close size", fifo.Size(), static_cast<std::size_t>(3));
-    fifo.Close();
-    ASSERT_FALSE("not writable", fifo.IsWritable());
-    ASSERT_FALSE("failed write operation", fifo.Write(std::string("DEF")));
-    ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
-    auto out = fifo.Extract();
-    ASSERT_EQUAL("content unchanged after close write", StormByte::String::FromByteVector(*out), std::string("ABC"));
-    RETURN_TEST("test_fifo_closed_noop_on_nonempty", 0);
-}
-
 int test_fifo_read_nondestructive() {
     FIFO fifo;
     fifo.Write(std::string("ABCDEF"));
@@ -223,9 +200,9 @@ int test_fifo_read_nondestructive() {
     ASSERT_EQUAL("second read content", StormByte::String::FromByteVector(*out2), std::string("DEF"));
     ASSERT_EQUAL("size still unchanged", fifo.Size(), static_cast<std::size_t>(6));
     
-    // Third read - should return empty (read position beyond available data)
+    // Third read - should return error (no more data)
     auto out3 = fifo.Read(0);
-    ASSERT_EQUAL("third read empty", out3->size(), static_cast<std::size_t>(0));
+    ASSERT_FALSE("third read error", out3.has_value());
     
     RETURN_TEST("test_fifo_read_nondestructive", 0);
 }
@@ -261,9 +238,9 @@ int test_fifo_read_all_nondestructive() {
     ASSERT_EQUAL("size unchanged", fifo.Size(), static_cast<std::size_t>(5));
     ASSERT_FALSE("not empty after read", fifo.Empty());
     
-    // Read again should return empty (position at end)
+    // Read again should return error (no more data)
     auto out2 = fifo.Read(0);
-    ASSERT_EQUAL("second read all empty", out2->size(), static_cast<std::size_t>(0));
+    ASSERT_FALSE("second read all empty", out2.has_value());
     
     RETURN_TEST("test_fifo_read_all_nondestructive", 0);
 }
@@ -325,7 +302,7 @@ int test_fifo_seek_absolute() {
     // Seek beyond size (should clamp to size)
     fifo.Seek(100, Position::Absolute);
     auto r4 = fifo.Read(0);
-    ASSERT_EQUAL("seek beyond size", r4->size(), static_cast<std::size_t>(0));
+    ASSERT_FALSE("seek beyond size", r4.has_value());
     
     RETURN_TEST("test_fifo_seek_absolute", 0);
 }
@@ -351,7 +328,7 @@ int test_fifo_seek_relative() {
     // Seek relative beyond size (should clamp)
     fifo.Seek(100, Position::Relative);
     auto r4 = fifo.Read(0);
-    ASSERT_EQUAL("seek relative beyond", r4->size(), static_cast<std::size_t>(0));
+    ASSERT_FALSE("seek relative beyond", r4.has_value());
     
     RETURN_TEST("test_fifo_seek_relative", 0);
 }
@@ -431,7 +408,6 @@ int test_fifo_seek_relative_from_current() {
 int test_fifo_read_insufficient_data_error() {
     FIFO fifo;
     fifo.Write(std::string("ABC"));
-    fifo.Close();
     
     // Request more data than available - should return error
     auto result = fifo.Read(10);
@@ -448,7 +424,6 @@ int test_fifo_read_insufficient_data_error() {
 int test_fifo_extract_insufficient_data_error() {
     FIFO fifo;
     fifo.Write(std::string("HELLO"));
-    fifo.Close();
     
     // Request more data than available - should return error
     auto result = fifo.Extract(20);
@@ -475,10 +450,9 @@ int test_fifo_read_after_position_beyond_size() {
     auto result = fifo.Read(1);
     ASSERT_FALSE("read beyond position returns error", result.has_value());
     
-    // Reading with count=0 should return empty successfully
+    // Reading with count=0 should return error as well
     auto result2 = fifo.Read(0);
-    ASSERT_TRUE("read 0 at end succeeds", result2.has_value());
-    ASSERT_EQUAL("read 0 returns empty", result2->size(), static_cast<std::size_t>(0));
+    ASSERT_FALSE("read 0 at end returns error", result2.has_value());
     
     RETURN_TEST("test_fifo_read_after_position_beyond_size", 0);
 }
@@ -553,87 +527,6 @@ int test_fifo_available_bytes_after_ops() {
     RETURN_TEST("test_fifo_available_bytes_with_wrap", 0);
 }
 
-int test_fifo_read_closed_no_data() {
-    FIFO fifo;
-    fifo.Close();
-    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
-    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
-    
-    auto result = fifo.Read(10);
-    ASSERT_TRUE("Read returns Unexpected", !result.has_value());
-    
-    RETURN_TEST("test_fifo_read_closed_no_data", 0);
-}
-
-int test_fifo_extract_closed_no_data() {
-    FIFO fifo;
-    fifo.Close();
-    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
-    ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
-    
-    auto result = fifo.Extract(10);
-    ASSERT_TRUE("Extract returns Unexpected", !result.has_value());
-    
-    RETURN_TEST("test_fifo_extract_closed_no_data", 0);
-}
-
-int test_fifo_read_closed_insufficient_data() {
-    FIFO fifo;
-    fifo.Write("ABC");
-    fifo.Close();
-    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
-    ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
-    
-    auto result = fifo.Read(10);
-    ASSERT_TRUE("Read(10) returns Unexpected when only 3 available", !result.has_value());
-    
-    RETURN_TEST("test_fifo_read_closed_insufficient_data", 0);
-}
-
-int test_fifo_extract_closed_insufficient_data() {
-    FIFO fifo;
-    fifo.Write("ABC");
-    fifo.Close();
-    ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
-    ASSERT_EQUAL("fifo has 3 bytes", fifo.Size(), static_cast<std::size_t>(3));
-    
-    auto result = fifo.Extract(10);
-    ASSERT_TRUE("Extract(10) returns Unexpected when only 3 available", !result.has_value());
-    
-    RETURN_TEST("test_fifo_extract_closed_insufficient_data", 0);
-}
-
-int test_fifo_write_after_error() {
-	FIFO fifo;
-	fifo.SetError();
-	ASSERT_FALSE("fifo is not writable", fifo.IsWritable());
-	ASSERT_FALSE("write after error should fail operation", fifo.Write("DATA"));
-	
-	RETURN_TEST("test_fifo_write_after_error", 0);
-}
-
-int test_fifo_read_after_error() {
-	FIFO fifo;
-	fifo.Write("DATA");
-	fifo.SetError();
-	
-	auto result = fifo.Read(2);
-	ASSERT_FALSE("Read after error returns Unexpected", result.has_value());
-	
-	RETURN_TEST("test_fifo_read_after_error", 0);
-}
-
-int test_fifo_extract_after_error() {
-	FIFO fifo;
-	fifo.Write("DATA");
-	fifo.SetError();
-	
-	auto result = fifo.Extract(2);
-	ASSERT_FALSE("Extract after error returns Unexpected", result.has_value());
-	
-	RETURN_TEST("test_fifo_extract_after_error", 0);
-}
-
 int test_fifo_equality() {
     FIFO a;
     FIFO b;
@@ -673,8 +566,6 @@ int main() {
     result += test_fifo_write_multiple();
     result += test_fifo_write_vector_and_rvalue();
     result += test_fifo_read_default_all();
-    result += test_fifo_closed_noop_on_empty();
-    result += test_fifo_closed_noop_on_nonempty();
     result += test_fifo_buffer_stress();
     result += test_fifo_read_nondestructive();
     result += test_fifo_read_vs_extract();
@@ -691,13 +582,6 @@ int main() {
     result += test_fifo_read_after_position_beyond_size();
     result += test_fifo_available_bytes();
     result += test_fifo_available_bytes_after_ops();
-    result += test_fifo_read_closed_no_data();
-    result += test_fifo_extract_closed_no_data();
-    result += test_fifo_read_closed_insufficient_data();
-    result += test_fifo_extract_closed_insufficient_data();
-	result += test_fifo_write_after_error();
-	result += test_fifo_read_after_error();
-	result += test_fifo_extract_after_error();
 	result += test_fifo_equality();
 
     if (result == 0) {

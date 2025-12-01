@@ -195,6 +195,13 @@ int test_single_producer_single_consumer_threaded() {
     std::thread cons_thread([&]() {
         while (true) {
             auto data = consumer.Extract(10);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) collected.append(StormByte::String::FromByteVector(*rem));
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             collected.append(StormByte::String::FromByteVector(*data));
         }
@@ -237,6 +244,13 @@ int test_multiple_producers_single_consumer() {
         // Extract until all producers done AND buffer empty
         while (completed_producers.load() < 3) {
             auto data = consumer.Extract(10);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem && !rem->empty()) collected.append(StormByte::String::FromByteVector(*rem));
+                }
+                break;
+            }
             if (!data->empty()) {
                 collected.append(StormByte::String::FromByteVector(*data));
             }
@@ -291,6 +305,13 @@ int test_single_producer_multiple_consumers() {
     auto consumer_func = [&](Consumer& cons, std::atomic<size_t>& counter) {
         while (true) {
             auto data = cons.Extract(5);
+            if (!data) {
+                if (cons.AvailableBytes() > 0) {
+                    auto rem = cons.Extract(0);
+                    if (rem) counter.fetch_add(rem->size());
+                }
+                break;
+            }
             if (data->empty() && cons.EoF()) break;
             counter.fetch_add(data->size());
         }
@@ -348,6 +369,13 @@ int test_multiple_producers_multiple_consumers() {
             
             while (true) {
                 auto data = cons_copy.Extract(10);
+                if (!data) {
+                    if (cons_copy.AvailableBytes() > 0) {
+                        auto rem = cons_copy.Extract(0);
+                        if (rem) local_consumed += rem->size();
+                    }
+                    break;
+                }
                 if (data->empty() && cons_copy.EoF()) break;
                 local_consumed += data->size();
             }
@@ -454,6 +482,13 @@ int test_producer_consumer_stress_rapid_operations() {
     std::thread reader([&]() {
         while (true) {
             auto data = consumer.Extract(10);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) read_count.fetch_add(rem->size());
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             read_count.fetch_add(data->size());
         }
@@ -496,8 +531,19 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage2([&]() {
         while (true) {
             auto data = stage1_consumer.Extract(10);
+            if (!data) {
+                if (stage1_consumer.AvailableBytes() > 0) {
+                    auto rem = stage1_consumer.Extract(0);
+                    if (rem && !rem->empty()) {
+                        std::string remstr = StormByte::String::FromByteVector(*rem);
+                        std::transform(remstr.begin(), remstr.end(), remstr.begin(), ::toupper);
+                        stage2_producer.Write(remstr);
+                    }
+                }
+                break;
+            }
             if (data->empty() && stage1_consumer.EoF()) break;
-            
+
             std::string str = StormByte::String::FromByteVector(*data);
             std::transform(str.begin(), str.end(), str.begin(), ::toupper);
             stage2_producer.Write(str);
@@ -510,6 +556,13 @@ int test_producer_consumer_pipeline_pattern() {
     std::thread stage3([&]() {
         while (true) {
             auto data = stage2_consumer.Extract(10);
+            if (!data) {
+                if (stage2_consumer.AvailableBytes() > 0) {
+                    auto rem = stage2_consumer.Extract(0);
+                    if (rem && !rem->empty()) final_result.append(StormByte::String::FromByteVector(*rem));
+                }
+                break;
+            }
             if (data->empty() && stage2_consumer.EoF()) break;
             final_result.append(StormByte::String::FromByteVector(*data));
         }
@@ -572,7 +625,16 @@ int test_consumer_waits_for_insufficient_data() {
     std::thread consumer_thread([&]() {
         read_started.store(true);
         auto data = consumer.Read(20); // Request 20 bytes
-        result = StormByte::String::FromByteVector(*data);
+        if (!data) {
+            if (consumer.AvailableBytes() > 0) {
+                auto rem = consumer.Read(0);
+                if (rem) result = StormByte::String::FromByteVector(*rem);
+            } else {
+                result = "";
+            }
+        } else {
+            result = StormByte::String::FromByteVector(*data);
+        }
         read_completed.store(true);
     });
     
@@ -687,7 +749,16 @@ int test_producer_close_during_consumer_wait() {
     std::thread consumer_thread([&]() {
         // This will block until closed since we request more than available
         auto data = consumer.Read(100);
-        result = StormByte::String::FromByteVector(*data);
+        if (!data) {
+            if (consumer.AvailableBytes() > 0) {
+                auto rem = consumer.Read(0);
+                if (rem) result = StormByte::String::FromByteVector(*rem);
+            } else {
+                result = "";
+            }
+        } else {
+            result = StormByte::String::FromByteVector(*data);
+        }
         completed.store(true);
     });
     
@@ -727,6 +798,13 @@ int test_rapid_write_close_with_slow_consumer() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             auto data = consumer.Extract(5);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) total_consumed.fetch_add(rem->size());
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             total_consumed.fetch_add(data->size());
         }
@@ -800,6 +878,13 @@ int test_very_large_data_transfer() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(4096);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) received_size += rem->size();
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             received_size += data->size();
         }
@@ -837,6 +922,13 @@ int test_alternating_small_large_writes() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) total_received.fetch_add(rem->size());
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             total_received.fetch_add(data->size());
         }
@@ -921,6 +1013,13 @@ int test_burst_writes_with_reserve() {
     std::thread consumer_thread([&]() {
         while (true) {
             auto data = consumer.Extract(100);
+            if (!data) {
+                if (consumer.AvailableBytes() > 0) {
+                    auto rem = consumer.Extract(0);
+                    if (rem) total.fetch_add(rem->size());
+                }
+                break;
+            }
             if (data->empty() && consumer.EoF()) break;
             total.fetch_add(data->size());
         }
@@ -1026,11 +1125,18 @@ int test_producer_consumer_partial_read_eof() {
     producer.Write(message);
     producer.Close();
 
-    // Consumer requests 50 bytes, but only 30 are available
+    // Consumer requests 50 bytes, but only 30 are available.
+    // By design: when closed and requesting more than available, Read(count>0)
+    // should return an error (Unexpected). The consumer must then use
+    // Read(0) to obtain the remaining available bytes.
     auto data = consumer.Read(50);
-    ASSERT_TRUE("partial read returns data", data.has_value());
-    ASSERT_EQUAL("partial read size", data->size(), static_cast<std::size_t>(30));
-    ASSERT_EQUAL("partial read content", StormByte::String::FromByteVector(*data), message);
+    ASSERT_FALSE("Read(50) should be Unexpected when closed and insufficient", data.has_value());
+
+    // Retrieve remaining available bytes using Read(0)
+    auto rem = consumer.Read(0);
+    ASSERT_TRUE("Read(0) returns remaining data", rem.has_value());
+    ASSERT_EQUAL("partial read size", rem->size(), static_cast<std::size_t>(30));
+    ASSERT_EQUAL("partial read content", StormByte::String::FromByteVector(*rem), message);
     ASSERT_TRUE("consumer is at EoF after partial read", consumer.EoF());
 
     RETURN_TEST("test_producer_consumer_partial_read_eof", 0);

@@ -5,17 +5,15 @@
 
 using namespace StormByte::Buffer;
 
-FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0), m_closed(false), m_error(false) {}
+FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0) {}
 
-FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0), m_closed(false), m_error(false) {
+FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0) {
 	Copy(other);
 }
 
 FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)),
-m_position_offset(other.m_position_offset), m_closed(other.m_closed), m_error(other.m_error) {
+m_position_offset(other.m_position_offset) {
 	other.m_position_offset = 0;
-	other.m_closed = true;
-	other.m_error = true;
 }
 
 FIFO::~FIFO() {
@@ -35,9 +33,7 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 		Clear();
 		m_buffer = std::move(other.m_buffer);
 		m_position_offset = other.m_position_offset;
-		m_closed = other.m_closed;
 		other.m_position_offset = 0;
-		other.m_closed = true;
 	}
 	return *this;
 }
@@ -63,26 +59,22 @@ void FIFO::Clear() noexcept {
 void FIFO::Clean() noexcept {
 	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
 		m_buffer.erase(m_buffer.begin(), m_buffer.begin() + m_position_offset);
-		m_position_offset = 0;
 	}
-}
-
-void FIFO::Close() noexcept {
-	m_closed = true;
-}
-
-void FIFO::SetError() noexcept {
-	m_error = true;
+	else {
+		// Failsafe: if position offset is out of bounds, clear entire buffer
+		m_buffer.clear();
+	}
+	m_position_offset = 0;
 }
 
 bool FIFO::EoF() const noexcept {
-	return !IsReadable() || ( !IsWritable() && AvailableBytes() == 0 );
+	// FIFO core does not track closed/error; EOF semantics are provided by
+	// SharedFIFO. For the raw FIFO, there's no EOF marker to query.
+	return false;
 }
 
 bool FIFO::Write(const std::vector<std::byte>& data) {
-	if (!IsWritable()) return false;
-	if (!data.empty())
-		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 	return true;
 }
 
@@ -93,26 +85,23 @@ bool FIFO::Write(const std::string& data) {
 ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 	const std::size_t available = AvailableBytes();
 
-	if (!IsReadable()) {
-		return StormByte::Unexpected(InsufficientData("FIFO is not readable"));
-	}
-	
-	// count=0 means "read all available"
-	const std::size_t read_size = (count == 0) ? available : std::min(count, available);
-	
-	// If requesting specific count (count > 0) but no data available, return error
-	if (count > 0 && available == 0) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
-	}
-	
-	// If FIFO is closed and requesting more than available, return error
-	if (m_closed && count > available) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data in closed FIFO"));
-	}
-	
-	// Empty read is success
-	if (read_size == 0) {
-		return std::vector<std::byte>();
+	// Semantics for FIFO core:
+	// - count == 0: read all available; if none available => error
+	// - count > 0: if none available => error; if count > available => error
+	std::size_t read_size = 0;
+	if (count == 0) {
+		if (available == 0) {
+			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		}
+		read_size = available;
+	} else {
+		if (available == 0) {
+			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		}
+		if (count > available) {
+			return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		}
+		read_size = count;
 	}
 
 	// Read from current position using iterator constructor for efficiency
@@ -127,36 +116,22 @@ ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 }
 
 ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
-	// Extract always reads from the beginning (head), not from current read position
-
-	if (!IsReadable()) {
-		return StormByte::Unexpected(InsufficientData("FIFO is not readable"));
-	}
-
-	// If requesting all data and there is a non-zero read position, compact
-	// unread bytes to the front first so we can apply the fast-path.
-	if (count == 0 && m_position_offset > 0) {
-		Clean(); // moves unread bytes to front and sets m_position_offset = 0
-	}
-
 	const std::size_t buffer_size = m_buffer.size();
 
-	// count=0 means "extract all available"
-	const std::size_t extract_size = (count == 0) ? buffer_size : std::min(count, buffer_size);
-
-	// If requesting specific count (count > 0) but no data available, return error
-	if (count > 0 && buffer_size == 0) {
+	std::size_t extract_size = 0;
+	if (count > AvailableBytes()) {
 		return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
 	}
-
-	// If FIFO is closed and requesting more than available, return error
-	if (m_closed && count > buffer_size) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data in closed FIFO"));
-	}
-
-	// Empty extract is success
-	if (extract_size == 0) {
-		return std::vector<std::byte>();
+	if (count == 0) {
+		if (buffer_size == 0) {
+			return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
+		}
+		extract_size = buffer_size;
+	} else {
+		if (buffer_size == 0) {
+			return StormByte::Unexpected(InsufficientData("Insufficient data to extract"));
+		}
+		extract_size = count;
 	}
 
 	// Fast-path: extracting the whole deque and we're already at position 0.
@@ -205,5 +180,4 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 void FIFO::Copy(const FIFO& other) noexcept {
 	m_buffer = other.m_buffer;
 	m_position_offset = other.m_position_offset;
-	m_closed = other.m_closed;
 }

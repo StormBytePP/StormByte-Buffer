@@ -3,6 +3,8 @@
 
 using namespace StormByte::Buffer;
 
+SharedFIFO::SharedFIFO() noexcept: FIFO(), m_closed(false), m_error(false) {}
+
 bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
 	// Lock both mutexes to safely compare internal state and delegate to
 	// FIFO::operator== so behavior remains coherent if FIFO's equality
@@ -44,36 +46,65 @@ ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (count != 0) {
 		Wait(count, lock);
-		// If closed and insufficient data, read whatever is available (may be empty)
+		if (m_error) {
+			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		}
 		if (m_closed) {
 			const std::size_t available = m_buffer.size() - m_position_offset;
+			// When closed, requesting more than available is an error.
 			if (available < count) {
-				return FIFO::Read(0); // Read all available (returns empty vector if none)
+				return StormByte::Unexpected(InsufficientData("Insufficient data to read (closed)"));
 			}
 		}
+	} else {
+		// count == 0: non-blocking read of all available — still fail if in error state
+		if (m_error) {
+			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		}
+		// If closed and no bytes available, return an empty vector (value)
+		if (m_closed) {
+			const std::size_t available = m_buffer.size() - m_position_offset;
+			if (available == 0) return std::vector<std::byte>{};
+		}
 	}
+
 	return FIFO::Read(count);
 }
 
 ExpectedData<InsufficientData> SharedFIFO::Extract(std::size_t count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (count != 0) {
+		if (m_error) {
+			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		}
 		Wait(count, lock);
-		// If closed and insufficient data, extract whatever is available (may be empty)
-		if (m_closed && m_buffer.size() < count) {
-			return FIFO::Extract(0); // Extract all available (returns empty vector if none)
+		if (m_closed) {
+			const std::size_t available = m_buffer.size() - m_position_offset;
+			if (available < count) {
+				return StormByte::Unexpected(InsufficientData("Insufficient data to extract (closed)"));
+			}
+		}
+	} else {
+		if (m_error) {
+			return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		}
+		if (m_closed && m_buffer.empty()) {
+			return std::vector<std::byte>{};
 		}
 	}
+
 	return FIFO::Extract(count);
 }
 
 bool SharedFIFO::Write(const std::vector<std::byte>& data) {
-	if (data.empty()) return false;
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
-		if (m_closed) return false;
-		m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+		// Reject writes when closed or in error state.
+		if (m_closed || m_error) return false;
+		if (!data.empty())
+			m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 	}
+	// Notify waiters even for empty writes so readers can re-check predicates.
 	m_cv.notify_all();
 	return true;
 }
@@ -98,4 +129,9 @@ void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const 
 		FIFO::Seek(offset, mode);
 	}
 	m_cv.notify_all();
+}
+
+bool SharedFIFO::EoF() const noexcept {
+	std::scoped_lock lock(m_mutex);
+	return m_error || (m_closed && AvailableBytes() == 0);
 }

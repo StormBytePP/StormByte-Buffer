@@ -34,7 +34,15 @@ int test_shared_fifo_producer_consumer_blocking() {
     std::thread consumer([&]() -> void {
         while (true) {
             auto part = fifo.Read(3); // read small chunks, blocks until 3 available or closed
-            if (!part || (part->empty() && fifo.EoF())) break;
+            if (!part) {
+                // On error (closed & insufficient), try to consume any remaining bytes and exit.
+                if (fifo.AvailableBytes() > 0) {
+                    auto rem = fifo.Read(0);
+                    if (rem && !rem->empty()) collected.append(toString(*rem));
+                }
+                break;
+            }
+            if (part->empty() && fifo.EoF()) break;
             collected.append(toString(*part));
             // small delay to increase interleaving
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -79,6 +87,7 @@ int test_shared_fifo_concurrent_seek_and_read() {
 
     std::atomic<bool> seeker_done{false};
     std::string read_a, read_b;
+    std::atomic<bool> reader_failed{false};
 
     std::thread seeker([&]() -> void {
         // Seek around while another thread reads; mutex ensures safety
@@ -93,14 +102,18 @@ int test_shared_fifo_concurrent_seek_and_read() {
     std::thread reader([&]() -> void {
         // Perform two reads interleaved with seeks
         auto r1 = fifo.Read(2); // reads from current (race-free due to mutex)
+        if (!r1.has_value()) { reader_failed.store(true); return; }
         read_a = toString(*r1);
         std::this_thread::sleep_for(std::chrono::milliseconds(3));
         auto r2 = fifo.Read(3);
+        if (!r2.has_value()) { reader_failed.store(true); return; }
         read_b = toString(*r2);
     });
 
     seeker.join();
     reader.join();
+
+    ASSERT_FALSE("reader had error", reader_failed.load());
 
     ASSERT_TRUE("seeker finished", seeker_done.load());
     // After the final seek to absolute 1, the next read should start from '1'
@@ -121,10 +134,15 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
     fifo.Write(std::string("ABCDEFGH"));
 
     std::string r_before, r_after;
+    std::atomic<bool> reader_failed2{false};
     std::thread reader([&]() -> void {
-        r_before = toString(*fifo.Read(3)); // ABC
+        auto _r_before = fifo.Read(3);
+        if (!_r_before.has_value()) { reader_failed2.store(true); return; }
+        r_before = toString(*_r_before); // ABC
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        r_after = toString(*fifo.Read(2)); // depends on extract adjustment
+        auto _r_after = fifo.Read(2);
+        if (!_r_after.has_value()) { reader_failed2.store(true); return; }
+        r_after = toString(*_r_after); // depends on extract adjustment
     });
 
     std::thread extractor([&]() -> void {
@@ -135,6 +153,8 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 
     reader.join();
     extractor.join();
+
+    ASSERT_FALSE("reader had error", reader_failed2.load());
 
     ASSERT_EQUAL("first read ABC", r_before, std::string("ABC"));
     // After extracting 2, the read position (which was at 3) becomes 1 relative to new head 'C', so next should start from 'D'
@@ -230,6 +250,7 @@ int test_shared_fifo_close_suppresses_writes() {
     fifo.Write(std::string("DEF"));
     ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
     auto out = fifo.Extract(0);
+    ASSERT_TRUE("extract returned", out.has_value());
     ASSERT_EQUAL("content after close write blocked", toString(*out), std::string("ABC"));
     RETURN_TEST("test_shared_fifo_close_suppresses_writes", 0);
 }
@@ -238,8 +259,10 @@ int test_shared_fifo_wrap_boundary_blocking() {
     SharedFIFO fifo;
     fifo.Write("ABCDE");
     auto r1 = fifo.Read(3); // should block for 3, returns ABC
+    ASSERT_TRUE("r1 returned", r1.has_value());
     ASSERT_EQUAL("read ABC", toString(*r1), std::string("ABC"));
     auto e1 = fifo.Extract(2); // remove AB
+    ASSERT_TRUE("e1 returned", e1.has_value());
     ASSERT_EQUAL("extract AB", toString(*e1), std::string("AB"));
     fifo.Write("12"); // wrap at capacity
     // Seek to beginning and read remaining 4 bytes Follows non-destructive read position semantics
@@ -248,6 +271,7 @@ int test_shared_fifo_wrap_boundary_blocking() {
     // Given operations: after initial write, size=5; Read(3) didn't change size; Extract(2) removed DE, size=3; Then write 12 size=5; Head somewhere; Reading all should give remaining 5 from read position 0
     fifo.Seek(0, Position::Absolute);
     auto all = fifo.Read(0);
+    ASSERT_TRUE("all returned", all.has_value());
     ASSERT_EQUAL("wrap combined", toString(*all).size(), static_cast<std::size_t>(5));
     RETURN_TEST("test_shared_fifo_wrap_boundary_blocking", 0);
 }
@@ -268,7 +292,14 @@ int test_shared_fifo_growth_under_contention() {
     auto consumer = std::thread([&]() -> void {
         while (true) {
             auto part = fifo.Extract(128);
-            if (!part || (part->empty() && fifo.EoF())) break;
+            if (!part) {
+                if (fifo.AvailableBytes() > 0) {
+                    auto rem = fifo.Extract(0);
+                    if (rem && !rem->empty()) consumed += rem->size();
+                }
+                break;
+            }
+            if (part->empty() && fifo.EoF()) break;
             consumed += part->size();
         }
     });
@@ -289,11 +320,11 @@ int test_shared_fifo_read_insufficient_closed_returns_available() {
     fifo.Close();
     
     // Even though we request 10 bytes, when closed with only 3 available,
-    // SharedFIFO should return the 3 available bytes (blocking behavior)
+    // Requesting more than available when closed is an error.
     auto result = fifo.Read(10);
-    ASSERT_TRUE("read with closed returns available", result.has_value());
-    ASSERT_EQUAL("returns 3 bytes not 10", result->size(), static_cast<std::size_t>(3));
-    ASSERT_EQUAL("content is ABC", toString(*result), std::string("ABC"));
+    ASSERT_FALSE("read with closed returns error", result.has_value());
+    // Data should remain available unchanged
+    ASSERT_EQUAL("available unchanged", fifo.AvailableBytes(), static_cast<std::size_t>(3));
     
     RETURN_TEST("test_shared_fifo_read_insufficient_closed_returns_available", 0);
 }
@@ -305,10 +336,12 @@ int test_shared_fifo_extract_insufficient_closed_returns_available() {
     
     // Extract more than available when closed should return available data
     auto result = fifo.Extract(100);
-    ASSERT_TRUE("extract with closed returns available", result.has_value());
-    ASSERT_EQUAL("returns 5 bytes not 100", result->size(), static_cast<std::size_t>(5));
-    ASSERT_EQUAL("content is HELLO", toString(*result), std::string("HELLO"));
-    ASSERT_TRUE("buffer empty after extract", fifo.Empty());
+    ASSERT_FALSE("extract with closed returns error", result.has_value());
+    // Data must remain unchanged when extract fails
+    ASSERT_EQUAL("size unchanged after failed extract", fifo.Size(), static_cast<std::size_t>(5));
+    auto all = fifo.Read(0);
+    ASSERT_TRUE("read remaining data", all.has_value());
+    ASSERT_EQUAL("content is HELLO", toString(*all), std::string("HELLO"));
     
     RETURN_TEST("test_shared_fifo_extract_insufficient_closed_returns_available", 0);
 }
@@ -340,7 +373,7 @@ int test_shared_fifo_blocking_read_insufficient_not_closed() {
     reader.join();
     
     ASSERT_TRUE("read finished after close", read_finished.load());
-    ASSERT_FALSE("read returned available data not error", read_got_error.load());
+    ASSERT_TRUE("read returned error after close", read_got_error.load());
     
     RETURN_TEST("test_shared_fifo_blocking_read_insufficient_not_closed", 0);
 }
@@ -417,8 +450,7 @@ int test_shared_fifo_read_closed_no_data_nonblocking() {
     // But to truly test the non-blocking case where it's already closed before Read is called,
     // Read(10) with count>0 should wait, wake up immediately because closed, and return empty
     auto result = fifo.Read(10);
-    ASSERT_TRUE("Read returns value (empty vector)", result.has_value());
-    ASSERT_TRUE("Read returns empty vector", result->empty());
+    ASSERT_FALSE("Read returns error when requesting > available on closed", result.has_value());
     
     RETURN_TEST("test_shared_fifo_read_closed_no_data_nonblocking", 0);
 }
@@ -430,8 +462,7 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
     ASSERT_EQUAL("fifo is empty", fifo.Size(), static_cast<std::size_t>(0));
     
     auto result = fifo.Extract(10);
-    ASSERT_TRUE("Extract returns value (empty vector)", result.has_value());
-    ASSERT_TRUE("Extract returns empty vector", result->empty());
+    ASSERT_FALSE("Extract returns error when requesting > available on closed", result.has_value());
     
     RETURN_TEST("test_shared_fifo_extract_closed_no_data_nonblocking", 0);
 }
