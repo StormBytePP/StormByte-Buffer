@@ -166,9 +166,67 @@ namespace StormByte::Buffer {
 			 * @return true if buffer is unreadable and no bytes available, false otherwise.
 			 * @details Returns true when IsReadable() is false AND AvailableBytes() == 0,
 			 *          indicating no more data can be read from this buffer.
-			 * @see IsReadable(), AvailableBytes()
+			 * @see IsReadable(), IsWritable(), AvailableBytes()
 			 */
 			inline bool EoF() const noexcept { return m_buffer->EoF(); }
+
+			/**
+			 * @brief Read all available data until end-of-file (non-destructive).
+			 *
+			 * This method repeatedly performs non-destructive `Read()` operations and
+			 * accumulates the returned bytes into a fresh `Buffer::FIFO` which is
+			 * returned by value. The call will continue until the underlying buffer
+			 * reaches end-of-file (see `Consumer::EoF()`) or a read error occurs.
+			 *
+			 * Behavioural guarantees:
+			 * - Non-destructive (data preserved): the bytes stored in the underlying
+			 *   buffer are NOT removed by this call. The consumer's read position,
+			 *   however, is advanced to the end of the stream as the data is read.
+			 *   In other words, `Consumer::Size()` (total stored bytes) will remain
+			 *   unchanged but subsequent non-destructive reads will start from the
+			 *   end-of-stream (so `AvailableBytes()` may report 0 after completion).
+			 * - Blocking: this method may block internally while waiting for data from
+			 *   producers. It will return when the buffer is closed and all available
+			 *   data has been read, or when a read error is observed.
+			 * - Partial results on error: if a read error occurs, the returned `FIFO`
+			 *   contains any bytes successfully read before the error was detected.
+			 *
+			 * Use this when you want a snapshot of the full stream without consuming
+			 * the data from the shared buffer.
+			 *
+			 * @return A `Buffer::FIFO` containing the concatenated bytes read until EOF
+			 *         (or until an error occurred).
+			 */
+			Buffer::FIFO ReadUntilEoF();
+
+			/**
+			 * @brief Extract all available data until end-of-file (destructive).
+			 *
+			 * This method repeatedly performs destructive `Extract()` operations and
+			 * accumulates the returned bytes into a fresh `Buffer::FIFO` which is
+			 * returned by value. The call will continue until the underlying buffer
+			 * reaches end-of-file (see `Consumer::EoF()`) or a read error occurs.
+			 *
+			 * Behavioural guarantees:
+			 * - Destructive: bytes returned by this call are removed from the
+			 *   underlying buffer. After successful completion the original
+			 *   `Consumer::Size()` will reflect that the extracted bytes have been
+			 *   removed (typically zero if the buffer was fully consumed). The
+			 *   consumer's read position will be adjusted accordingly (typically to
+			 *   the start/end consistent with an empty buffer).
+			 * - Blocking: this method may block internally while waiting for data from
+			 *   producers. It will return when the buffer is closed and all available
+			 *   data has been extracted, or when a read error is observed.
+			 * - Partial results on error: if a read error occurs, the returned `FIFO`
+			 *   contains any bytes successfully extracted before the error was detected.
+			 *
+			 * Use this when you want to consume the entire stream and obtain its
+			 * contents in a single contiguous `FIFO` instance.
+			 *
+			 * @return A `Buffer::FIFO` containing the concatenated bytes extracted
+			 *         until EOF (or until an error occurred).
+			 */
+			Buffer::FIFO ExtractUntilEoF();
 
         private:
             /** @brief Shared pointer to the underlying thread-safe FIFO buffer. */

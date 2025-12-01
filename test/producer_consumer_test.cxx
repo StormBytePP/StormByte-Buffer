@@ -1036,6 +1036,51 @@ int test_producer_consumer_partial_read_eof() {
     RETURN_TEST("test_producer_consumer_partial_read_eof", 0);
 }
 
+int test_consumer_read_until_eof() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    const std::string message = "ReadUntilEOF-Test";
+    producer.Write(message);
+    producer.Close();
+
+    // Read non-destructively until EOF
+    auto fifo = consumer.ReadUntilEoF();
+
+    // Verify returned FIFO contains the data
+    auto data = fifo.Read(0);
+    ASSERT_TRUE("ReadUntilEoF returned data", data.has_value());
+    ASSERT_EQUAL("ReadUntilEoF content", StormByte::String::FromByteVector(*data), message);
+
+    // Original consumer should NOT have destroyed the underlying buffer contents
+    // Size() reports total stored bytes (should still equal message size)
+    ASSERT_EQUAL("consumer Size unchanged after ReadUntilEoF", consumer.Size(), static_cast<std::size_t>(message.size()));
+
+    RETURN_TEST("test_consumer_read_until_eof", 0);
+}
+
+int test_consumer_extract_until_eof() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    const std::string message = "ExtractUntilEOF-Test";
+    producer.Write(message);
+    producer.Close();
+
+    // Extract destructively until EOF
+    auto fifo = consumer.ExtractUntilEoF();
+
+    // Verify returned FIFO contains the data
+    auto data = fifo.Read(0);
+    ASSERT_TRUE("ExtractUntilEoF returned data", data.has_value());
+    ASSERT_EQUAL("ExtractUntilEoF content", StormByte::String::FromByteVector(*data), message);
+
+    // Original consumer should have destroyed the underlying buffer contents
+    ASSERT_EQUAL("consumer Size is zero after ExtractUntilEoF", consumer.Size(), static_cast<std::size_t>(0));
+
+    RETURN_TEST("test_consumer_extract_until_eof", 0);
+}
+
 int main() {
     int result = 0;
     
@@ -1077,6 +1122,8 @@ int main() {
     result += test_producer_consumer_available_bytes();
     result += test_producer_consumer_available_bytes_threaded();
     result += test_producer_consumer_partial_read_eof();
+    result += test_consumer_read_until_eof();
+    result += test_consumer_extract_until_eof();
 
     if (result == 0) {
         std::cout << "All Producer/Consumer tests passed!" << std::endl;
