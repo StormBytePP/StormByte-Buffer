@@ -39,7 +39,13 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Construct FIFO.
 			 */
-			explicit FIFO() noexcept;
+			FIFO() noexcept;
+
+			/**
+			 * 	@brief Construct FIFO with initial data.
+			 *  @param data Initial byte vector to populate the FIFO.
+			 */
+			FIFO(const std::vector<std::byte>& data) noexcept;
 
 			/**
 			 * 	@brief Copy construct, preserving buffer state and initial capacity.

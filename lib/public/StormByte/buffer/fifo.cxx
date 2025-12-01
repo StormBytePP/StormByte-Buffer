@@ -8,6 +8,10 @@ using namespace StormByte::Buffer;
 
 FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0) {}
 
+FIFO::FIFO(const std::vector<std::byte>& data) noexcept: m_position_offset(0) {
+	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+}
+
 FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0) {
 	Copy(other);
 }
