@@ -64,6 +64,24 @@ namespace StormByte::Buffer {
             SharedFIFO& operator=(SharedFIFO&&) = delete;
 
             /**
+             * @brief Equality comparison (thread-safe).
+             *
+             * Compares this `SharedFIFO` with `other` while holding both internal
+             * mutexes. The comparison delegates to the base `FIFO::operator==`, so
+             * equality semantics follow the FIFO implementation.
+             */
+            bool operator==(const SharedFIFO& other) const noexcept;
+
+            /**
+             * @brief Inequality comparison.
+             *
+             * Negates `operator==`.
+             */
+            inline bool operator!=(const SharedFIFO& other) const noexcept {
+                return !(*this == other);
+            }
+
+            /**
              * @brief Virtual destructor.
              */
             virtual ~SharedFIFO() = default;

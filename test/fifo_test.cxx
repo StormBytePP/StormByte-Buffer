@@ -634,6 +634,31 @@ int test_fifo_extract_after_error() {
 	RETURN_TEST("test_fifo_extract_after_error", 0);
 }
 
+int test_fifo_equality() {
+    FIFO a;
+    FIFO b;
+    a.Write("ABC");
+    b.Write("ABC");
+
+    // Same content -> equal (equality is content-only)
+    ASSERT_TRUE("fifo equal same content", a == b);
+	ASSERT_FALSE("fifo unequal same content", a != b);
+
+    // Advance read position on one -> still equal (positions/status ignored)
+    [[maybe_unused]] auto r = a.Read(1);
+    ASSERT_TRUE("fifo equal after read changes position", a == b);
+
+    // Make positions equal again -> still equal
+    [[maybe_unused]] auto r2 = b.Read(1);
+    ASSERT_TRUE("fifo equal after syncing read position", a == b);
+
+    // Change stored data -> not equal
+    b.Write("D");
+    ASSERT_FALSE("fifo not equal after different content", a == b);
+
+    RETURN_TEST("test_fifo_equality", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -673,6 +698,7 @@ int main() {
 	result += test_fifo_write_after_error();
 	result += test_fifo_read_after_error();
 	result += test_fifo_extract_after_error();
+	result += test_fifo_equality();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

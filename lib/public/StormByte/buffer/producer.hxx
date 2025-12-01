@@ -48,6 +48,11 @@ namespace StormByte::Buffer {
             Producer(const Producer&) = default;
 
             /**
+             * @brief Destructor.
+             */
+            virtual ~Producer() = default;
+
+			/**
              * @brief Copy assignment operator.
              * @return Reference to this Producer.
              */
@@ -65,10 +70,8 @@ namespace StormByte::Buffer {
              */
             Producer& operator=(Producer&&) = default;
 
-            /**
-             * @brief Destructor.
-             */
-            virtual ~Producer() = default;
+			bool operator==(const Producer& other) const noexcept = delete;
+			bool operator!=(const Producer& other) const noexcept = delete;
 
 			/**
 			 * @brief Close the buffer for further writes.

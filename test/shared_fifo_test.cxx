@@ -436,6 +436,28 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
     RETURN_TEST("test_shared_fifo_extract_closed_no_data_nonblocking", 0);
 }
 
+int test_sharedfifo_equality() {
+    StormByte::Buffer::SharedFIFO sa;
+    StormByte::Buffer::SharedFIFO sb;
+
+    sa.Write("HELLO");
+    sb.Write("HELLO");
+
+    // Same contents -> equal (equality is content-only)
+    ASSERT_TRUE("sharedfifo equal same content", sa == sb);
+	ASSERT_FALSE("sharedfifo unequal same content", sa != sb);
+
+    // Closing one does not change content equality
+    sa.Close();
+    ASSERT_TRUE("sharedfifo still equal after close", sa == sb);
+
+    // Close the other too -> still equal
+    sb.Close();
+    ASSERT_TRUE("sharedfifo equal after both closed", sa == sb);
+
+    RETURN_TEST("test_sharedfifo_equality", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -454,6 +476,7 @@ int main() {
     result += test_shared_fifo_available_bytes_concurrent();
     result += test_shared_fifo_read_closed_no_data_nonblocking();
     result += test_shared_fifo_extract_closed_no_data_nonblocking();
+	result += test_sharedfifo_equality();
 
     if (result == 0) {
         std::cout << "SharedFIFO tests passed!" << std::endl;

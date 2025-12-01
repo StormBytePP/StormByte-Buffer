@@ -72,6 +72,16 @@ namespace StormByte::Buffer {
 			 */
 			FIFO& operator=(FIFO&& other) noexcept;
 
+			// Two buffers are considered equal if they have the same content
+			inline bool operator==(const FIFO& other) const noexcept {
+				return m_buffer == other.m_buffer;
+			}
+
+			//
+			inline bool operator!=(const FIFO& other) const noexcept {
+				return !(*this == other);
+			}
+
 			/**
 			 * @brief Get the number of bytes available for non-destructive reading.
 			 * @return The number of bytes that can be read from the current read position

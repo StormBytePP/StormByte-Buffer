@@ -55,27 +55,30 @@ namespace StormByte::Buffer {
             Consumer(const Consumer&) = default;
 
             /**
-             * @brief Copy assignment operator.
-             * @return Reference to this Consumer.
-             */
-            Consumer& operator=(const Consumer&) = default;
-
-            /**
              * @brief Move constructor.
              * @details Transfers ownership of the buffer from the moved-from Consumer.
              */
             Consumer(Consumer&&) = default;
 
             /**
+             * @brief Destructor.
+             */
+            ~Consumer() = default;
+
+			/**
+             * @brief Copy assignment operator.
+             * @return Reference to this Consumer.
+             */
+            Consumer& operator=(const Consumer&) = default;
+
+			/**
              * @brief Move assignment operator.
              * @return Reference to this Consumer.
              */
             Consumer& operator=(Consumer&&) = default;
 
-            /**
-             * @brief Destructor.
-             */
-            ~Consumer() = default;
+			bool operator==(const Consumer& other) const noexcept = delete;
+			bool operator!=(const Consumer& other) const noexcept = delete;
 
 			/**
 			 * @brief Get the number of bytes available for non-blocking read.

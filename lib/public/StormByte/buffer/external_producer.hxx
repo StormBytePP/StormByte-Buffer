@@ -21,6 +21,8 @@ namespace StormByte::Buffer {
 			~ExternalProducer();
 			ExternalProducer& operator=(const ExternalProducer&) = delete;
 			ExternalProducer& operator=(ExternalProducer&&) = default;
+			bool operator==(const ExternalProducer& other) const noexcept = delete;
+			bool operator!=(const ExternalProducer& other) const noexcept = delete;
 
 			using Producer::SetError;
 			using Producer::IsWritable;

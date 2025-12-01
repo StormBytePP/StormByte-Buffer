@@ -3,6 +3,14 @@
 
 using namespace StormByte::Buffer;
 
+bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
+	// Lock both mutexes to safely compare internal state and delegate to
+	// FIFO::operator== so behavior remains coherent if FIFO's equality
+	// semantics change in the future.
+	std::scoped_lock lock1(m_mutex, other.m_mutex);
+	return static_cast<const FIFO&>(*this) == static_cast<const FIFO&>(other);
+}
+
 void SharedFIFO::Close() noexcept {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
