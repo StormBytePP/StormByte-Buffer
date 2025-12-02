@@ -43,7 +43,7 @@ namespace StormByte::Buffer {
      *
      * @see Producer
      */
-    class STORMBYTE_BUFFER_PUBLIC Consumer final {
+    class STORMBYTE_BUFFER_PUBLIC Consumer {
 		friend class Producer;
         public:
             /**
@@ -63,7 +63,7 @@ namespace StormByte::Buffer {
             /**
              * @brief Destructor.
              */
-            ~Consumer() = default;
+            virtual ~Consumer() = default;
 
 			/**
              * @brief Copy assignment operator.
@@ -163,6 +163,15 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Seek(), Read()
 			 */
 			inline void Seek(const std::size_t& position, const Position& mode) { m_buffer->Seek(position, mode); }
+
+			/**
+			 * @brief Removes count bytes from the read position.
+			 * @param count Number of bytes to skip; 0 is a noop.
+			 * @details Advances the read position by count bytes without reading data.
+			 *          Clamped to AvailableBytes(). Does not affect stored data.
+			 * @see SharedFIFO::Skip(), Read()
+			 */
+			inline void Skip(const std::size_t& count) { m_buffer->Skip(count); }
 
 			/**
 			 * @brief Check if the reader has reached end-of-file.

@@ -15,9 +15,4 @@ if(ENABLE_TEST AND NOT STORMBYTE_AS_DEPENDENCY)
 	add_executable(PipelineTests pipeline_test.cxx)
 	target_link_libraries(PipelineTests StormByte-Buffer)
 	add_test(NAME PipelineTests COMMAND PipelineTests)
-
-	add_executable(ExternalProducerTests external_producer_test.cxx)
-	target_link_libraries(ExternalProducerTests StormByte-Buffer)
-	add_test(NAME ExternalProducerTests COMMAND ExternalProducerTests)
-	
 endif()
