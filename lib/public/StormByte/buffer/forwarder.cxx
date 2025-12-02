@@ -13,28 +13,91 @@ Forwarder::Forwarder(const ExternalReadFunction& readFunc, const ExternalWriteFu
 m_readFunction(readFunc), m_writeFunction(writeFunc) {}
 
 ExpectedData<ReadError> Forwarder::Read(std::size_t count) const {
-	if (count == 0) {
-		// A read of 0 bytes is a no-op that returns an empty vector
-		return {};
-	}
 	if (!IsReadable()) {
 		return StormByte::Unexpected(ReadError("Buffer in not readable"));
 	}
-	auto data = m_readFunction(count);
-	if (!data) {
-		return StormByte::Unexpected(ReadError("Forwarder read failed: " + std::string(data.error()->what())));
+	
+	// count must be > 0 because we cannot determine external reader size
+	if (count == 0) {
+		return StormByte::Unexpected(ReadError("Read count must be greater than 0 for Forwarder"));
 	}
-	return *data;
+	
+	const std::size_t available = m_buffer.AvailableBytes();
+	
+	// If buffer has enough data, read from buffer only
+	if (available >= count) {
+		return m_buffer.Read(count);
+	}
+	
+	// Read what we have from buffer
+	std::vector<std::byte> result;
+	if (available > 0) {
+		auto buffer_data = m_buffer.Read(available);
+		if (buffer_data.has_value()) {
+			result = std::move(*buffer_data);
+		}
+	}
+	
+	// Read remaining from external function
+	const std::size_t remaining = count - result.size();
+	auto external_data = m_readFunction(remaining);
+	if (!external_data) {
+		return StormByte::Unexpected(ReadError("Forwarder read failed: " + std::string(external_data.error()->what())));
+	}
+	
+	// Combine results
+	result.insert(result.end(), external_data->begin(), external_data->end());
+	return result;
 }
 
 ExpectedData<ReadError> Forwarder::Extract(std::size_t count) {
-	return Read(count);
+	if (!IsReadable()) {
+		return StormByte::Unexpected(ReadError("Buffer in not readable"));
+	}
+	
+	// count must be > 0 because we cannot determine external reader size
+	if (count == 0) {
+		return StormByte::Unexpected(ReadError("Extract count must be greater than 0 for Forwarder"));
+	}
+	
+	const std::size_t available = m_buffer.AvailableBytes();
+	
+	// If buffer has enough data, extract from buffer only
+	if (available >= count) {
+		return m_buffer.Extract(count);
+	}
+	
+	// Extract what we have from buffer
+	std::vector<std::byte> result;
+	if (available > 0) {
+		auto buffer_data = m_buffer.Extract(available);
+		if (buffer_data.has_value()) {
+			result = std::move(*buffer_data);
+		}
+	}
+	
+	// Read remaining from external function (Extract is destructive, so we just read)
+	const std::size_t remaining = count - result.size();
+	auto external_data = m_readFunction(remaining);
+	if (!external_data) {
+		return StormByte::Unexpected(ReadError("Forwarder read failed: " + std::string(external_data.error()->what())));
+	}
+	
+	// Combine results
+	result.insert(result.end(), external_data->begin(), external_data->end());
+	return result;
 }
 
 ExpectedVoid<WriteError> Forwarder::Write(const std::vector<std::byte>& data) {
-	if (!IsWritable() || data.empty()) {
-		return StormByte::Unexpected(WriteError("Buffer is not writable or data is empty"));
+	if (!IsWritable()) {
+		return StormByte::Unexpected(WriteError("Buffer is not writable"));
 	}
+	
+	if (data.empty()) {
+		return {};
+	}
+	
+	// Direct passthrough to external write function
 	return m_writeFunction(data);
 }
 
@@ -53,13 +116,21 @@ ExpectedVoid<WriteError> Forwarder::Write(FIFO&& other) noexcept {
 	return Write(other);
 }
 
-void Forwarder::Clear() noexcept {}
+void Forwarder::Clear() noexcept {
+	m_buffer.Clear();
+}
 
-void Forwarder::Clean() noexcept {}
+void Forwarder::Clean() noexcept {
+	m_buffer.Clean();
+}
 
-void Forwarder::Seek(const std::ptrdiff_t&, const Position&) const noexcept {}
+void Forwarder::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+	m_buffer.Seek(offset, mode);
+}
 
-void Forwarder::Skip(const std::size_t&) noexcept {}
+void Forwarder::Skip(const std::size_t& count) noexcept {
+	m_buffer.Skip(count);
+}
 
 ExternalReadFunction Forwarder::ErrorReadFunction() noexcept {
 	return [](const std::size_t&) -> ExpectedData<ReadError> {

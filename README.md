@@ -202,21 +202,24 @@ int main() {
 
 #### Forwarder
 
-`Forwarder` now implements a `SharedFIFO`-compatible API while delegating actual I/O
-to user-supplied callables. It does not store data internally; instead it forwards
-reads and writes to the configured handlers.
+`Forwarder` implements a `SharedFIFO`-compatible API with internal buffering and
+delegating actual I/O to user-supplied callables when needed.
 
-- **Purpose**: Expose the `SharedFIFO` API surface while forwarding operations to
-    external handlers (useful for bridging sockets, files, or custom callback-based sources).
+- **Purpose**: Expose the `SharedFIFO` API surface with internal buffering that only
+    calls external handlers when the buffer cannot satisfy the operation (useful for
+    bridging sockets, files, or custom callback-based sources).
 - **Behaviour**:
-    - `Read(count)` and `Extract(count)` call the configured read handler and return
-        `ExpectedData<ReadError>` with the requested bytes or an error.
-    - `Write(...)` overloads forward data to the write handler and return
-        `ExpectedVoid<WriteError>` indicating success or failure.
-    - Several FIFO-style operations exist for API compatibility but are no-ops on
-        `Forwarder`: `Clear()`, `Clean()`, `Seek()`, and `Skip()`.
-    - Important: `Forwarder::Read(0)` is treated as a request for zero bytes (a no-op)
-        — it does not mean "read all available".
+    - `Read(count)` first checks the internal buffer. If sufficient data is available,
+        it returns from the buffer without calling the external function. If more data
+        is needed, it reads the remaining bytes from the external function and combines
+        both sources. Example: `Read(2)` with 1 byte in buffer reads 1 byte from external
+        function and returns both bytes combined.
+    - `Extract(count)` behaves like `Read()` but removes data from the internal buffer.
+    - `Write(...)` is a direct passthrough to the external write handler without storing
+        data in the internal buffer.
+    - `Read(0)` and `Extract(0)` return an error because the forwarder cannot determine
+        how many bytes the external reader would provide. Always specify a count > 0.
+    - `Clear()`, `Clean()`, `Seek()`, and `Skip()` operate on the internal buffer.
 
 **Usage examples:**
 

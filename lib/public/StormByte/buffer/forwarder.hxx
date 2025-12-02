@@ -15,32 +15,31 @@ namespace StormByte::Buffer {
 	/**
  	 * @class Forwarder
  	 * @brief Adapter that exposes a `SharedFIFO`-compatible interface while delegating
- 	 *        actual I/O to user-provided callables.
+ 	 *        actual I/O to user-provided callables, with internal buffering.
  	 *
  	 * @details `Forwarder` publicly inherits from `SharedFIFO` and implements the
- 	 *          same producer/consumer API surface, but it does not own or buffer data
- 	 *          internally. Instead, reads and writes are forwarded to the callables
- 	 *          supplied at construction time (`ExternalReadFunction` / `ExternalWriteFunction`).
+ 	 *          same producer/consumer API surface. It maintains an internal buffer
+ 	 *          and only calls external functions when the buffer cannot satisfy
+ 	 *          the operation.
  	 *
  	 *          Key behaviours:
- 	 *          - `Read(count)` and `Extract(count)` invoke the configured read handler
- 	 *            and return an `ExpectedData<Exception>` (the library's generic buffer
- 	 *            `Exception` type is used for handler errors).
- 	 *          - `Write(...)` overloads forward their data to the configured write
- 	 *            handler and return `true` on success, `false` on failure.
- 	 *          - Several methods that are meaningful for in-memory FIFOs are provided
- 	 *            for API compatibility but act as no-ops on `Forwarder`: `Clear()`,
- 	 *            `Clean()`, `Seek()`, and `Skip()`.
+ 	 *          - `Read(count)` first checks the internal buffer. If sufficient data
+ 	 *            is available, it returns from the buffer without calling the external
+ 	 *            read function. If more data is needed, it calls the external function
+ 	 *            for the remaining bytes and combines both sources.
+ 	 *          - `Write(...)` is a direct passthrough to the external write handler.
+ 	 *            Data is not stored in the internal buffer.
+ 	 *          - `Extract(count)` behaves like `Read()` but removes data from the buffer.
+ 	 *          - `Clear()`, `Clean()`, `Seek()`, and `Skip()` operate on the internal buffer.
+ 	 *
+ 	 *          Example: `Read(2)` with 1 byte in buffer will read 1 byte from the
+ 	 *          external function and return both bytes combined.
  	 *
  	 *          Important notes:
- 	 *          - Unlike `FIFO::Read(0)` which returns all available bytes, `Forwarder::Read(0)`
- 	 *            is treated as a request for zero bytes (a no-op) because the forwarder
- 	 *            does not own an internal buffer and cannot determine the amount of data
- 	 *            the external source would provide. Callers should request an explicit
- 	 *            non-zero `count` when they want data from the external handler.
- 	 *          - When a handler is not supplied for an operation the forwarder uses the
- 	 *            `NoopReadFunction()` / `NoopWriteFunction()` which return an appropriate
- 	 *            `Exception` via `StormByte::Unexpected`.
+ 	 *          - `Read(0)` returns an error because the forwarder cannot determine how
+ 	 *            many bytes the external reader would provide. Always specify a count.
+ 	 *          - When a handler is not supplied for an operation the forwarder uses
+ 	 *            error functions that return appropriate errors via `StormByte::Unexpected`.
  	 *
  	 * @note Copy and move operations are deleted to avoid accidental sharing
  	 *       of handler state; create a new `Forwarder` if you need a different
@@ -77,29 +76,35 @@ namespace StormByte::Buffer {
 			Forwarder& operator=(Forwarder&& other) noexcept = delete;
 
 			/**
-			 * @brief Forwarded read operation.
-			 * @param count Number of bytes to request from the external source. A value of
-			 *              `0` is treated as a no-op (requests zero bytes) — callers should
-			 *              use a non-zero `count` to obtain data from the external handler.
+			 * @brief Read operation with internal buffering.
+			 * @param count Number of bytes to read. Must be greater than 0.
 			 * @return `ExpectedData<ReadError>` containing the bytes on success or an
-			 *         `ReadError` describing a handler failure.
+			 *         `ReadError` describing a failure.
+			 * @details First checks the internal buffer. If sufficient data exists,
+			 *          returns from buffer without calling external function. Otherwise,
+			 *          reads remaining needed bytes from external function and combines
+			 *          buffer data with external data.
+			 * @note `count` must be > 0. Reading 0 bytes returns an error because the
+			 *       forwarder cannot determine external reader size.
 			 */
 			ExpectedData<ReadError> Read(std::size_t count = 0) const override;
 
 			/**
-			 * @brief Compatibility overload that behaves like `Read()` for forwarders.
-			 * @param count Number of bytes to request.
+			 * @brief Destructive read operation with internal buffering.
+			 * @param count Number of bytes to extract. Must be greater than 0.
 			 * @return `ExpectedData<ReadError>` with the requested bytes or an error.
-			 *
-			 * @note Present for API compatibility with `SharedFIFO` - it forwards to the
-			 *       same underlying read handler.
+			 * @details Like `Read()` but removes data from the internal buffer after reading.
+			 *          First checks buffer, then calls external function if needed.
+			 * @note `count` must be > 0. Extracting 0 bytes returns an error.
 			 */
 			ExpectedData<ReadError> Extract(std::size_t count = 0) override;
 
 			/**
-			 * @brief Forward a vector of bytes to the configured write handler.
+			 * @brief Write bytes directly to external handler (passthrough).
 			 * @param data Bytes to write.
 			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 * @details Direct passthrough to external write function. Data is not
+			 *          stored in the internal buffer.
 			 */
 			ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
 
@@ -125,24 +130,23 @@ namespace StormByte::Buffer {
 			ExpectedVoid<WriteError> Write(const std::string& data) override;
 
 			/**
-			 * @brief No-op for Forwarder (kept for API compatibility).
-			 * @details `Clear()` is meaningful for in-memory FIFOs. For `Forwarder` it does
-			 *          nothing because the forwarder does not store data.
+			 * @brief Clear the internal buffer.
+			 * @details Removes all data from the internal buffer.
 			 */
 			void Clear() noexcept override;
 
 			/**
-			 * @brief No-op for Forwarder (kept for API compatibility).
+			 * @brief Clean the internal buffer (removes read data).
 			 */
 			void Clean() noexcept override;
 
 			/**
-			 * @brief No-op seek for Forwarder (kept for API compatibility).
+			 * @brief Seek within the internal buffer.
 			 */
 			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
 			/**
-			 * @brief No-op skip for Forwarder (kept for API compatibility).
+			 * @brief Skip bytes in the internal buffer.
 			 */
 			void Skip(const std::size_t& count) noexcept override;
 
@@ -171,6 +175,14 @@ namespace StormByte::Buffer {
 			static ExternalWriteFunction NoopWriteFunction() noexcept;
 
 		private:
+			/**
+			 * @brief Internal FIFO buffer for caching data.
+			 *
+			 * Data is stored here and external functions are only called when
+			 * the buffer cannot satisfy read/write operations.
+			 */
+			mutable FIFO m_buffer;
+
 			/**
 			 * @brief Callable used to satisfy `Read()` requests.
 			 *
