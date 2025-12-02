@@ -109,7 +109,7 @@ ExpectedVoid<WriteError> SharedFIFO::Write(const FIFO& other) {
 		// Reject writes when closed or in error state.
 		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
 		// Delegate to base FIFO implementation to append the full contents.
-		FIFO::Write(other);
+		(void)FIFO::Write(other);
 	}
 	// Notify waiters after performing the write.
 	m_cv.notify_all();
@@ -124,7 +124,7 @@ ExpectedVoid<WriteError> SharedFIFO::Write(FIFO&& other) noexcept {
 		// Delegate to base FIFO rvalue overload; it will perform efficient
 		// move/steal semantics when possible and leave `other` in a valid
 		// empty state.
-		FIFO::Write(std::move(other));
+		(void)FIFO::Write(std::move(other));
 	}
 	// Notify waiters after performing the write.
 	m_cv.notify_all();

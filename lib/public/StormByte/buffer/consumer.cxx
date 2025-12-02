@@ -8,7 +8,7 @@ FIFO Consumer::ReadUntilEoF() {
 	while (!EoF()) {
 		auto data = Read();
 		if (data) {
-			result.Write(*data);
+			(void)result.Write(*data);
 		} else {
 			// On error, break the loop
 			break;
@@ -24,7 +24,7 @@ FIFO Consumer::ExtractUntilEoF() {
 	while (!EoF()) {
 		auto data = Extract();
 		if (data) {
-			result.Write(*data);
+			(void)result.Write(*data);
 		} else {
 			// On error, break the loop
 			break;

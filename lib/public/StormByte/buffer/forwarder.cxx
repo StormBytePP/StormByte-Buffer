@@ -137,7 +137,7 @@ ExpectedData<ReadError> Forwarder::Peek(std::size_t count) const noexcept {
 		if (!read_data_expected)
 			return StormByte::Unexpected(ReadError("Forwarder peek failed: " + std::string(read_data_expected.error()->what())));
 		// Write to internal buffer (not passthrough) - need to cast away const
-		const_cast<Forwarder*>(this)->FIFO::Write(*read_data_expected);
+		(void)const_cast<Forwarder*>(this)->FIFO::Write(*read_data_expected);
 	}
 	return FIFO::Peek(count);
 }
