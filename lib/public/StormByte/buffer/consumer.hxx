@@ -122,7 +122,7 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
 			 */
 
-			inline ExpectedData<Exception> Read(std::size_t count = 0) { return m_buffer->Read(count); }
+			inline ExpectedData<Exception> Read(std::size_t count = 0) const { return m_buffer->Read(count); }
 			
 			/**
 			* @brief Destructive read that removes data from the buffer (blocks until data available).
@@ -162,7 +162,7 @@ namespace StormByte::Buffer {
 			 *          clamped to valid range. Does not affect stored data.
 			 * @see SharedFIFO::Seek(), Read()
 			 */
-			inline void Seek(const std::size_t& position, const Position& mode) { m_buffer->Seek(position, mode); }
+			inline void Seek(const std::size_t& position, const Position& mode) const { m_buffer->Seek(position, mode); }
 
 			/**
 			 * @brief Removes count bytes from the read position.
