@@ -36,6 +36,9 @@ namespace StormByte::Buffer {
 	template<class Exception>
 	using ExpectedData = Expected<std::vector<std::byte>, Exception>;
 
+	template<class Exception>
+	using ExpectedVoid = Expected<void, Exception>;
+
 	/**
 	 * @brief Type alias for pipeline transformation functions.
 	 * 
@@ -66,23 +69,6 @@ namespace StormByte::Buffer {
 		Async   ///< Concurrent detached-thread execution per stage.
 	};
 
-	/**
-	 * @brief External reader callback used by `ExternalProducer`.
-	 *
-	 * The function MUST return an `ExpectedData<ReaderExhausted>` which represents
-	 * either a `std::vector<std::byte>` of data to be written into the buffer or
-	 * an error condition. Use `StormByte::Unexpected(ReaderExhausted(...))` to
-	 * signal an error.
-	 *
-	 * Semantics:
-	 * - Returning a non-empty `std::vector<std::byte>` appends those bytes to the
-	 *   associated `Producer` buffer.
-	 * - Returning an empty `std::vector<std::byte>` is considered a valid value
-	 *   and indicates end-of-data (EOF). `ExternalProducer` will call the reader
-	 *   repeatedly until an empty vector is returned (EOF) or an error is returned.
-	 * - Returning an unexpected/exception of type `ReaderExhausted` signals a
-	 *   read error and will cause the `ExternalProducer` to call `SetError()` on
-	 *   the buffer.
-	 */
-	using ExternalReader = std::function<ExpectedData<ReaderExhausted>(void)>;
+	using ExternalReadFunction = std::function<ExpectedData<ReadError>(const std::size_t&)>;
+	using ExternalWriteFunction = std::function<ExpectedVoid<WriteError>(const std::vector<std::byte>&)>;
 }

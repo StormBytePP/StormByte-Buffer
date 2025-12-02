@@ -22,11 +22,7 @@ namespace StormByte::Buffer {
      * @class BufferOverflow
      * @brief Exception class for buffer overflow errors.
      *
-     * The `BufferOverflow` exception is thrown when an operation attempts to write
-     * more data to a buffer than it can hold. This exception ensures that buffer
-     * integrity is maintained by preventing overflows.
-     *
-     * Inherits all functionality from the `StormByte::Buffer::Exception` class.
+     * @details Thrown when a write operation exceeds the buffer's capacity
      */
     class STORMBYTE_BUFFER_PUBLIC InsufficientData: public Exception {
         public:
@@ -34,12 +30,23 @@ namespace StormByte::Buffer {
     };
 
 	/**
-	 * @class ReaderExhausted
-	 * @brief Exception class for reader exhaustion errors.
-	 * The `ReaderExhausted` exception is thrown when a read operation is attempted
-	 * on a function that will not return more data, indicating that the reader has been exhausted.
+	 * @class ReadError
+	 * @brief Exception class for read errors from buffers.
+	 * 
+	 * @details Thrown when a read operation fails
 	 */
-	class STORMBYTE_BUFFER_PUBLIC ReaderExhausted: public Exception {
+	class STORMBYTE_BUFFER_PUBLIC ReadError: public Exception {
+		public:
+			using Exception::Exception;
+	};
+
+	/**
+	 * @class WriteError
+	 * @brief Exception class for write errors to buffers.
+	 * 
+	 * @details Thrown when a write operation fails
+	 */
+	class STORMBYTE_BUFFER_PUBLIC WriteError: public Exception {
 		public:
 			using Exception::Exception;
 	};

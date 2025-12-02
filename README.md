@@ -200,69 +200,86 @@ int main() {
 }
 ```
 
-#### ExternalProducer
+#### Forwarder
 
-`ExternalProducer` is a convenience wrapper that enables feeding data into a `Producer` from
-an external callback. It runs a background thread which repeatedly calls an `ExternalReader`
-callback and writes the returned bytes into the underlying buffer. The callback type is:
+`Forwarder` is a lightweight adapter that delegates read and write operations to external
+callables supplied at construction time. It does not buffer data itself and is useful to
+encapsulate custom I/O backends (files, sockets, or other callback-based sources).
 
-```cpp
-using ExternalReader = std::function<ExpectedData<ReaderExhausted>(void)>;
-```
+- **Purpose**: Forward read/write operations to user-provided handlers without storing data.
+- **Behaviour**:
+    - Construct with a read handler, write handler, or both.
+    - `Read(count)` invokes the configured read handler with the requested `count`.
+    - Important: `Forwarder::Read(0)` is a no-op (requests zero bytes); it does **not** mean
+        "read all available" because the forwarder does not own the data source.
+- **Errors**: When no handler is provided for an operation a default noop handler returns
+    an appropriate `ReadError`/`WriteError` via `StormByte::Unexpected`.
 
-Semantics:
-- The callback should return a `std::vector<std::byte>` on success. Returning an empty
-    vector is a valid value and signals end-of-data (EOF) to the `ExternalProducer` — the
-    producer will call `Close()` and stop reading.
-- To signal a read error, return an unexpected value: `StormByte::Unexpected(ReaderExhausted(...))`.
-    The `ExternalProducer` will set the buffer error state (`SetError()`) and stop processing.
-
-Use cases include bridging to legacy APIs, file/network readers, or systems that supply
-data via callback semantics.
-
-Example (simple reader that returns a sequence of chunks, then EOF):
+**Usage examples:**
 
 ```cpp
-#include <StormByte/buffer/external_producer.hxx>
+#include <StormByte/buffer/forwarder.hxx>
 #include <StormByte/string.hxx>
 
-using StormByte::Buffer::ExternalProducer;
-using StormByte::Buffer::ExpectedData;
-using StormByte::Buffer::ReaderExhausted;
+using StormByte::Buffer::Forwarder;
 
-int main() {
-        std::vector<std::string> chunks = {"Hello", "-", "External", "-", "Producer"};
+// Read-only forwarder: returns up to `count` bytes from an external source
+auto reader = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        std::string s = "HelloWorld";
+        if (count == 0) return std::vector<std::byte>{}; // noop
+        std::size_t n = std::min(count, s.size());
+        return StormByte::String::ToByteVector(s.substr(0, n));
+};
 
-        // ExternalReader: return next chunk as bytes; return empty vector to indicate EOF
-        auto reader = [chunks = std::move(chunks), idx = std::size_t{0}]() mutable -> ExpectedData<ReaderExhausted> {
-                if (idx < chunks.size()) {
-                        return StormByte::String::ToByteVector(chunks[idx++]);
-                }
-                // EOF: return empty vector
-                return std::vector<std::byte>();
-        };
+Forwarder readOnly(reader);
+auto data = readOnly.Read(5); // reads "Hello"
 
-        ExternalProducer ext(reader);
-        auto consumer = ext.Consumer();
+// Write-only forwarder: capture written bytes
+std::vector<std::byte> captured;
+auto writer = [&captured](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
+        captured = v; return {};
+};
 
-        // Consume until EOF
-        std::string collected;
-        while (!consumer.EoF() || consumer.AvailableBytes() > 0) {
-                auto data = consumer.Extract(0);
-                if (data && !data->empty()) {
-                        collected += StormByte::String::FromByteVector(*data);
-                }
-        }
-
-        // collected == "Hello-External-Producer"
-}
+Forwarder writeOnly(writer);
+writeOnly.Write(StormByte::String::ToByteVector("Data"));
 ```
 
-Notes:
-- The `ExternalProducer` spawns a thread on construction and joins it on destruction.
-- If the reader returns an error (`StormByte::Unexpected(ReaderExhausted(...))`), the
-    `ExternalProducer` will call `SetError()` on the buffer so consumers observing the
-    buffer will wake and receive an error from blocking reads.
+#### Bridge
+
+`Bridge` is a small adapter that privately inherits from `Forwarder` and exposes a
+convenience operation `Passthrough(count)` which reads exactly `count` bytes from the
+configured read handler and immediately writes them to the configured write handler.
+
+- **Purpose**: Pass through a specified number of bytes from a source to a sink without
+    buffering them in user code.
+- **Behaviour**:
+    - `Passthrough(0)` is a no-op and returns success without invoking handlers.
+    - On success, the requested bytes are forwarded from read -> write.
+    - On failure, `Passthrough()` returns an `ExpectedVoid<Exception>` containing an
+        `Exception` describing the underlying read or write error.
+
+**Usage example:**
+
+```cpp
+#include <StormByte/buffer/bridge.hxx>
+#include <StormByte/string.hxx>
+
+using StormByte::Buffer::Bridge;
+
+auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        std::string s = "ABCD";
+        if (count == 0) return std::vector<std::byte>{};
+        return StormByte::String::ToByteVector(s.substr(0, std::min(count, s.size())));
+};
+
+std::vector<std::byte> received;
+auto writer = [&received](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
+        received = v; return {};
+};
+
+Bridge bridge(reader, writer);
+auto res = bridge.Passthrough(4); // forwards "ABCD" into `received`
+```
 
 
 #### Pipeline

@@ -43,7 +43,7 @@ namespace StormByte::Buffer {
      *
      * @see Producer
      */
-    class STORMBYTE_BUFFER_PUBLIC Consumer {
+    class STORMBYTE_BUFFER_PUBLIC Consumer final {
 		friend class Producer;
         public:
             /**
@@ -63,7 +63,7 @@ namespace StormByte::Buffer {
             /**
              * @brief Destructor.
              */
-            virtual ~Consumer() = default;
+            ~Consumer() = default;
 
 			/**
              * @brief Copy assignment operator.
