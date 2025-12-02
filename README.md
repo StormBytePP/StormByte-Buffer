@@ -210,9 +210,9 @@ reads and writes to the configured handlers.
     external handlers (useful for bridging sockets, files, or custom callback-based sources).
 - **Behaviour**:
     - `Read(count)` and `Extract(count)` call the configured read handler and return
-        `ExpectedData<Exception>` (the library's generic `Exception` type is used for handler errors).
-    - `Write(...)` overloads forward data to the write handler and return `bool` to
-        indicate success (`true`) or failure (`false`).
+        `ExpectedData<ReadError>` with the requested bytes or an error.
+    - `Write(...)` overloads forward data to the write handler and return
+        `ExpectedVoid<WriteError>` indicating success or failure.
     - Several FIFO-style operations exist for API compatibility but are no-ops on
         `Forwarder`: `Clear()`, `Clean()`, `Seek()`, and `Skip()`.
     - Important: `Forwarder::Read(0)` is treated as a request for zero bytes (a no-op)
@@ -227,7 +227,7 @@ reads and writes to the configured handlers.
 using StormByte::Buffer::Forwarder;
 
 // Read-only forwarder: returns up to `count` bytes from an external source
-auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::Exception> {
+auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
         std::string s = "HelloWorld";
         if (count == 0) return std::vector<std::byte>{}; // noop
         std::size_t n = std::min(count, s.size());
@@ -243,13 +243,13 @@ if (data.has_value()) {
 
 // Write-only forwarder: capture written bytes
 std::vector<std::byte> captured;
-auto writer = [&captured](const std::vector<std::byte>& v) -> bool {
-        captured = v; return true;
+auto writer = [&captured](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
+        captured = v; return {};
 };
 
 Forwarder writeOnly(writer);
-bool ok = writeOnly.Write(StormByte::String::ToByteVector("Data"));
-if (ok) {
+auto result = writeOnly.Write(StormByte::String::ToByteVector("Data"));
+if (result.has_value()) {
         std::string out = StormByte::String::FromByteVector(captured);
         // out == "Data"
 }
@@ -267,7 +267,8 @@ configured read handler and immediately writes them to the configured write hand
     - `Passthrough(0)` is a no-op and returns success without invoking handlers.
     - On success, the requested bytes are forwarded from read -> write.
     - On failure, `Passthrough()` returns an `ExpectedVoid<Exception>` containing an
-        `Exception` describing the underlying read or write error.
+        `Exception` describing the underlying read or write error (note: the base
+        `Exception` type is used to accommodate both read and write failures).
 
 **Usage example:**
 
@@ -380,8 +381,9 @@ int main() {
 
 ### Error Handling
 
-The library uses `std::expected`-like (`StormByte::Expected`) for error handling in `Read()` and `Extract()` operations:
+The library uses `std::expected`-like (`StormByte::Expected`) for error handling:
 
+**Read/Extract operations** return `ExpectedData<ReadError>`:
 ```cpp
 auto data = fifo.Read(100);  // Request more than available
 if (data.has_value()) {
@@ -389,7 +391,18 @@ if (data.has_value()) {
     process(*data);
 } else {
     // Error - insufficient data available
-    std::cerr << "Insufficient data" << std::endl;
+    std::cerr << "Read error: " << data.error()->what() << std::endl;
+}
+```
+
+**Write operations** return `ExpectedVoid<WriteError>`:
+```cpp
+auto result = producer.Write("Some data");
+if (result.has_value()) {
+    // Success - data written
+} else {
+    // Error - buffer closed or in error state
+    std::cerr << "Write error: " << result.error()->what() << std::endl;
 }
 ```
 

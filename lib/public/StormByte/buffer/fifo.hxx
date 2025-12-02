@@ -18,22 +18,22 @@ namespace StormByte::Buffer {
 	/**
 	 * @class FIFO
 	* @brief Byte-oriented FIFO buffer with grow-on-demand.
-	 *
-	 * @par Overview
+	*
+	* @par Overview
 	*  A contiguous growable buffer implemented atop @c std::deque<std::byte> that tracks
 	*  a logical read position. It grows automatically to fit writes and supports
 	*  efficient non-destructive reads and destructive extracts.
-	 *
-	 * @par Thread safety
-	 *  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO.
-	 *
-	 * @par Buffer behavior
+	*
+	* @par Thread safety
+	*  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO.
+	*
+	* @par Buffer behavior
 	*  The buffer supports clearing and cleaning operations, a movable read position
 	*  for non-destructive reads, and a closed state to signal end-of-writes.
-	 *
-	 * @see SharedFIFO for thread-safe version
-	 * @see Producer and Consumer for higher-level producer-consumer pattern
-	 */
+	*
+	* @see SharedFIFO for thread-safe version
+	* @see Producer and Consumer for higher-level producer-consumer pattern
+	*/
 	class STORMBYTE_BUFFER_PUBLIC FIFO {
 		public:
 			/**
@@ -129,30 +129,77 @@ namespace StormByte::Buffer {
 			virtual void Clean() noexcept;
 
 			/**
+			 * @brief Non-destructive read from the buffer.
+			 * @param count Number of bytes to read; 0 reads all available from read position.
+			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @details Non-destructive operation - data remains in the buffer and can be
+			 *          read again using Seek(). The read position advances by the number
+			 *          of bytes read.
+			 *
+			 *          Semantics:
+			 *          - If `count == 0`: the call returns all available bytes. If no
+			 *            bytes are available, a `ReadError` is returned.
+			 *          - If `count > 0`: the call returns exactly `count` bytes when
+			 *            that many bytes are available. If zero bytes are available, or
+			 *            if `count` is greater than the number of available bytes, a
+			 *            `ReadError` is returned.
+			 *
+			 *          This class is non-thread-safe; callers that require blocking
+			 *          behavior or closed/error semantics should use `SharedFIFO`.
+			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
+			 * @see Extract(), Seek(), SharedFIFO::Read(), IsReadable()
+			 */
+			virtual ExpectedData<ReadError>Read(std::size_t count = 0) const;
+
+			/**
+			 * @brief Destructive read that removes data from the buffer.
+			 * @param count Number of bytes to extract; 0 extracts all available.
+			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @details Removes data from the buffer, advancing the head and decreasing size.
+			 *          The read position is adjusted. Uses zero-copy move semantics when
+			 *          extracting all contiguous data (optimization).
+			 *
+			 *          Semantics:
+			 *          - If `count == 0`: the call extracts all available bytes. If no
+			 *            bytes are available, a `ReadError` is returned.
+			 *          - If `count > 0`: the call extracts exactly `count` bytes when
+			 *            that many bytes are available. If zero bytes are available, or
+			 *            if `count` is greater than the number of available bytes, a
+			 *            `ReadError` is returned.
+			 *
+			 *          This class is non-thread-safe; callers that require blocking
+			 *          behavior or closed/error semantics should use `SharedFIFO`.
+			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
+			 * @see Read(), SharedFIFO::Extract(), IsReadable()
+			 */
+			virtual ExpectedData<ReadError> Extract(std::size_t count = 0);
+
+			/**
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param data Byte vector to append to the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see Write(const std::string&), IsClosed()
 			 */
-			virtual bool Write(const std::vector<std::byte>& data);
+			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data);
 
 			/**
 			 * @brief Append the full contents of another FIFO to this buffer.
 			 * @param other FIFO whose entire stored byte sequence will be appended.
-			 * @return true on success.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details This overload appends all bytes from `other.m_buffer` (from
 			 * its beginning to end). The const-reference overload does not modify
 			 * the `other` FIFO; it simply copies or inserts the bytes into this
 			 * FIFO. Use the rvalue overload to transfer ownership when possible.
 			 */
 
-			virtual bool Write(const FIFO& other);
+			virtual ExpectedVoid<WriteError> Write(const FIFO& other);
 
 			/**
 			 * @brief Append the full contents of an rvalue FIFO into this buffer.
 			 * @param other FIFO to move from; its contents will be transferred.
-			 * @return true on success.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details This rvalue overload will attempt to perform an efficient
 			 * move of `other`'s internal storage. If this FIFO is empty it may
 			 * steal `other`'s underlying deque (O(1)). Otherwise it will move-insert
@@ -160,62 +207,17 @@ namespace StormByte::Buffer {
 			 * Marked `noexcept` to allow strong exception-safety guarantees for
 			 * callers relying on non-throwing move operations.
 			 */
-			virtual bool Write(FIFO&& other) noexcept;
+			virtual ExpectedVoid<WriteError> Write(FIFO&& other) noexcept;
 
 			/**
 			 * @brief Write a string to the buffer.
 			 * @param data String whose bytes will be written into the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Convenience method that converts the string to bytes and appends
 			 *          to the buffer. Equivalent to Write(std::vector<std::byte>).
 			 * @see Write(const std::vector<std::byte>&)
 			 */
-			virtual bool Write(const std::string& data);
-
-			/**
-			 * @brief Non-destructive read from the buffer.
-			 * @param count Number of bytes to read; 0 reads all available from read position.
-			 * @return A vector containing the requested bytes, or error if insufficient data.
-			 * @details Non-destructive operation - data remains in the buffer and can be
-			 *          read again using Seek(). The read position advances by the number
-			 *          of bytes read.
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call returns all available bytes. If no
-			 *            bytes are available, an `InsufficientData` error is returned.
-			 *          - If `count > 0`: the call returns exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, an
-			 *            `InsufficientData` error is returned.
-			 *
-			 *          This class is non-thread-safe; callers that require blocking
-			 *          behavior or closed/error semantics should use `SharedFIFO`.
-			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
-			 * @see Extract(), Seek(), SharedFIFO::Read(), IsReadable()
-			 */
-			virtual ExpectedData<Exception> Read(std::size_t count = 0) const;
-
-			/**
-			 * @brief Destructive read that removes data from the buffer.
-			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @return A vector containing the extracted bytes, or error if insufficient data.
-			 * @details Removes data from the buffer, advancing the head and decreasing size.
-			 *          The read position is adjusted. Uses zero-copy move semantics when
-			 *          extracting all contiguous data (optimization).
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call extracts all available bytes. If no
-			 *            bytes are available, an `InsufficientData` error is returned.
-			 *          - If `count > 0`: the call extracts exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, an
-			 *            `InsufficientData` error is returned.
-			 *
-			 *          This class is non-thread-safe; callers that require blocking
-			 *          behavior or closed/error semantics should use `SharedFIFO`.
-			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
-			 * @see Read(), SharedFIFO::Extract(), IsReadable()
-			 */
-			virtual ExpectedData<Exception> Extract(std::size_t count = 0);
+			virtual ExpectedVoid<WriteError> Write(const std::string& data);
 
 			/**
 			 * @brief Check if the reader has reached end-of-file.

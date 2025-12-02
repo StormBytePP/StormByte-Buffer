@@ -81,61 +81,16 @@ bool FIFO::EoF() const noexcept {
 	return false;
 }
 
-bool FIFO::Write(const std::vector<std::byte>& data) {
-	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
-	return true;
-}
-
-bool FIFO::Write(const FIFO& other) {
-	// Append the entire contents of the other FIFO (including bytes
-	// before/at its read position). This preserves the full buffer
-	// contents rather than only the unread portion.
-	if (other.m_buffer.empty()) {
-		return true; // nothing to append
-	}
-
-	m_buffer.insert(m_buffer.end(), other.m_buffer.begin(), other.m_buffer.end());
-	return true;
-}
-
-bool FIFO::Write(FIFO&& other) noexcept {
-	// Append the entire contents of the rvalue FIFO. If the destination is
-	// empty we can steal the deque via move (O(1)). Otherwise move-insert
-	// the elements and leave `other` empty.
-	if (other.m_buffer.empty()) {
-		other.m_position_offset = 0;
-		return true;
-	}
-
-	if (m_buffer.empty()) {
-		// Preserve the source read position when stealing its storage.
-		m_position_offset = other.m_position_offset;
-		m_buffer = std::move(other.m_buffer);
-		other.m_position_offset = 0;
-		return true;
-	}
-
-	// General case: move-append the whole deque
-	m_buffer.insert(m_buffer.end(), std::make_move_iterator(other.m_buffer.begin()), std::make_move_iterator(other.m_buffer.end()));
-	other.m_buffer.clear();
-	other.m_position_offset = 0;
-	return true;
-}
-
-bool FIFO::Write(const std::string& data) {
-	return Write(StormByte::String::ToByteVector(data));
-}
-
-ExpectedData<Exception> FIFO::Read(std::size_t count) const {
+ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	std::size_t real_count = count == 0 ? available : count;
 	if (real_count > available) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	// Read from current position using iterator constructor for efficiency
@@ -149,16 +104,16 @@ ExpectedData<Exception> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
-ExpectedData<Exception> FIFO::Extract(std::size_t count) {
+ExpectedData<ReadError> FIFO::Extract(std::size_t count) {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	std::size_t real_count = count == 0 ? available : count;
 	if (real_count > available) {
-		return StormByte::Unexpected(InsufficientData("Insufficient data to read"));
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	// Fast-path: extracting the whole deque and we're already at position 0.
@@ -183,6 +138,51 @@ ExpectedData<Exception> FIFO::Extract(std::size_t count) {
 	m_position_offset = (m_position_offset > real_count) ? (m_position_offset - real_count) : 0;
 
 	return result;
+}
+
+ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
+	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::Write(const FIFO& other) {
+	// Append the entire contents of the other FIFO (including bytes
+	// before/at its read position). This preserves the full buffer
+	// contents rather than only the unread portion.
+	if (other.m_buffer.empty()) {
+		return {}; // nothing to append
+	}
+
+	m_buffer.insert(m_buffer.end(), other.m_buffer.begin(), other.m_buffer.end());
+	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
+	// Append the entire contents of the rvalue FIFO. If the destination is
+	// empty we can steal the deque via move (O(1)). Otherwise move-insert
+	// the elements and leave `other` empty.
+	if (other.m_buffer.empty()) {
+		other.m_position_offset = 0;
+		return {};
+	}
+
+	if (m_buffer.empty()) {
+		// Preserve the source read position when stealing its storage.
+		m_position_offset = other.m_position_offset;
+		m_buffer = std::move(other.m_buffer);
+		other.m_position_offset = 0;
+		return {};
+	}
+
+	// General case: move-append the whole deque
+	m_buffer.insert(m_buffer.end(), std::make_move_iterator(other.m_buffer.begin()), std::make_move_iterator(other.m_buffer.end()));
+	other.m_buffer.clear();
+	other.m_position_offset = 0;
+	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::Write(const std::string& data) {
+	return Write(StormByte::String::ToByteVector(data));
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {

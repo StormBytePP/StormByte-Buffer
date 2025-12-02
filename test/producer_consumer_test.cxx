@@ -111,7 +111,7 @@ int test_producer_consumer_close_mechanism() {
     producer.Close();
     ASSERT_FALSE("producer not writable after Close()", producer.IsWritable());
 
-    ASSERT_FALSE("write after close should fail", producer.Write("MoreData"));
+    ASSERT_FALSE("write after close should fail", producer.Write("MoreData").has_value());
     ASSERT_EQUAL("size unchanged after close write", consumer.Size(), static_cast<std::size_t>(4));
 
     RETURN_TEST("test_producer_consumer_close_mechanism", 0);

@@ -28,7 +28,7 @@ int test_forwarder_read_only() {
 
     // Writes are not configured -> should return an error
     auto wres = f.Write(StormByte::String::ToByteVector("X"));
-    ASSERT_FALSE("test_forwarder_read_only write fails", wres);
+    ASSERT_FALSE("test_forwarder_read_only write fails", wres.has_value());
 
     RETURN_TEST("test_forwarder_read_only", 0);
 }
@@ -43,7 +43,7 @@ int test_forwarder_write_only() {
     Forwarder f(writeFn);
 
     auto wres = f.Write(StormByte::String::ToByteVector("XYZ"));
-    ASSERT_TRUE("test_forwarder_write_only write succeeded", wres);
+    ASSERT_TRUE("test_forwarder_write_only write succeeded", wres.has_value());
     ASSERT_EQUAL("test_forwarder_write_only content", StormByte::String::FromByteVector(received), std::string("XYZ"));
 
     // Reads not configured -> should return an error when requesting >0 bytes
@@ -67,7 +67,7 @@ int test_forwarder_write_fifo() {
     Forwarder f(Forwarder::NoopReadFunction(), writeFn);
 
     auto wres = f.Write(fifo);
-    ASSERT_TRUE("test_forwarder_write_fifo write succeeded", wres);
+    ASSERT_TRUE("test_forwarder_write_fifo write succeeded", wres.has_value());
     ASSERT_EQUAL("test_forwarder_write_fifo content", StormByte::String::FromByteVector(received), std::string("ABC"));
 
     RETURN_TEST("test_forwarder_write_fifo", 0);

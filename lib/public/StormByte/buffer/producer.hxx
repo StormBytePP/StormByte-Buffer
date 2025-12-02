@@ -108,26 +108,29 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write bytes to the buffer.
 			 * @param data Byte vector to append.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to buffer. Ignored if closed. Notifies waiting consumers.
 			 * @see SharedFIFO::Write(), Close()
 			 */
-			inline bool Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
+			inline ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
 
 			/**
 			 * @brief Write another FIFO's contents to the buffer.
 			 * @param other FIFO whose contents to append.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends all data from `other` to the buffer. Ignored if closed.
 			 * @see SharedFIFO::Write(), Close()
 			 */
-			inline bool Write(const FIFO& other) { return m_buffer->Write(other); }
+			inline ExpectedVoid<WriteError> Write(const FIFO& other) { return m_buffer->Write(other); }
 			
 			/**
 			 * @brief Write a string to the buffer.
 			 * @param data String to append.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Converts string to bytes and appends. Ignored if closed.
 			 * @see SharedFIFO::Write(), Close()
 			 */
-			inline bool Write(const std::string& data) { return m_buffer->Write(data); }
+			inline ExpectedVoid<WriteError> Write(const std::string& data) { return m_buffer->Write(data); }
 
 			/**
 			 * @brief Create a Consumer for reading from this Producer's buffer.

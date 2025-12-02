@@ -81,48 +81,48 @@ namespace StormByte::Buffer {
 			 * @param count Number of bytes to request from the external source. A value of
 			 *              `0` is treated as a no-op (requests zero bytes) — callers should
 			 *              use a non-zero `count` to obtain data from the external handler.
-			 * @return `ExpectedData<Exception>` containing the bytes on success or an
-			 *         `Exception` describing a handler failure.
+			 * @return `ExpectedData<ReadError>` containing the bytes on success or an
+			 *         `ReadError` describing a handler failure.
 			 */
-			ExpectedData<Exception> Read(std::size_t count = 0) const override;
+			ExpectedData<ReadError> Read(std::size_t count = 0) const override;
 
 			/**
 			 * @brief Compatibility overload that behaves like `Read()` for forwarders.
 			 * @param count Number of bytes to request.
-			 * @return `ExpectedData<Exception>` with the requested bytes or an error.
+			 * @return `ExpectedData<ReadError>` with the requested bytes or an error.
 			 *
 			 * @note Present for API compatibility with `SharedFIFO` - it forwards to the
 			 *       same underlying read handler.
 			 */
-			ExpectedData<Exception> Extract(std::size_t count = 0) override;
+			ExpectedData<ReadError> Extract(std::size_t count = 0) override;
 
 			/**
 			 * @brief Forward a vector of bytes to the configured write handler.
 			 * @param data Bytes to write.
-			 * @return `true` on success, `false` on write-handler failure.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
 			 */
-			bool Write(const std::vector<std::byte>& data) override;
+			ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
 
 			/**
 			 * @brief Forward the contents of another `FIFO` to the write handler.
 			 * @param other FIFO whose contents will be forwarded.
-			 * @return `true` on success, `false` on failure.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
 			 */
-			bool Write(const FIFO& other) override;
+			ExpectedVoid<WriteError> Write(const FIFO& other) override;
 
 			/**
 			 * @brief Forward the contents of an rvalue `FIFO` to the write handler.
 			 * @param other FIFO to move from.
-			 * @return `true` on success, `false` on failure.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
 			 */
-			bool Write(FIFO&& other) noexcept override;
+			ExpectedVoid<WriteError> Write(FIFO&& other) noexcept override;
 
 			/**
 			 * @brief Convenience write overload for strings.
 			 * @param data String whose bytes will be forwarded to the write handler.
-			 * @return `true` on success, `false` on failure.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
 			 */
-			bool Write(const std::string& data) override;
+			ExpectedVoid<WriteError> Write(const std::string& data) override;
 
 			/**
 			 * @brief No-op for Forwarder (kept for API compatibility).

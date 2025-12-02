@@ -312,7 +312,7 @@ int test_pipeline_empty_input() {
     
     auto data = CONSUME(result, 0);
     // New FIFO semantics: requesting 0 when no data may return an error
-    // (InsufficientData) instead of an empty value. Accept either:
+    // (ReadError) instead of an empty value. Accept either:
     // - a successful empty result, or
     // - an error indicating EOF/no-data. In the latter case ensure EoF()
     // reports no more data.

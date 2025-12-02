@@ -46,16 +46,16 @@ void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 	});
 }
 
-ExpectedData<Exception> SharedFIFO::Read(std::size_t count) const {
+ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
 	if (m_error)
-		return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		return StormByte::Unexpected(ReadError("Buffer in error state"));
 
 	if (m_closed && available == 0) {
 		// If closed and no data available, return EOF indication (empty read)
-		return StormByte::Unexpected(InsufficientData("End of file reached"));
+		return StormByte::Unexpected(ReadError("End of file reached"));
 	}
 
 	std::size_t real_count = count == 0 ? available : count;
@@ -70,10 +70,10 @@ ExpectedData<Exception> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
-ExpectedData<Exception> SharedFIFO::Extract(std::size_t count) {
+ExpectedData<ReadError> SharedFIFO::Extract(std::size_t count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (m_error)
-		return StormByte::Unexpected(InsufficientData("Buffer in error state"));
+		return StormByte::Unexpected(ReadError("Buffer in error state"));
 
 	std::size_t real_count = count == 0 ? AvailableBytes() : count;
 
@@ -86,41 +86,41 @@ ExpectedData<Exception> SharedFIFO::Extract(std::size_t count) {
 	return FIFO::Extract(real_count);
 }
 
-bool SharedFIFO::Write(const std::vector<std::byte>& data) {
+ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>& data) {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return false;
+		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
 		if (!data.empty())
 			m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 	}
 	// Notify waiters even for empty writes so readers can re-check predicates.
 	m_cv.notify_all();
-	return true;
+	return {};
 }
 
-bool SharedFIFO::Write(const std::string& data) {
+ExpectedVoid<WriteError> SharedFIFO::Write(const std::string& data) {
 	return Write(StormByte::String::ToByteVector(data));
 }
 
-bool SharedFIFO::Write(const FIFO& other) {
+ExpectedVoid<WriteError> SharedFIFO::Write(const FIFO& other) {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return false;
+		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
 		// Delegate to base FIFO implementation to append the full contents.
 		FIFO::Write(other);
 	}
 	// Notify waiters after performing the write.
 	m_cv.notify_all();
-	return true;
+	return {};
 }
 
-bool SharedFIFO::Write(FIFO&& other) noexcept {
+ExpectedVoid<WriteError> SharedFIFO::Write(FIFO&& other) noexcept {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return false;
+		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
 		// Delegate to base FIFO rvalue overload; it will perform efficient
 		// move/steal semantics when possible and leave `other` in a valid
 		// empty state.
@@ -128,7 +128,7 @@ bool SharedFIFO::Write(FIFO&& other) noexcept {
 	}
 	// Notify waiters after performing the write.
 	m_cv.notify_all();
-	return true;
+	return {};
 }
 
 void SharedFIFO::Clear() noexcept {

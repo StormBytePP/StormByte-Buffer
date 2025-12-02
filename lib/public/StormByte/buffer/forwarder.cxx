@@ -12,44 +12,44 @@ m_readFunction(ErrorReadFunction()), m_writeFunction(writeFunc) {}
 Forwarder::Forwarder(const ExternalReadFunction& readFunc, const ExternalWriteFunction& writeFunc) noexcept:
 m_readFunction(readFunc), m_writeFunction(writeFunc) {}
 
-ExpectedData<Exception> Forwarder::Read(std::size_t count) const {
+ExpectedData<ReadError> Forwarder::Read(std::size_t count) const {
 	if (count == 0) {
 		// A read of 0 bytes is a no-op that returns an empty vector
 		return {};
 	}
 	if (!IsReadable()) {
-		return StormByte::Unexpected(Exception("Buffer in not readable"));
+		return StormByte::Unexpected(ReadError("Buffer in not readable"));
 	}
 	auto data = m_readFunction(count);
 	if (!data) {
-		return StormByte::Unexpected(Exception("Forwarder read failed: " + std::string(data.error()->what())));
+		return StormByte::Unexpected(ReadError("Forwarder read failed: " + std::string(data.error()->what())));
 	}
 	return *data;
 }
 
-ExpectedData<Exception> Forwarder::Extract(std::size_t count) {
+ExpectedData<ReadError> Forwarder::Extract(std::size_t count) {
 	return Read(count);
 }
 
-bool Forwarder::Write(const std::vector<std::byte>& data) {
+ExpectedVoid<WriteError> Forwarder::Write(const std::vector<std::byte>& data) {
 	if (!IsWritable() || data.empty()) {
-		return false;
+		return StormByte::Unexpected(WriteError("Buffer is not writable or data is empty"));
 	}
-	return m_writeFunction(data).has_value();
+	return m_writeFunction(data);
 }
 
-bool Forwarder::Write(const std::string& data) {
+ExpectedVoid<WriteError> Forwarder::Write(const std::string& data) {
 	return Write(String::ToByteVector(data));
 }
 
-bool Forwarder::Write(const FIFO& other) {
+ExpectedVoid<WriteError> Forwarder::Write(const FIFO& other) {
 	auto data = other.Read(0);
 	if (!data)
-		return false;
+		return StormByte::Unexpected(WriteError("Failed to read from other FIFO"));
 	return Write(*data);
 }
 
-bool Forwarder::Write(FIFO&& other) noexcept {
+ExpectedVoid<WriteError> Forwarder::Write(FIFO&& other) noexcept {
 	return Write(other);
 }
 

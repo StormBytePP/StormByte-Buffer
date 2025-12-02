@@ -115,25 +115,25 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read from the buffer (blocks until data available).
 			 * @param count Number of bytes to read; 0 reads all available without blocking.
-			 * @return Expected containing a vector with the requested bytes, or an error.
+			 * @return ExpectedData<ReadError> containing a vector with the requested bytes, or an error.
 			 * @details **Blocks** until count bytes available or buffer becomes unreadable
 			 *          (closed or error) (if count > 0). Data remains in buffer and can be
 			 *          re-read using Seek().
 			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
 			 */
 
-			inline ExpectedData<Exception> Read(std::size_t count = 0) const { return m_buffer->Read(count); }
+			inline ExpectedData<ReadError> Read(std::size_t count = 0) const { return m_buffer->Read(count); }
 			
 			/**
 			* @brief Destructive read that removes data from the buffer (blocks until data available).
 			* @param count Number of bytes to extract; 0 extracts all available without blocking.
-			* @return Expected containing a vector with the extracted bytes, or an error.
+			* @return ExpectedData<ReadError> containing a vector with the requested bytes, or an error.
 			* @details **Blocks** until count bytes available or buffer becomes unreadable
 			*          (closed or error) (if count > 0). Removes data from buffer.
 			*          Multiple consumers share data fairly.
 			* @see SharedFIFO::Extract(), Read(), IsReadable()
 			*/
-			inline ExpectedData<Exception> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
+			inline ExpectedData<ReadError> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
 			
 			/**
 			 * @brief Check if the buffer is readable (not in error state).

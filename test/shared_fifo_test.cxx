@@ -498,8 +498,8 @@ int test_shared_fifo_write_whole_fifo() {
     [[maybe_unused]] auto r = src.Read(1);
 
     // Write the whole FIFO into shared
-    bool ok = shared.Write(src);
-    ASSERT_TRUE("shared fifo write whole returned true", ok);
+    auto ok = shared.Write(src);
+    ASSERT_TRUE("shared fifo write whole returned true", ok.has_value());
 
     // Extract and validate
     auto all = shared.Extract();
@@ -510,7 +510,7 @@ int test_shared_fifo_write_whole_fifo() {
     FIFO src2;
     src2.Write(std::string("TWO"));
     ok = shared.Write(std::move(src2));
-    ASSERT_TRUE("shared fifo write whole rvalue returned true", ok);
+    ASSERT_TRUE("shared fifo write whole rvalue returned true", ok.has_value());
     auto all2 = shared.Extract();
     ASSERT_TRUE("shared extract2 returned", all2.has_value());
     ASSERT_EQUAL("shared fifo write whole rvalue content", toString(*all2), std::string("TWO"));

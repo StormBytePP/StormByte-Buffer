@@ -29,9 +29,9 @@ namespace StormByte::Buffer {
 	 * 
 	 * @details This type represents the result of buffer read/extract operations.
 	 *          It returns either a vector of bytes on success, or an exception
-	 *          wrapped in std::unexpected on failure (e.g., InsufficientData).
+	 *          wrapped in std::unexpected on failure (e.g., ReadError).
 	 * 
-	 * @see Expected, InsufficientData
+	 * @see Expected, ReadError
 	 */
 	template<class Exception>
 	using ExpectedData = Expected<std::vector<std::byte>, Exception>;

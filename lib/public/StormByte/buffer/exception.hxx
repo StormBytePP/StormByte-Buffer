@@ -18,17 +18,6 @@ namespace StormByte::Buffer {
             using StormByte::Exception::Exception;
     };
 
-    /**
-     * @class BufferOverflow
-     * @brief Exception class for buffer overflow errors.
-     *
-     * @details Thrown when a write operation exceeds the buffer's capacity
-     */
-    class STORMBYTE_BUFFER_PUBLIC InsufficientData: public Exception {
-        public:
-            using Exception::Exception;
-    };
-
 	/**
 	 * @class ReadError
 	 * @brief Exception class for read errors from buffers.

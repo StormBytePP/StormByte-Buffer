@@ -595,8 +595,8 @@ int test_fifo_move_steal_preserves_read_position() {
 
     // Destination empty: move-append should steal internal storage and preserve read position
     FIFO dst;
-    bool ok = dst.Write(std::move(src));
-    ASSERT_TRUE("move write returned true", ok);
+    auto ok = dst.Write(std::move(src));
+    ASSERT_TRUE("move write returned true", ok.has_value());
 
     // Now reading all available from destination should return "CDE"
     auto out = dst.Read(0);
