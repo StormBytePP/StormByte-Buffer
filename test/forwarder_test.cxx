@@ -1,4 +1,5 @@
 #include <StormByte/buffer/forwarder.hxx>
+#include <StormByte/buffer/producer.hxx>
 #include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -72,11 +73,33 @@ int test_forwarder_write_fifo() {
     RETURN_TEST("test_forwarder_write_fifo", 0);
 }
 
+int test_forwarder_as_producer() {
+	// Read lambda returns count bytes of 'A's
+    StormByte::Buffer::ExternalReadFunction readFn = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+		return StormByte::String::ToByteVector(std::string(count, 'A'));
+    };
+
+	std::shared_ptr<Forwarder> forwarder = std::make_shared<Forwarder>(readFn);
+	StormByte::Buffer::Producer producer(forwarder);
+	StormByte::Buffer::Consumer consumer(producer.Consumer());
+
+	auto data_expected = consumer.Read(4);
+	ASSERT_TRUE("test_forwarder_as_producer read succeeded", data_expected.has_value());
+	ASSERT_EQUAL("test_forwarder_as_producer content", StormByte::String::FromByteVector(*data_expected), std::string(4, 'A'));
+
+	data_expected = consumer.Read(9);
+	ASSERT_TRUE("test_forwarder_as_producer read succeeded", data_expected.has_value());
+	ASSERT_EQUAL("test_forwarder_as_producer content", StormByte::String::FromByteVector(*data_expected), std::string(9, 'A'));
+
+	RETURN_TEST("test_forwarder_as_producer", 0);
+}
+
 int main() {
     int result = 0;
     result += test_forwarder_read_only();
     result += test_forwarder_write_only();
     result += test_forwarder_write_fifo();
+	result += test_forwarder_as_producer();
 
     if (result == 0) {
         std::cout << "Forwarder tests passed!" << std::endl;
