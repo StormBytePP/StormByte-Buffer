@@ -165,6 +165,25 @@ namespace StormByte::Buffer {
 			inline void Seek(const std::size_t& position, const Position& mode) const { m_buffer->Seek(position, mode); }
 
 			/**
+			 * @brief Non-destructive peek at buffer data without advancing read position.
+			 * @param count Number of bytes to peek; 0 peeks all available from read position.
+			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @details Similar to Read(), but does not advance the read position.
+			 *          Allows inspecting upcoming data without consuming it.
+			 *
+			 *          Semantics:
+			 *          - If `count == 0`: the call returns all available bytes. If no
+			 *            bytes are available, a `ReadError` is returned.
+			 *          - If `count > 0`: the call returns exactly `count` bytes when
+			 *            that many bytes are available. If zero bytes are available, or
+			 *            if `count` is greater than the number of available bytes, a
+			 *            `ReadError` is returned.
+			 *
+			 * @see SharedFIFO::Peek(), Read()
+			 */
+			inline ExpectedData<ReadError> Peek(const std::size_t& count) const noexcept { return m_buffer->Peek(count); }
+
+			/**
 			 * @brief Removes count bytes from the read position.
 			 * @param count Number of bytes to skip; 0 is a noop.
 			 * @details Advances the read position by count bytes without reading data.

@@ -707,6 +707,85 @@ int test_fifo_skip_with_readpos() {
     RETURN_TEST("test_fifo_skip_with_readpos", 0);
 }
 
+int test_fifo_peek_basic() {
+    FIFO fifo;
+    fifo.Write(std::string("HELLO"));
+    
+    // Peek 3 bytes - should not advance read position
+    auto peek1 = fifo.Peek(3);
+    ASSERT_TRUE("peek returned", peek1.has_value());
+    ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(*peek1), std::string("HEL"));
+    
+    // Peek again - should return same data
+    auto peek2 = fifo.Peek(3);
+    ASSERT_TRUE("peek2 returned", peek2.has_value());
+    ASSERT_EQUAL("peek2 content", StormByte::String::FromByteVector(*peek2), std::string("HEL"));
+    
+    // Now read - should return same data as peek
+    auto read1 = fifo.Read(3);
+    ASSERT_TRUE("read returned", read1.has_value());
+    ASSERT_EQUAL("read content matches peek", StormByte::String::FromByteVector(*read1), std::string("HEL"));
+    
+    // Peek remaining
+    auto peek3 = fifo.Peek(2);
+    ASSERT_TRUE("peek3 returned", peek3.has_value());
+    ASSERT_EQUAL("peek3 content", StormByte::String::FromByteVector(*peek3), std::string("LO"));
+    
+    RETURN_TEST("test_fifo_peek_basic", 0);
+}
+
+int test_fifo_peek_all_available() {
+    FIFO fifo;
+    fifo.Write(std::string("WORLD"));
+    
+    // Peek all available (count = 0)
+    auto peek_all = fifo.Peek(0);
+    ASSERT_TRUE("peek all returned", peek_all.has_value());
+    ASSERT_EQUAL("peek all content", StormByte::String::FromByteVector(*peek_all), std::string("WORLD"));
+    
+    // Read 2 bytes
+    auto read1 = fifo.Read(2);
+    ASSERT_TRUE("read returned", read1.has_value());
+    
+    // Peek all remaining
+    auto peek_remaining = fifo.Peek(0);
+    ASSERT_TRUE("peek remaining returned", peek_remaining.has_value());
+    ASSERT_EQUAL("peek remaining content", StormByte::String::FromByteVector(*peek_remaining), std::string("RLD"));
+    
+    RETURN_TEST("test_fifo_peek_all_available", 0);
+}
+
+int test_fifo_peek_insufficient_data() {
+    FIFO fifo;
+    fifo.Write(std::string("ABC"));
+    
+    // Try to peek more than available
+    auto peek = fifo.Peek(10);
+    ASSERT_FALSE("peek insufficient returned error", peek.has_value());
+    
+    RETURN_TEST("test_fifo_peek_insufficient_data", 0);
+}
+
+int test_fifo_peek_after_seek() {
+    FIFO fifo;
+    fifo.Write(std::string("0123456789"));
+    
+    // Seek to position 5
+    fifo.Seek(5, Position::Absolute);
+    
+    // Peek from new position
+    auto peek = fifo.Peek(3);
+    ASSERT_TRUE("peek after seek returned", peek.has_value());
+    ASSERT_EQUAL("peek after seek content", StormByte::String::FromByteVector(*peek), std::string("567"));
+    
+    // Verify position didn't change
+    auto read = fifo.Read(3);
+    ASSERT_TRUE("read after peek returned", read.has_value());
+    ASSERT_EQUAL("read after peek content", StormByte::String::FromByteVector(*read), std::string("567"));
+    
+    RETURN_TEST("test_fifo_peek_after_seek", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -745,6 +824,10 @@ int main() {
     result += test_fifo_hexdump_mixed();
     result += test_fifo_skip_basic();
     result += test_fifo_skip_with_readpos();
+    result += test_fifo_peek_basic();
+    result += test_fifo_peek_all_available();
+    result += test_fifo_peek_insufficient_data();
+    result += test_fifo_peek_after_seek();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

@@ -547,6 +547,64 @@ int test_shared_fifo_skip_with_readpos() {
     RETURN_TEST("test_shared_fifo_skip_with_readpos", 0);
 }
 
+int test_shared_fifo_peek_basic() {
+    SharedFIFO fifo;
+    fifo.Write(std::string("HELLO"));
+    
+    // Peek 3 bytes - should not advance read position
+    auto peek1 = fifo.Peek(3);
+    ASSERT_TRUE("peek returned", peek1.has_value());
+    ASSERT_EQUAL("peek content", toString(*peek1), std::string("HEL"));
+    
+    // Peek again - should return same data
+    auto peek2 = fifo.Peek(3);
+    ASSERT_TRUE("peek2 returned", peek2.has_value());
+    ASSERT_EQUAL("peek2 content", toString(*peek2), std::string("HEL"));
+    
+    // Now read - should return same data as peek
+    auto read1 = fifo.Read(3);
+    ASSERT_TRUE("read returned", read1.has_value());
+    ASSERT_EQUAL("read content matches peek", toString(*read1), std::string("HEL"));
+    
+    RETURN_TEST("test_shared_fifo_peek_basic", 0);
+}
+
+int test_shared_fifo_peek_concurrent() {
+    SharedFIFO fifo;
+    
+    // Write data first
+    fifo.Write(std::string("DATA"));
+    
+    // Peek should return the data
+    auto peek = fifo.Peek(4);
+    ASSERT_TRUE("concurrent peek returned", peek.has_value());
+    ASSERT_EQUAL("concurrent peek content", toString(*peek), std::string("DATA"));
+    
+    // Read should return same data
+    auto read = fifo.Read(4);
+    ASSERT_TRUE("concurrent read returned", read.has_value());
+    ASSERT_EQUAL("concurrent read content", toString(*read), std::string("DATA"));
+    
+    RETURN_TEST("test_shared_fifo_peek_concurrent", 0);
+}
+
+int test_shared_fifo_peek_all_available() {
+    SharedFIFO fifo;
+    fifo.Write(std::string("WORLD"));
+    
+    // Peek all available (count = 0)
+    auto peek_all = fifo.Peek(0);
+    ASSERT_TRUE("peek all returned", peek_all.has_value());
+    ASSERT_EQUAL("peek all content", toString(*peek_all), std::string("WORLD"));
+    
+    // Data should still be there
+    auto read_all = fifo.Read(0);
+    ASSERT_TRUE("read all returned", read_all.has_value());
+    ASSERT_EQUAL("read all content", toString(*read_all), std::string("WORLD"));
+    
+    RETURN_TEST("test_shared_fifo_peek_all_available", 0);
+}
+
 int main() {
     int result = 0;
     result += test_shared_fifo_producer_consumer_blocking();
@@ -569,6 +627,9 @@ int main() {
     result += test_shared_fifo_write_whole_fifo();
     result += test_shared_fifo_skip_basic();
     result += test_shared_fifo_skip_with_readpos();
+    result += test_shared_fifo_peek_basic();
+    result += test_shared_fifo_peek_concurrent();
+    result += test_shared_fifo_peek_all_available();
     // HexDump tests (status + FIFO dump)
     {
         // Test 1: 5-line hexdump like FIFO test

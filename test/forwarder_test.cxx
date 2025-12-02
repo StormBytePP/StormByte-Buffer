@@ -94,12 +94,126 @@ int test_forwarder_as_producer() {
 	RETURN_TEST("test_forwarder_as_producer", 0);
 }
 
+int test_forwarder_peek_basic() {
+    int external_read_calls = 0;
+    
+    // External read function that tracks calls
+    auto reader = [&external_read_calls](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        external_read_calls++;
+        std::string data = "EXTERNAL";
+        std::size_t n = std::min(count, data.size());
+        return StormByte::String::ToByteVector(data.substr(0, n));
+    };
+    
+    Forwarder forwarder(reader);
+    
+    // Peek 3 bytes - will trigger external read and buffer the data
+    auto peek1 = forwarder.Peek(3);
+    ASSERT_TRUE("peek returned", peek1.has_value());
+    ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(*peek1), std::string("EXT"));
+    ASSERT_EQUAL("external call after first peek", external_read_calls, 1);
+    
+    // Peek again - should return same data from buffer, no additional external call
+    auto peek2 = forwarder.Peek(3);
+    ASSERT_TRUE("peek2 returned", peek2.has_value());
+    ASSERT_EQUAL("peek2 content", StormByte::String::FromByteVector(*peek2), std::string("EXT"));
+    ASSERT_EQUAL("still one external call", external_read_calls, 1);
+    
+    RETURN_TEST("test_forwarder_peek_basic", 0);
+}
+
+int test_forwarder_peek_triggers_external_read() {
+    int external_read_calls = 0;
+    
+    // External read function that tracks calls
+    auto reader = [&external_read_calls](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        external_read_calls++;
+        std::string data = "EXTERNAL";
+        std::size_t n = std::min(count, data.size());
+        return StormByte::String::ToByteVector(data.substr(0, n));
+    };
+    
+    Forwarder forwarder(reader);
+    
+    // Peek 5 bytes - will read from external
+    auto peek = forwarder.Peek(5);
+    ASSERT_TRUE("peek with external returned", peek.has_value());
+    ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(*peek), std::string("EXTER"));
+    ASSERT_EQUAL("external called once", external_read_calls, 1);
+    
+    RETURN_TEST("test_forwarder_peek_triggers_external_read", 0);
+}
+
+int test_forwarder_peek_then_read_no_external_call() {
+    int external_read_calls = 0;
+    
+    // External read function that tracks calls
+    auto reader = [&external_read_calls](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        external_read_calls++;
+        std::string data = "EXTERNAL_DATA";
+        std::size_t n = std::min(count, data.size());
+        return StormByte::String::ToByteVector(data.substr(0, n));
+    };
+    
+    Forwarder forwarder(reader);
+    
+    // Peek 2 bytes - will trigger external read
+    auto peek_result = forwarder.Peek(2);
+    ASSERT_TRUE("peek returned", peek_result.has_value());
+    std::string peek_data = StormByte::String::FromByteVector(*peek_result);
+    ASSERT_EQUAL("peek content", peek_data, std::string("EX"));
+    ASSERT_EQUAL("external called once for peek", external_read_calls, 1);
+    
+    // Now Read 2 bytes - should come from buffer (filled by Peek), no external call
+    auto read_result = forwarder.Read(2);
+    ASSERT_TRUE("read returned", read_result.has_value());
+    std::string read_data = StormByte::String::FromByteVector(*read_result);
+    ASSERT_EQUAL("read content matches peek", read_data, peek_data);
+    ASSERT_EQUAL("no additional external call for read", external_read_calls, 1);
+    
+    RETURN_TEST("test_forwarder_peek_then_read_no_external_call", 0);
+}
+
+int test_forwarder_peek_insufficient_buffer() {
+    // External read function that returns less than requested
+    auto reader = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        return StormByte::String::ToByteVector(std::string("AB")); // Always returns 2 bytes
+    };
+    
+    Forwarder forwarder(reader);
+    
+    // Peek 10 bytes - external will only provide 2
+    auto peek = forwarder.Peek(10);
+    ASSERT_FALSE("peek with insufficient data returns error", peek.has_value());
+    
+    RETURN_TEST("test_forwarder_peek_insufficient_buffer", 0);
+}
+
+int test_forwarder_peek_zero_returns_error() {
+    auto reader = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+        return StormByte::String::ToByteVector(std::string("DATA"));
+    };
+    
+    Forwarder forwarder(reader);
+    
+    // Peek(0) should return error for Forwarder
+    auto peek = forwarder.Peek(0);
+    ASSERT_FALSE("peek(0) returns error", peek.has_value());
+    
+    RETURN_TEST("test_forwarder_peek_zero_returns_error", 0);
+}
+
 int main() {
     int result = 0;
     result += test_forwarder_read_only();
     result += test_forwarder_write_only();
     result += test_forwarder_write_fifo();
 	result += test_forwarder_as_producer();
+    result += test_forwarder_peek_basic();
+    result += test_forwarder_peek_triggers_external_read();
+    result += test_forwarder_peek_then_read_no_external_call();
+    result += test_forwarder_peek_insufficient_buffer();
+    result += test_forwarder_peek_zero_returns_error();
 
     if (result == 0) {
         std::cout << "Forwarder tests passed!" << std::endl;

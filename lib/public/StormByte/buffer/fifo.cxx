@@ -204,6 +204,25 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
+ExpectedData<ReadError> FIFO::Peek(std::size_t count) const noexcept {
+	const std::size_t available = AvailableBytes();
+
+	if (available == 0) {
+		return StormByte::Unexpected(ReadError("Insufficient data to peek"));
+	}
+
+	std::size_t real_count = count == 0 ? available : count;
+	if (real_count > available) {
+		return StormByte::Unexpected(ReadError("Insufficient data to peek"));
+	}
+
+	// Read from current position using iterator constructor for efficiency
+	auto start_it = m_buffer.begin() + m_position_offset;
+	auto end_it = start_it + real_count;
+	std::vector<std::byte> result(start_it, end_it);
+	return result;
+}
+
 void FIFO::Skip(const std::size_t& count) noexcept {
 	// Advance read position by count, clamped to buffer size
 	if (count == 0) {

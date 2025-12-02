@@ -215,6 +215,19 @@ namespace StormByte::Buffer {
 			virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
 			/**
+			 * @brief Thread-safe peek operation.
+			 * @param count Number of bytes to peek; 0 peeks all available immediately.
+			 * @return ExpectedData<ReadError> containing the requested bytes, or error.
+			 * @details Blocks until @p count bytes are available from the current read position,
+			 *          or until the buffer becomes unreadable (closed or error). If buffer
+			 *          becomes unreadable before the requested bytes are available the call
+			 *          returns an error. See the base `FIFO::Peek()` for the core (content-only)
+			 *          semantics.
+			 * @see FIFO::Peek(), Wait(), IsReadable()
+			 */
+			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept override;
+
+			/**
 			 * @brief Thread-safe skip operation.
 			 * @details Notifies waiting readers after skipping.
 			 * @see FIFO::Skip()

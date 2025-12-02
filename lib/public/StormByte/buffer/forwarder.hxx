@@ -22,15 +22,15 @@ namespace StormByte::Buffer {
  	 *          and only calls external functions when the buffer cannot satisfy
  	 *          the operation.
  	 *
- 	 *          Key behaviours:
- 	 *          - `Read(count)` first checks the internal buffer. If sufficient data
- 	 *            is available, it returns from the buffer without calling the external
- 	 *            read function. If more data is needed, it calls the external function
- 	 *            for the remaining bytes and combines both sources.
- 	 *          - `Write(...)` is a direct passthrough to the external write handler.
- 	 *            Data is not stored in the internal buffer.
- 	 *          - `Extract(count)` behaves like `Read()` but removes data from the buffer.
- 	 *          - `Clear()`, `Clean()`, `Seek()`, and `Skip()` operate on the internal buffer.
+	 *          Key behaviours:
+	 *          - `Read(count)` first checks the internal buffer. If sufficient data
+	 *            is available, it returns from the buffer without calling the external
+	 *            read function. If more data is needed, it calls the external function
+	 *            for the remaining bytes and combines both sources.
+	 *          - `Write(...)` stores data in the internal buffer. Data remains buffered
+	 *            and can be consumed by subsequent read operations.
+	 *          - `Extract(count)` behaves like `Read()` but removes data from the buffer.
+	 *          - `Clear()`, `Clean()`, `Seek()`, and `Skip()` operate on the internal buffer.
  	 *
  	 *          Example: `Read(2)` with 1 byte in buffer will read 1 byte from the
  	 *          external function and return both bytes combined.
@@ -100,11 +100,12 @@ namespace StormByte::Buffer {
 			ExpectedData<ReadError> Extract(std::size_t count = 0) override;
 
 			/**
-			 * @brief Write bytes directly to external handler (passthrough).
+			 * @brief Write bytes to the internal buffer.
 			 * @param data Bytes to write.
 			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
-			 * @details Direct passthrough to external write function. Data is not
-			 *          stored in the internal buffer.
+			 * @details Stores data in the internal buffer. The external write function
+			 *          is not called; data remains buffered until explicitly flushed
+			 *          or read operations consume it.
 			 */
 			ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
 
@@ -146,6 +147,16 @@ namespace StormByte::Buffer {
 			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
 			/**
+			 * @brief Peek into the internal buffer without advancing read position.
+			 * @param count Number of bytes to peek. Must be greater than 0.
+			 * @return `ExpectedData<ReadError>` with the requested bytes or an error.
+			 * @details Inspects upcoming data in the internal buffer without consuming it.
+			 *          Does not call external read function.
+			 * @note `count` must be > 0. Peeking 0 bytes returns an error.
+			 */
+			ExpectedData<ReadError> Peek(std::size_t count) const noexcept override;
+
+			/**
 			 * @brief Skip bytes in the internal buffer.
 			 */
 			void Skip(const std::size_t& count) noexcept override;
@@ -175,14 +186,6 @@ namespace StormByte::Buffer {
 			static ExternalWriteFunction NoopWriteFunction() noexcept;
 
 		private:
-			/**
-			 * @brief Internal FIFO buffer for caching data.
-			 *
-			 * Data is stored here and external functions are only called when
-			 * the buffer cannot satisfy read/write operations.
-			 */
-			mutable FIFO m_buffer;
-
 			/**
 			 * @brief Callable used to satisfy `Read()` requests.
 			 *

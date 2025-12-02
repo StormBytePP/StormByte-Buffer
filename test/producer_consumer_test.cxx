@@ -1187,6 +1187,75 @@ int test_consumer_extract_until_eof() {
     RETURN_TEST("test_consumer_extract_until_eof", 0);
 }
 
+int test_consumer_peek_basic() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    producer.Write("ABCDEFGH");
+    producer.Close();
+
+    // Peek should return data without advancing position
+    auto peek1 = consumer.Peek(4);
+    ASSERT_TRUE("peek succeeded", peek1.has_value());
+    ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(*peek1), std::string("ABCD"));
+
+    // Read same position should return same data
+    auto read1 = consumer.Read(4);
+    ASSERT_TRUE("read succeeded", read1.has_value());
+    ASSERT_EQUAL("read content matches peek", StormByte::String::FromByteVector(*read1), std::string("ABCD"));
+
+    // Now at position 4, peek next 4 bytes
+    auto peek2 = consumer.Peek(4);
+    ASSERT_TRUE("second peek succeeded", peek2.has_value());
+    ASSERT_EQUAL("second peek content", StormByte::String::FromByteVector(*peek2), std::string("EFGH"));
+
+    // Verify position didn't change with peek
+    auto read2 = consumer.Read(4);
+    ASSERT_TRUE("second read succeeded", read2.has_value());
+    ASSERT_EQUAL("second read content matches peek", StormByte::String::FromByteVector(*read2), std::string("EFGH"));
+
+    RETURN_TEST("test_consumer_peek_basic", 0);
+}
+
+int test_consumer_peek_blocking() {
+    Producer producer;
+    auto consumer = producer.Consumer();
+
+    std::atomic<bool> peek_started{false};
+    std::atomic<bool> peek_completed{false};
+    std::string peek_result;
+
+    std::thread consumer_thread([&]() {
+        peek_started.store(true);
+        auto data = consumer.Peek(10);
+        if (data.has_value()) {
+            peek_result = StormByte::String::FromByteVector(*data);
+        }
+        peek_completed.store(true);
+    });
+
+    // Wait for peek to start blocking
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    ASSERT_TRUE("peek started", peek_started.load());
+    ASSERT_FALSE("peek still waiting", peek_completed.load());
+
+    // Write data to unblock peek
+    producer.Write("0123456789");
+    producer.Close();
+
+    consumer_thread.join();
+
+    ASSERT_TRUE("peek completed", peek_completed.load());
+    ASSERT_EQUAL("peek got correct data", peek_result, std::string("0123456789"));
+
+    // Verify position wasn't advanced by peek
+    auto read_data = consumer.Read(10);
+    ASSERT_TRUE("read after peek succeeded", read_data.has_value());
+    ASSERT_EQUAL("read same data as peek", StormByte::String::FromByteVector(*read_data), std::string("0123456789"));
+
+    RETURN_TEST("test_consumer_peek_blocking", 0);
+}
+
 int main() {
     int result = 0;
     
@@ -1230,6 +1299,8 @@ int main() {
     result += test_producer_consumer_partial_read_eof();
     result += test_consumer_read_until_eof();
     result += test_consumer_extract_until_eof();
+    result += test_consumer_peek_basic();
+    result += test_consumer_peek_blocking();
 
     if (result == 0) {
         std::cout << "All Producer/Consumer tests passed!" << std::endl;

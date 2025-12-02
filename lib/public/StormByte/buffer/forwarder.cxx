@@ -22,17 +22,17 @@ ExpectedData<ReadError> Forwarder::Read(std::size_t count) const {
 		return StormByte::Unexpected(ReadError("Read count must be greater than 0 for Forwarder"));
 	}
 	
-	const std::size_t available = m_buffer.AvailableBytes();
+	const std::size_t available = FIFO::AvailableBytes();
 	
 	// If buffer has enough data, read from buffer only
 	if (available >= count) {
-		return m_buffer.Read(count);
+		return FIFO::Read(count);
 	}
 	
 	// Read what we have from buffer
 	std::vector<std::byte> result;
 	if (available > 0) {
-		auto buffer_data = m_buffer.Read(available);
+		auto buffer_data = FIFO::Read(available);
 		if (buffer_data.has_value()) {
 			result = std::move(*buffer_data);
 		}
@@ -60,17 +60,17 @@ ExpectedData<ReadError> Forwarder::Extract(std::size_t count) {
 		return StormByte::Unexpected(ReadError("Extract count must be greater than 0 for Forwarder"));
 	}
 	
-	const std::size_t available = m_buffer.AvailableBytes();
+	const std::size_t available = FIFO::AvailableBytes();
 	
 	// If buffer has enough data, extract from buffer only
 	if (available >= count) {
-		return m_buffer.Extract(count);
+		return FIFO::Extract(count);
 	}
 	
 	// Extract what we have from buffer
 	std::vector<std::byte> result;
 	if (available > 0) {
-		auto buffer_data = m_buffer.Extract(available);
+		auto buffer_data = FIFO::Extract(available);
 		if (buffer_data.has_value()) {
 			result = std::move(*buffer_data);
 		}
@@ -117,19 +117,33 @@ ExpectedVoid<WriteError> Forwarder::Write(FIFO&& other) noexcept {
 }
 
 void Forwarder::Clear() noexcept {
-	m_buffer.Clear();
+	FIFO::Clear();
 }
 
 void Forwarder::Clean() noexcept {
-	m_buffer.Clean();
+	FIFO::Clean();
 }
 
 void Forwarder::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
-	m_buffer.Seek(offset, mode);
+	FIFO::Seek(offset, mode);
+}
+
+ExpectedData<ReadError> Forwarder::Peek(std::size_t count) const noexcept {
+	if (count == 0)
+		return StormByte::Unexpected(ReadError("Peek count must be greater than 0 for Forwarder"));
+	if (count > FIFO::AvailableBytes()) {
+		std::size_t needed = count - FIFO::AvailableBytes();
+		auto read_data_expected = m_readFunction(needed);
+		if (!read_data_expected)
+			return StormByte::Unexpected(ReadError("Forwarder peek failed: " + std::string(read_data_expected.error()->what())));
+		// Write to internal buffer (not passthrough) - need to cast away const
+		const_cast<Forwarder*>(this)->FIFO::Write(*read_data_expected);
+	}
+	return FIFO::Peek(count);
 }
 
 void Forwarder::Skip(const std::size_t& count) noexcept {
-	m_buffer.Skip(count);
+	FIFO::Skip(count);
 }
 
 ExternalReadFunction Forwarder::ErrorReadFunction() noexcept {

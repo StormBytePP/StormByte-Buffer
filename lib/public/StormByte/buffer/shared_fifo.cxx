@@ -155,6 +155,29 @@ void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const 
 	m_cv.notify_all();
 }
 
+ExpectedData<ReadError> SharedFIFO::Peek(std::size_t count) const noexcept {
+	// Peek will wait for data in case it is not enough available, similar to Read().
+	std::unique_lock<std::mutex> lock(m_mutex);
+	const std::size_t available = AvailableBytes();
+	if (m_error)
+		return StormByte::Unexpected(ReadError("Buffer in error state"));
+	if (m_closed && available == 0) {
+		// If closed and no data available, return EOF indication (empty peek)
+		return StormByte::Unexpected(ReadError("End of file reached"));
+	}
+	
+	std::size_t real_count = count == 0 ? available : count;
+
+	if (!m_closed && real_count > available) {
+		// When not closed, requesting more than available must wait.
+		// Wait() will block until enough data is written or buffer is closed/error.
+		Wait(real_count, lock);
+	}
+	
+	// If closed it acts like FIFO: requesting more than available is an error.
+	return FIFO::Peek(real_count);
+}
+
 void SharedFIFO::Skip(const std::size_t& count) noexcept {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
