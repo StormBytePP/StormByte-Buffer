@@ -16,7 +16,7 @@ ExpectedVoid<Exception> Bridge::Passthrough(const std::size_t& count) {
 	}
 	auto write_result = Write(*expected_data);
 	if (!write_result) {
-		return StormByte::Unexpected(Exception("Bridge write failed: " + std::string(write_result.error()->what())));
+		return StormByte::Unexpected(Exception("Bridge write failed"));
 	}
 	return {};
 }

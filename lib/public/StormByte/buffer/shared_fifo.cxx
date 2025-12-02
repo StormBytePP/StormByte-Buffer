@@ -46,7 +46,7 @@ void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 	});
 }
 
-ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
+ExpectedData<Exception> SharedFIFO::Read(std::size_t count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
@@ -70,7 +70,7 @@ ExpectedData<InsufficientData> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
-ExpectedData<InsufficientData> SharedFIFO::Extract(std::size_t count) {
+ExpectedData<Exception> SharedFIFO::Extract(std::size_t count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (m_error)
 		return StormByte::Unexpected(InsufficientData("Buffer in error state"));

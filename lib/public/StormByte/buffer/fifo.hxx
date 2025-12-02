@@ -192,7 +192,7 @@ namespace StormByte::Buffer {
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
 			 * @see Extract(), Seek(), SharedFIFO::Read(), IsReadable()
 			 */
-			virtual ExpectedData<InsufficientData> Read(std::size_t count = 0) const;
+			virtual ExpectedData<Exception> Read(std::size_t count = 0) const;
 
 			/**
 			 * @brief Destructive read that removes data from the buffer.
@@ -215,7 +215,7 @@ namespace StormByte::Buffer {
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
 			 * @see Read(), SharedFIFO::Extract(), IsReadable()
 			 */
-			virtual ExpectedData<InsufficientData> Extract(std::size_t count = 0);
+			virtual ExpectedData<Exception> Extract(std::size_t count = 0);
 
 			/**
 			 * @brief Check if the reader has reached end-of-file.

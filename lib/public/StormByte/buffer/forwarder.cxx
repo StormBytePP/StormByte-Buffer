@@ -1,4 +1,5 @@
 #include <StormByte/buffer/forwarder.hxx>
+#include <StormByte/string.hxx>
 
 using namespace StormByte::Buffer;
 
@@ -11,26 +12,54 @@ m_readFunction(ErrorReadFunction()), m_writeFunction(writeFunc) {}
 Forwarder::Forwarder(const ExternalReadFunction& readFunc, const ExternalWriteFunction& writeFunc) noexcept:
 m_readFunction(readFunc), m_writeFunction(writeFunc) {}
 
-ExpectedData<ReadError> Forwarder::Read(const std::size_t& count) const {
+ExpectedData<Exception> Forwarder::Read(std::size_t count) const {
 	if (count == 0) {
-		// Read 0 bytes is a noop
+		// A read of 0 bytes is a no-op that returns an empty vector
 		return {};
 	}
-	return m_readFunction(count);
-}
-
-ExpectedVoid<WriteError> Forwarder::Write(const std::vector<std::byte>& data) {
-	return m_writeFunction(data);
-}
-
-ExpectedVoid<WriteError> Forwarder::Write(const Buffer::FIFO& data) {
-	auto expected_data = data.Read(0);
-	if (!expected_data) {
-		// If there is no data to write then this is a noop
-		return {};
+	if (!IsReadable()) {
+		return StormByte::Unexpected(Exception("Buffer in not readable"));
 	}
-	return m_writeFunction(expected_data.value());
+	auto data = m_readFunction(count);
+	if (!data) {
+		return StormByte::Unexpected(Exception("Forwarder read failed: " + std::string(data.error()->what())));
+	}
+	return *data;
 }
+
+ExpectedData<Exception> Forwarder::Extract(std::size_t count) {
+	return Read(count);
+}
+
+bool Forwarder::Write(const std::vector<std::byte>& data) {
+	if (!IsWritable() || data.empty()) {
+		return false;
+	}
+	return m_writeFunction(data).has_value();
+}
+
+bool Forwarder::Write(const std::string& data) {
+	return Write(String::ToByteVector(data));
+}
+
+bool Forwarder::Write(const FIFO& other) {
+	auto data = other.Read(0);
+	if (!data)
+		return false;
+	return Write(*data);
+}
+
+bool Forwarder::Write(FIFO&& other) noexcept {
+	return Write(other);
+}
+
+void Forwarder::Clear() noexcept {}
+
+void Forwarder::Clean() noexcept {}
+
+void Forwarder::Seek(const std::ptrdiff_t&, const Position&) const noexcept {}
+
+void Forwarder::Skip(const std::size_t&) noexcept {}
 
 ExternalReadFunction Forwarder::ErrorReadFunction() noexcept {
 	return [](const std::size_t&) -> ExpectedData<ReadError> {

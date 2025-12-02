@@ -202,18 +202,21 @@ int main() {
 
 #### Forwarder
 
-`Forwarder` is a lightweight adapter that delegates read and write operations to external
-callables supplied at construction time. It does not buffer data itself and is useful to
-encapsulate custom I/O backends (files, sockets, or other callback-based sources).
+`Forwarder` now implements a `SharedFIFO`-compatible API while delegating actual I/O
+to user-supplied callables. It does not store data internally; instead it forwards
+reads and writes to the configured handlers.
 
-- **Purpose**: Forward read/write operations to user-provided handlers without storing data.
+- **Purpose**: Expose the `SharedFIFO` API surface while forwarding operations to
+    external handlers (useful for bridging sockets, files, or custom callback-based sources).
 - **Behaviour**:
-    - Construct with a read handler, write handler, or both.
-    - `Read(count)` invokes the configured read handler with the requested `count`.
-    - Important: `Forwarder::Read(0)` is a no-op (requests zero bytes); it does **not** mean
-        "read all available" because the forwarder does not own the data source.
-- **Errors**: When no handler is provided for an operation a default noop handler returns
-    an appropriate `ReadError`/`WriteError` via `StormByte::Unexpected`.
+    - `Read(count)` and `Extract(count)` call the configured read handler and return
+        `ExpectedData<Exception>` (the library's generic `Exception` type is used for handler errors).
+    - `Write(...)` overloads forward data to the write handler and return `bool` to
+        indicate success (`true`) or failure (`false`).
+    - Several FIFO-style operations exist for API compatibility but are no-ops on
+        `Forwarder`: `Clear()`, `Clean()`, `Seek()`, and `Skip()`.
+    - Important: `Forwarder::Read(0)` is treated as a request for zero bytes (a no-op)
+        — it does not mean "read all available".
 
 **Usage examples:**
 
@@ -224,7 +227,7 @@ encapsulate custom I/O backends (files, sockets, or other callback-based sources
 using StormByte::Buffer::Forwarder;
 
 // Read-only forwarder: returns up to `count` bytes from an external source
-auto reader = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
+auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::Exception> {
         std::string s = "HelloWorld";
         if (count == 0) return std::vector<std::byte>{}; // noop
         std::size_t n = std::min(count, s.size());
@@ -232,16 +235,24 @@ auto reader = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<St
 };
 
 Forwarder readOnly(reader);
-auto data = readOnly.Read(5); // reads "Hello"
+auto data = readOnly.Read(5);
+if (data.has_value()) {
+        std::string s = StormByte::String::FromByteVector(*data);
+        // s == "Hello"
+}
 
 // Write-only forwarder: capture written bytes
 std::vector<std::byte> captured;
-auto writer = [&captured](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        captured = v; return {};
+auto writer = [&captured](const std::vector<std::byte>& v) -> bool {
+        captured = v; return true;
 };
 
 Forwarder writeOnly(writer);
-writeOnly.Write(StormByte::String::ToByteVector("Data"));
+bool ok = writeOnly.Write(StormByte::String::ToByteVector("Data"));
+if (ok) {
+        std::string out = StormByte::String::FromByteVector(captured);
+        // out == "Data"
+}
 ```
 
 #### Bridge

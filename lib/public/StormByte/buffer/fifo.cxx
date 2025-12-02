@@ -126,7 +126,7 @@ bool FIFO::Write(const std::string& data) {
 	return Write(StormByte::String::ToByteVector(data));
 }
 
-ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
+ExpectedData<Exception> FIFO::Read(std::size_t count) const {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
@@ -149,7 +149,7 @@ ExpectedData<InsufficientData> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
-ExpectedData<InsufficientData> FIFO::Extract(std::size_t count) {
+ExpectedData<Exception> FIFO::Extract(std::size_t count) {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {

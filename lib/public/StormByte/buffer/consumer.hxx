@@ -122,7 +122,7 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
 			 */
 
-			inline ExpectedData<InsufficientData> Read(std::size_t count = 0) { return m_buffer->Read(count); }
+			inline ExpectedData<Exception> Read(std::size_t count = 0) { return m_buffer->Read(count); }
 			
 			/**
 			* @brief Destructive read that removes data from the buffer (blocks until data available).
@@ -133,7 +133,7 @@ namespace StormByte::Buffer {
 			*          Multiple consumers share data fairly.
 			* @see SharedFIFO::Extract(), Read(), IsReadable()
 			*/
-			inline ExpectedData<InsufficientData> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
+			inline ExpectedData<Exception> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
 			
 			/**
 			 * @brief Check if the buffer is readable (not in error state).

@@ -49,7 +49,7 @@ namespace StormByte::Buffer {
      *  the internal mutex. Read accessors also acquire the mutex to maintain
      *  consistency with the current head/tail/read-position state.
      */
-    class STORMBYTE_BUFFER_PUBLIC SharedFIFO final: public FIFO {
+    class STORMBYTE_BUFFER_PUBLIC SharedFIFO: public FIFO {
         public:
             /**
              * @brief Construct a SharedFIFO with optional initial capacity.
@@ -142,7 +142,7 @@ namespace StormByte::Buffer {
              *          semantics.
              * @see FIFO::Read(), Wait(), IsReadable()
              */
-            ExpectedData<InsufficientData> Read(std::size_t count = 0) const;
+            virtual ExpectedData<Exception> Read(std::size_t count = 0) const override;
 
             /**
              * @brief Thread-safe blocking extract from the buffer.
@@ -154,7 +154,7 @@ namespace StormByte::Buffer {
              *          `FIFO::Extract()` for the core (content-only) semantics.
              * @see FIFO::Extract(), Wait(), IsReadable()
              */
-            ExpectedData<InsufficientData> Extract(std::size_t count = 0);
+            virtual ExpectedData<Exception> Extract(std::size_t count = 0) override;
 
 			/**
 			 * @brief Thread-safe write to the buffer.
@@ -163,7 +163,7 @@ namespace StormByte::Buffer {
 			 * @details Thread-safe version that notifies waiting readers after write.
 			 * @see FIFO::Write()
 			 */
-            bool Write(const std::vector<std::byte>& data);
+            virtual bool Write(const std::vector<std::byte>& data) override;
 
             /**
              * @brief Thread-safe append of another FIFO's full contents.
@@ -173,7 +173,7 @@ namespace StormByte::Buffer {
              * then delegates to the base `FIFO::Write(const FIFO&)` to append the
              * entire contents of `other`. Notifies waiting readers after the write.
              */
-            bool Write(const FIFO& other) override;
+            virtual bool Write(const FIFO& other) override;
 
             /**
              * @brief Thread-safe append by moving another FIFO's full contents.
@@ -184,7 +184,7 @@ namespace StormByte::Buffer {
              * efficient move/steal of `other`'s contents. Notifies waiting readers
              * after the write. Marked `noexcept` to reflect the base rvalue overload.
              */
-            bool Write(FIFO&& other) noexcept override;
+            virtual bool Write(FIFO&& other) noexcept override;
 
 			/**
 			 * @brief Thread-safe write to the buffer.
@@ -193,28 +193,33 @@ namespace StormByte::Buffer {
 			 * @details Thread-safe version that notifies waiting readers after write.
 			 * @see FIFO::Write()
 			 */
-            bool Write(const std::string& data);
+            virtual bool Write(const std::string& data) override;
 
 			/**
 			 * @brief Thread-safe clear of all buffer contents.
 			 * @see FIFO::Clear()
 			 */
-            void Clear() noexcept;
+            virtual void Clear() noexcept override;
 
 			/**
 			 * @brief Thread-safe clean of buffer data from start to read position.
 			 * @see FIFO::Clean()
 			 */
-            void Clean() noexcept;
+            virtual void Clean() noexcept override;
 
 			/**
 			 * @brief Thread-safe seek operation.
 			 * @details Notifies waiting readers after seeking.
 			 * @see FIFO::Seek()
 			 */
-            void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept;
+            virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
-			void Skip(const std::size_t& count) noexcept override;
+			/**
+			 * @brief Thread-safe skip operation.
+			 * @details Notifies waiting readers after skipping.
+			 * @see FIFO::Skip()
+			 */
+			virtual void Skip(const std::size_t& count) noexcept override;
             /** @} */
 
             /**
@@ -260,7 +265,7 @@ namespace StormByte::Buffer {
             * // 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
             * @endcode
             */
-            std::string HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept;
+            std::string HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept override;
 
         private:
             bool m_closed;    	///< Whether the SharedFIFO is closed for further writes.

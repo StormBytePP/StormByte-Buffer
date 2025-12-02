@@ -1,6 +1,6 @@
 #pragma once
 
-#include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 
 /**
@@ -13,34 +13,40 @@
  */
 namespace StormByte::Buffer {
 	/**
-	 * @class Forwarder
-	 * @brief A lightweight forwarding buffer that delegates reads and writes to provided handlers.
-	 *
-	 * @details The `Forwarder` does not store bytes internally. Instead it forwards
-	 *          read and write operations to external callables provided at construction
-	 *          time. This is useful to encapsulate complex read/write environments,
-	 *          e.g. when integrating with network I/O, files, or other custom backends
-	 *          where the buffer logic is implemented outside the library.
-	 *
-	 *          Construction options:
-	 *          - Provide only a read function: the forwarder will accept `Read()`
-	 *            calls and will return an error for `Write()` operations.
-	 *          - Provide only a write function: the forwarder will accept `Write()`
-	 *            calls and will return an error for `Read()` operations.
-	 *          - Provide both: read and write are both forwarded to the corresponding
-	 *            handlers.
-	 *
-	 *          The read/write callables use the `ExternalReadFunction` and
-	 *          `ExternalWriteFunction` type aliases from `typedefs.hxx`. When a
-	 *          handler is not supplied the forwarder uses an internal noop handler
-	 *          that returns an appropriate `ReadError`/`WriteError` (i.e. the
-	 *          operation results in an error rather than throwing an exception).
-	 *
-	 * @note Copy and move operations are deleted to avoid accidental sharing
-	 *       of handler state; create a new `Forwarder` if you need a different
-	 *       configuration.
+ 	 * @class Forwarder
+ 	 * @brief Adapter that exposes a `SharedFIFO`-compatible interface while delegating
+ 	 *        actual I/O to user-provided callables.
+ 	 *
+ 	 * @details `Forwarder` publicly inherits from `SharedFIFO` and implements the
+ 	 *          same producer/consumer API surface, but it does not own or buffer data
+ 	 *          internally. Instead, reads and writes are forwarded to the callables
+ 	 *          supplied at construction time (`ExternalReadFunction` / `ExternalWriteFunction`).
+ 	 *
+ 	 *          Key behaviours:
+ 	 *          - `Read(count)` and `Extract(count)` invoke the configured read handler
+ 	 *            and return an `ExpectedData<Exception>` (the library's generic buffer
+ 	 *            `Exception` type is used for handler errors).
+ 	 *          - `Write(...)` overloads forward their data to the configured write
+ 	 *            handler and return `true` on success, `false` on failure.
+ 	 *          - Several methods that are meaningful for in-memory FIFOs are provided
+ 	 *            for API compatibility but act as no-ops on `Forwarder`: `Clear()`,
+ 	 *            `Clean()`, `Seek()`, and `Skip()`.
+ 	 *
+ 	 *          Important notes:
+ 	 *          - Unlike `FIFO::Read(0)` which returns all available bytes, `Forwarder::Read(0)`
+ 	 *            is treated as a request for zero bytes (a no-op) because the forwarder
+ 	 *            does not own an internal buffer and cannot determine the amount of data
+ 	 *            the external source would provide. Callers should request an explicit
+ 	 *            non-zero `count` when they want data from the external handler.
+ 	 *          - When a handler is not supplied for an operation the forwarder uses the
+ 	 *            `NoopReadFunction()` / `NoopWriteFunction()` which return an appropriate
+ 	 *            `Exception` via `StormByte::Unexpected`.
+ 	 *
+ 	 * @note Copy and move operations are deleted to avoid accidental sharing
+ 	 *       of handler state; create a new `Forwarder` if you need a different
+ 	 *       configuration.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC Forwarder {
+	class STORMBYTE_BUFFER_PUBLIC Forwarder: public SharedFIFO {
 		public:
 			/**
 			 * @brief Construct a Forwarder that only supports read operations.
@@ -71,39 +77,74 @@ namespace StormByte::Buffer {
 			Forwarder& operator=(Forwarder&& other) noexcept = delete;
 
 			/**
-			 * @brief Perform a non-owning read forwarded to the configured handler.
-			 * @param count Number of bytes to read. A value of `0` is treated as a
-			 *              no-op and requests zero bytes; the forwarder will simply
-			 *              invoke the configured read handler with `0`. Use a
-			 *              non-zero `count` to request bytes from the external source.
-			 * @return Expected containing a vector of bytes on success, or a `ReadError` on failure.
-			 *
-			 * @note Unlike `FIFO::Read(0)` which returns all available bytes, `Forwarder::Read(0)`
-			 *       does not imply "return all" because the forwarder does not own the
-			 *       underlying storage and cannot know how many bytes the external source
-			 *       would provide. Callers must supply an explicit `count` when they want
-			 *       data from the external handler.
-			 *
-			 * @note The blocking behaviour and interpretation of `count` is defined by
-			 *       the provided `ExternalReadFunction` implementation.
+			 * @brief Forwarded read operation.
+			 * @param count Number of bytes to request from the external source. A value of
+			 *              `0` is treated as a no-op (requests zero bytes) — callers should
+			 *              use a non-zero `count` to obtain data from the external handler.
+			 * @return `ExpectedData<Exception>` containing the bytes on success or an
+			 *         `Exception` describing a handler failure.
 			 */
-			ExpectedData<ReadError> Read(const std::size_t& count) const;
+			ExpectedData<Exception> Read(std::size_t count = 0) const override;
+
+			/**
+			 * @brief Compatibility overload that behaves like `Read()` for forwarders.
+			 * @param count Number of bytes to request.
+			 * @return `ExpectedData<Exception>` with the requested bytes or an error.
+			 *
+			 * @note Present for API compatibility with `SharedFIFO` - it forwards to the
+			 *       same underlying read handler.
+			 */
+			ExpectedData<Exception> Extract(std::size_t count = 0) override;
 
 			/**
 			 * @brief Forward a vector of bytes to the configured write handler.
-			 * @param data Vector of bytes to write.
-			 * @return Expected<void, WriteError> indicating success or failure.
+			 * @param data Bytes to write.
+			 * @return `true` on success, `false` on write-handler failure.
 			 */
-			ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data);
+			bool Write(const std::vector<std::byte>& data) override;
 
 			/**
-			 * @brief Forward the contents of a `Buffer::FIFO` to the write handler.
-			 * @param data FIFO whose readable contents will be forwarded. If `data.Read(0)`
-			 *             returns an error, the call is treated as a noop and success is
-			 *             returned.
-			 * @return Expected<void, WriteError> indicating success or failure of the write.
+			 * @brief Forward the contents of another `FIFO` to the write handler.
+			 * @param other FIFO whose contents will be forwarded.
+			 * @return `true` on success, `false` on failure.
 			 */
-			ExpectedVoid<WriteError> Write(const Buffer::FIFO& data);
+			bool Write(const FIFO& other) override;
+
+			/**
+			 * @brief Forward the contents of an rvalue `FIFO` to the write handler.
+			 * @param other FIFO to move from.
+			 * @return `true` on success, `false` on failure.
+			 */
+			bool Write(FIFO&& other) noexcept override;
+
+			/**
+			 * @brief Convenience write overload for strings.
+			 * @param data String whose bytes will be forwarded to the write handler.
+			 * @return `true` on success, `false` on failure.
+			 */
+			bool Write(const std::string& data) override;
+
+			/**
+			 * @brief No-op for Forwarder (kept for API compatibility).
+			 * @details `Clear()` is meaningful for in-memory FIFOs. For `Forwarder` it does
+			 *          nothing because the forwarder does not store data.
+			 */
+			void Clear() noexcept override;
+
+			/**
+			 * @brief No-op for Forwarder (kept for API compatibility).
+			 */
+			void Clean() noexcept override;
+
+			/**
+			 * @brief No-op seek for Forwarder (kept for API compatibility).
+			 */
+			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
+
+			/**
+			 * @brief No-op skip for Forwarder (kept for API compatibility).
+			 */
+			void Skip(const std::size_t& count) noexcept override;
 
 			/**
 			 * @brief Return an `ExternalReadFunction` that always yields a `ReadError`.
