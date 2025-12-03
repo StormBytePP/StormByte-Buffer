@@ -272,6 +272,14 @@ namespace StormByte::Buffer {
 			 */
 			Buffer::FIFO ExtractUntilEoF();
 
+			/**
+			 * @brief Clean buffer data (from start to readposition).
+			 * @details Removes all data from the start of the buffer up to the current
+			 *          read position. Adjusts internal offsets accordingly.
+			 * @see SharedFIFO::Clean()
+			 */
+			inline void Clean() noexcept { m_buffer->Clean(); }
+
         private:
             /** @brief Shared pointer to the underlying thread-safe FIFO buffer. */
             std::shared_ptr<SharedFIFO> m_buffer { std::make_shared<SharedFIFO>() };
