@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <utility>
+#include <span>
 
 /**
  * @namespace Buffer
@@ -152,6 +153,23 @@ namespace StormByte::Buffer {
 			virtual ExpectedData<ReadError>Read(std::size_t count = 0) const;
 
 			/**
+			 * @brief Zero-copy read that returns a view over the buffer data.
+			 * @param count Number of bytes to read; 0 reads all available.
+			 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
+			 * @details Returns a non-owning view (std::span) over the buffer data without
+			 *          copying. This is more efficient than Read() when you don't need to
+			 *          own the data. The span is valid until the next non-const operation
+			 *          (Write, Extract, Clear, etc.) on the FIFO.
+			 *          
+			 *          The read position is advanced just like Read().
+			 *          
+			 *          Returns empty span on error (insufficient data or buffer empty).
+			 * @warning The returned span becomes invalid after any modifying operation.
+			 * @see Read(), Peek(), PeekSpan()
+			 */
+			virtual std::span<const std::byte> ReadSpan(std::size_t count = 0) const noexcept;
+
+			/**
 			 * @brief Destructive read that removes data from the buffer.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
@@ -256,11 +274,28 @@ namespace StormByte::Buffer {
 			 *            if `count` is greater than the number of available bytes, a
 			 *            `ReadError` is returned.
 			 *
-			 * @see Read(), Seek()
-			 */
-			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept;
+		 * @see Read(), Seek()
+		 */
+		virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept;
 
-			// Removes count bytes from the read position
+		/**
+		 * @brief Zero-copy peek that returns a view over the buffer data without advancing position.
+		 * @param count Number of bytes to peek; 0 peeks all available.
+		 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
+		 * @details Returns a non-owning view (std::span) over the buffer data without
+		 *          copying and without advancing the read position. This is more efficient
+		 *          than Peek() when you don't need to own the data.
+		 *          
+		 *          The span is valid until the next non-const operation
+		 *          (Write, Extract, Clear, etc.) on the FIFO.
+		 *          
+		 *          Returns empty span on error (insufficient data or buffer empty).
+		 * @warning The returned span becomes invalid after any modifying operation.
+		 * @see Peek(), ReadSpan(), Read()
+		 */
+		virtual std::span<const std::byte> PeekSpan(std::size_t count = 0) const noexcept;
+
+		// Removes count bytes from the read position
 			// A value of 0 is a noop, clamped to AvailableBytes()
 			virtual void Skip(const std::size_t& count) noexcept;
 

@@ -70,6 +70,25 @@ ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
+std::span<const std::byte> SharedFIFO::ReadSpan(std::size_t count) const noexcept {
+	std::unique_lock<std::mutex> lock(m_mutex);
+	const std::size_t available = AvailableBytes();
+
+	if (m_error || (m_closed && available == 0)) {
+		return std::span<const std::byte>();
+	}
+
+	std::size_t real_count = count == 0 ? available : count;
+
+	if (!m_closed && real_count > available) {
+		// Wait for enough data to be available
+		Wait(real_count, lock);
+	}
+	
+	// If closed it acts like FIFO: requesting more than available returns empty span
+	return FIFO::ReadSpan(real_count);
+}
+
 ExpectedData<ReadError> SharedFIFO::Extract(std::size_t count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (m_error)
@@ -176,6 +195,25 @@ ExpectedData<ReadError> SharedFIFO::Peek(std::size_t count) const noexcept {
 	
 	// If closed it acts like FIFO: requesting more than available is an error.
 	return FIFO::Peek(real_count);
+}
+
+std::span<const std::byte> SharedFIFO::PeekSpan(std::size_t count) const noexcept {
+	std::unique_lock<std::mutex> lock(m_mutex);
+	const std::size_t available = AvailableBytes();
+
+	if (m_error || (m_closed && available == 0)) {
+		return std::span<const std::byte>();
+	}
+	
+	std::size_t real_count = count == 0 ? available : count;
+
+	if (!m_closed && real_count > available) {
+		// Wait for enough data to be available
+		Wait(real_count, lock);
+	}
+	
+	// If closed it acts like FIFO: requesting more than available returns empty span
+	return FIFO::PeekSpan(real_count);
 }
 
 void SharedFIFO::Skip(const std::size_t& count) noexcept {

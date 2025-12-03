@@ -120,6 +120,27 @@ ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
+std::span<const std::byte> FIFO::ReadSpan(std::size_t count) const noexcept {
+	const std::size_t available = AvailableBytes();
+
+	if (available == 0) {
+		return std::span<const std::byte>();
+	}
+
+	std::size_t real_count = count == 0 ? available : count;
+	if (real_count > available) {
+		return std::span<const std::byte>();
+	}
+
+	// Create span from current position
+	auto start_ptr = m_buffer.data() + m_position_offset;
+	
+	// Advance read position
+	m_position_offset += real_count;
+	
+	return std::span<const std::byte>(start_ptr, real_count);
+}
+
 ExpectedData<ReadError> FIFO::Extract(std::size_t count) {
 	const std::size_t available = AvailableBytes();
 
@@ -255,6 +276,23 @@ ExpectedData<ReadError> FIFO::Peek(std::size_t count) const noexcept {
 	auto end_it = start_it + real_count;
 	std::vector<std::byte> result(start_it, end_it);
 	return result;
+}
+
+std::span<const std::byte> FIFO::PeekSpan(std::size_t count) const noexcept {
+	const std::size_t available = AvailableBytes();
+
+	if (available == 0) {
+		return std::span<const std::byte>();
+	}
+
+	std::size_t real_count = count == 0 ? available : count;
+	if (real_count > available) {
+		return std::span<const std::byte>();
+	}
+
+	// Create span from current position without advancing
+	auto start_ptr = m_buffer.data() + m_position_offset;
+	return std::span<const std::byte>(start_ptr, real_count);
 }
 
 void FIFO::Skip(const std::size_t& count) noexcept {
