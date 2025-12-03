@@ -1,4 +1,5 @@
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/helpers.hxx>
 #include <StormByte/string.hxx>
 
 #include <algorithm>
@@ -12,12 +13,7 @@ using namespace StormByte::Buffer;
 FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0) {}
 
 FIFO::FIFO(const std::vector<std::byte>& data) noexcept: m_position_offset(0) {
-	m_buffer.reserve(data.size());
-#if STORMBYTE_HAS_CONTAINERS_RANGES
-	m_buffer.append_range(data);
-#else
-	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
-#endif
+	StormByte::append_vector(m_buffer, data);
 }
 
 FIFO::FIFO(std::vector<std::byte>&& data) noexcept: m_buffer(std::move(data)), m_position_offset(0) {}
@@ -191,13 +187,10 @@ ExpectedVoid<WriteError> FIFO::Write(std::span<const std::byte> data) {
 	if (data.empty()) {
 		return {};
 	}
-	m_buffer.reserve(m_buffer.size() + data.size());
-    
-#if STORMBYTE_HAS_CONTAINERS_RANGES
-	m_buffer.append_range(data);
-#else
-	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
-#endif
+
+	// Append elements from the span into our buffer
+	StormByte::append_vector(m_buffer, data);
+	
 	return {};
 }
 
@@ -210,17 +203,7 @@ ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>&& data) {
 		return {};
 	}
 	// Move elements from the rvalue vector into our buffer
-	m_buffer.reserve(m_buffer.size() + data.size());
-    
-#if STORMBYTE_HAS_CONTAINERS_RANGES
-	m_buffer.append_range(std::move(data));
-#else
-	m_buffer.insert(
-		m_buffer.end(),
-		std::make_move_iterator(data.begin()),
-		std::make_move_iterator(data.end())
-	);
-#endif
+	StormByte::append_vector(m_buffer, std::move(data));
 	return {};
 }
 
@@ -232,13 +215,9 @@ ExpectedVoid<WriteError> FIFO::Write(const FIFO& other) {
 		return {}; // nothing to append
 	}
 
-	m_buffer.reserve(m_buffer.size() + other.m_buffer.size());
-    
-#if STORMBYTE_HAS_CONTAINERS_RANGES
-	m_buffer.append_range(other.m_buffer);
-#else
-	m_buffer.insert(m_buffer.end(), other.m_buffer.begin(), other.m_buffer.end());
-#endif
+	// Append data
+	StormByte::append_vector(m_buffer, other.m_buffer);
+
 	return {};
 }
 
@@ -260,18 +239,10 @@ ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
 	}
 
 	// General case: reserve and move-append
-	m_buffer.reserve(m_buffer.size() + other.m_buffer.size());
-	#if STORMBYTE_HAS_CONTAINERS_RANGES
-	m_buffer.append_range(std::move(other.m_buffer));
-	#else
-	m_buffer.insert(
-		m_buffer.end(),
-		std::make_move_iterator(other.m_buffer.begin()),
-		std::make_move_iterator(other.m_buffer.end())
-	);
-	#endif
+	StormByte::append_vector(m_buffer, std::move(other.m_buffer));
 	other.m_buffer.clear();
 	other.m_position_offset = 0;
+
 	return {};
 }
 
