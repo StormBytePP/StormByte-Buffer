@@ -12,7 +12,8 @@ using namespace StormByte::Buffer;
 FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0) {}
 
 FIFO::FIFO(const std::vector<std::byte>& data) noexcept: m_position_offset(0) {
-	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+	m_buffer.reserve(data.size());
+	m_buffer.append_range(data);
 }
 
 FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0) {
@@ -66,7 +67,22 @@ void FIFO::Clear() noexcept {
 
 void FIFO::Clean() noexcept {
 	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
-		m_buffer.erase(m_buffer.begin(), m_buffer.begin() + m_position_offset);
+		// For vector, move remaining data to front instead of erase
+		const std::size_t remaining = m_buffer.size() - m_position_offset;
+		if (remaining > 0) {
+			std::move(m_buffer.begin() + m_position_offset, m_buffer.end(), m_buffer.begin());
+			m_buffer.resize(remaining);
+			// Shrink capacity only if massively over-allocated
+			if (m_buffer.capacity() > remaining * 4 && m_buffer.capacity() > 4096) {
+				m_buffer.shrink_to_fit();
+			}
+		} else {
+			m_buffer.clear();
+			// Only shrink when clearing if capacity was significant
+			if (m_buffer.capacity() > 4096) {
+				m_buffer.shrink_to_fit();
+			}
+		}
 	}
 	else {
 		// Failsafe: if position offset is out of bounds, clear entire buffer
@@ -116,32 +132,40 @@ ExpectedData<ReadError> FIFO::Extract(std::size_t count) {
 		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
-	// Fast-path: extracting the whole deque and we're already at position 0.
-	// Copy into result and clear the deque — this avoids the deque front-range
-	// erase which can be more expensive than a full clear of its segments.
-	if (m_position_offset == 0 && real_count == m_buffer.size()) {
-		std::vector<std::byte> result;
-		result.reserve(real_count);
-		result.insert(result.end(), m_buffer.begin(), m_buffer.end()); // unavoidable copy
-		m_buffer.clear();
-		m_position_offset = 0;
-		return result;
+	// Extract from current read position (m_position_offset)
+	auto start_it = m_buffer.begin() + m_position_offset;
+	auto end_it = start_it + real_count;
+	std::vector<std::byte> result(start_it, end_it);
+
+	// Remove extracted bytes by shifting remaining data
+	const std::size_t extract_end = m_position_offset + real_count;
+	const std::size_t remaining_after = m_buffer.size() - extract_end;
+	
+	if (remaining_after > 0) {
+		// Move data after extracted portion to fill the gap
+		std::move(m_buffer.begin() + extract_end, m_buffer.end(), m_buffer.begin() + m_position_offset);
 	}
-
-	// Extract from beginning using iterator constructor for efficiency
-	std::vector<std::byte> result(m_buffer.begin(), m_buffer.begin() + real_count);
-
-	// Delete extracted bytes from the front of the deque
-	m_buffer.erase(m_buffer.begin(), m_buffer.begin() + real_count);
-
-	// Adjust the read position: if it was ahead of what we extracted, move it back
-	m_position_offset = (m_position_offset > real_count) ? (m_position_offset - real_count) : 0;
+	
+	// Resize buffer to remove extracted portion
+	const std::size_t new_size = m_buffer.size() - real_count;
+	m_buffer.resize(new_size);
+	
+	// Shrink capacity only if massively over-allocated
+	if (m_buffer.capacity() > new_size * 4 && m_buffer.capacity() > 4096) {
+		m_buffer.shrink_to_fit();
+	}
+	
+	// Position stays at m_position_offset (we removed data at that position)
 
 	return result;
 }
 
 ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
-	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+	if (data.empty()) {
+		return {};
+	}
+	m_buffer.reserve(m_buffer.size() + data.size());
+	m_buffer.append_range(data);
 	return {};
 }
 
@@ -153,13 +177,14 @@ ExpectedVoid<WriteError> FIFO::Write(const FIFO& other) {
 		return {}; // nothing to append
 	}
 
-	m_buffer.insert(m_buffer.end(), other.m_buffer.begin(), other.m_buffer.end());
+	m_buffer.reserve(m_buffer.size() + other.m_buffer.size());
+	m_buffer.append_range(other.m_buffer);
 	return {};
 }
 
 ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
 	// Append the entire contents of the rvalue FIFO. If the destination is
-	// empty we can steal the deque via move (O(1)). Otherwise move-insert
+	// empty we can steal the vector via move (O(1)). Otherwise move-append
 	// the elements and leave `other` empty.
 	if (other.m_buffer.empty()) {
 		other.m_position_offset = 0;
@@ -174,7 +199,8 @@ ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
 		return {};
 	}
 
-	// General case: move-append the whole deque
+	// General case: reserve and move-append
+	m_buffer.reserve(m_buffer.size() + other.m_buffer.size());
 	m_buffer.insert(m_buffer.end(), std::make_move_iterator(other.m_buffer.begin()), std::make_move_iterator(other.m_buffer.end()));
 	other.m_buffer.clear();
 	other.m_position_offset = 0;
@@ -182,7 +208,15 @@ ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
 }
 
 ExpectedVoid<WriteError> FIFO::Write(const std::string& data) {
-	return Write(StormByte::String::ToByteVector(data));
+	if (data.empty()) {
+		return {};
+	}
+	// Avoid temporary vector allocation by directly appending
+	m_buffer.reserve(m_buffer.size() + data.size());
+	for (char c : data) {
+		m_buffer.push_back(static_cast<std::byte>(c));
+	}
+	return {};
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {

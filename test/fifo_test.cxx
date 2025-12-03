@@ -216,14 +216,14 @@ int test_fifo_read_vs_extract() {
     ASSERT_EQUAL("read content", StormByte::String::FromByteVector(*r1), std::string("12"));
     ASSERT_EQUAL("size after read", fifo.Size(), static_cast<std::size_t>(6));
     
-    // Extract should remove data
+    // Extract should remove data from current position (which is now at 2 after Read)
     auto e1 = fifo.Extract(2);
-    ASSERT_EQUAL("extract content", StormByte::String::FromByteVector(*e1), std::string("12"));
+    ASSERT_EQUAL("extract content", StormByte::String::FromByteVector(*e1), std::string("34"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(4));
     
-    // Read should continue from adjusted position
+    // Read should continue from current position (still at 2 in the new buffer)
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("read after extract", StormByte::String::FromByteVector(*r2), std::string("34"));
+    ASSERT_EQUAL("read after extract", StormByte::String::FromByteVector(*r2), std::string("56"));
     
     RETURN_TEST("test_fifo_read_vs_extract", 0);
 }
@@ -263,19 +263,18 @@ int test_fifo_extract_adjusts_read_position() {
     FIFO fifo;
     fifo.Write(std::string("0123456789"));
     
-    // Read first 5 bytes
+    // Read first 5 bytes (position now at 5)
     auto r1 = fifo.Read(5);
     ASSERT_EQUAL("read 5", StormByte::String::FromByteVector(*r1), std::string("01234"));
     
-    // Extract first 3 bytes (should adjust read position)
+    // Extract 3 bytes from current position (5), should get "567"
     auto e1 = fifo.Extract(3);
-    ASSERT_EQUAL("extract 3", StormByte::String::FromByteVector(*e1), std::string("012"));
+    ASSERT_EQUAL("extract 3", StormByte::String::FromByteVector(*e1), std::string("567"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(7));
     
-    // Next read should continue from adjusted position (was at 5, extract removed 3, now at 2 relative to new head)
-    // New head is at '3', read position is 2, so we read from '5' onwards
+    // Next read should continue from current position (still at 5 in the new buffer)
     auto r2 = fifo.Read(2);
-    ASSERT_EQUAL("read after extract", StormByte::String::FromByteVector(*r2), std::string("56"));
+    ASSERT_EQUAL("read after extract", StormByte::String::FromByteVector(*r2), std::string("89"));
     
     RETURN_TEST("test_fifo_extract_adjusts_read_position", 0);
 }
@@ -337,19 +336,19 @@ int test_fifo_seek_after_extract() {
     FIFO fifo;
     fifo.Write(std::string("ABCDEFGHIJKLMNO"));
     
-    // Read first 5 bytes
+    // Read first 5 bytes (position now at 5)
     auto r1 = fifo.Read(5);
     ASSERT_EQUAL("read before extract", StormByte::String::FromByteVector(*r1), std::string("ABCDE"));
     
-    // Extract first 3 bytes (removes ABC, head now at D)
+    // Extract 3 bytes from position 5 (gets "FGH")
     auto e1 = fifo.Extract(3);
-    ASSERT_EQUAL("extract 3", StormByte::String::FromByteVector(*e1), std::string("ABC"));
+    ASSERT_EQUAL("extract 3", StormByte::String::FromByteVector(*e1), std::string("FGH"));
     ASSERT_EQUAL("size after extract", fifo.Size(), static_cast<std::size_t>(12));
     
-    // Seek to absolute position 0 (should start from new head at D)
+    // Seek to absolute position 0
     fifo.Seek(0, Position::Absolute);
     auto r2 = fifo.Read(3);
-    ASSERT_EQUAL("seek absolute after extract", StormByte::String::FromByteVector(*r2), std::string("DEF"));
+    ASSERT_EQUAL("seek absolute after extract", StormByte::String::FromByteVector(*r2), std::string("ABC"));
     
     // Seek to absolute position 5
     fifo.Seek(5, Position::Absolute);
@@ -483,11 +482,11 @@ int test_fifo_available_bytes() {
     fifo.Seek(4, Position::Absolute);
     ASSERT_EQUAL("after seek to 4", fifo.AvailableBytes(), static_cast<std::size_t>(6));
     
-    // Extract removes data from head
-    auto e1 = fifo.Extract(3); // Remove ABC, leaving DEFGHIJ (7 bytes)
-    // Read position was at 4, now adjusted to 1 (4-3)
-    // Available: 7 - 1 = 6
-    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(6));
+    // Extract removes data from current position (4)
+    auto e1 = fifo.Extract(3); // Remove from position 4, gets "EFG", leaving ABCDHIJ (7 bytes)
+    // Read position stays at 4
+    // Available: 7 - 4 = 3
+    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(3));
     
     // Read all remaining from current position
     auto r3 = fifo.Read(0);
@@ -512,17 +511,17 @@ int test_fifo_available_bytes_after_ops() {
     [[maybe_unused]] auto r1 = fifo.Read(3);
     ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), static_cast<std::size_t>(5));
     
-    // Extract 4, removes ABCD, head now at E, read position adjusted to 0
+    // Extract 4 from position 3, removes "DEFG", leaving ABCH (4 bytes), position stays at 3
     [[maybe_unused]] auto e1 = fifo.Extract(4);
-    ASSERT_EQUAL("after extract 4", fifo.AvailableBytes(), static_cast<std::size_t>(4));
+    ASSERT_EQUAL("after extract 4", fifo.AvailableBytes(), static_cast<std::size_t>(1));
     
-    // Write more causing wrap
+    // Write more - now buffer is ABCH1234 (8 bytes), position at 3
     fifo.Write("1234");
-    ASSERT_EQUAL("after wrap write", fifo.AvailableBytes(), static_cast<std::size_t>(8));
+    ASSERT_EQUAL("after wrap write", fifo.AvailableBytes(), static_cast<std::size_t>(5));
     
-    // Read some
+    // Read 5 from position 3, advances position to 8
     [[maybe_unused]] auto r2 = fifo.Read(5);
-    ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), static_cast<std::size_t>(3));
+    ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), static_cast<std::size_t>(0));
     
     RETURN_TEST("test_fifo_available_bytes_with_wrap", 0);
 }

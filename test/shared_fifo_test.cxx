@@ -136,19 +136,25 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 
     std::string r_before, r_after;
     std::atomic<bool> reader_failed2{false};
+    std::atomic<bool> first_read_done{false};
+    
     std::thread reader([&]() -> void {
         auto _r_before = fifo.Read(3);
         if (!_r_before.has_value()) { reader_failed2.store(true); return; }
-        r_before = toString(*_r_before); // ABC
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        r_before = toString(*_r_before); // ABC, position now at 3
+        first_read_done.store(true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         auto _r_after = fifo.Read(2);
         if (!_r_after.has_value()) { reader_failed2.store(true); return; }
-        r_after = toString(*_r_after); // depends on extract adjustment
+        r_after = toString(*_r_after);
     });
 
     std::thread extractor([&]() -> void {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        auto e = fifo.Extract(2); // remove AB; read_position should adjust
+        // Wait until first read completes to ensure deterministic position
+        while (!first_read_done.load()) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        auto e = fifo.Extract(2); // Extract from position 3, gets "DE"
         (void)e;
     });
 
@@ -158,8 +164,9 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
     ASSERT_FALSE("reader had error", reader_failed2.load());
 
     ASSERT_EQUAL("first read ABC", r_before, std::string("ABC"));
-    // After extracting 2, the read position (which was at 3) becomes 1 relative to new head 'C', so next should start from 'D'
-    ASSERT_EQUAL("next read after adjust is DE", r_after, std::string("DE"));
+    // After reading 3 (position at 3), Extract(2) removes from position 3, which is "DE"
+    // Position stays at 3, next read gets "FG"
+    ASSERT_EQUAL("next read after adjust is FG", r_after, std::string("FG"));
     RETURN_TEST("test_shared_fifo_extract_adjusts_read_position_concurrency", 0);
 }
 
@@ -259,12 +266,12 @@ int test_shared_fifo_close_suppresses_writes() {
 int test_shared_fifo_wrap_boundary_blocking() {
     SharedFIFO fifo;
     fifo.Write("ABCDE");
-    auto r1 = fifo.Read(3); // should block for 3, returns ABC
+    auto r1 = fifo.Read(3); // reads ABC, position now at 3
     ASSERT_TRUE("r1 returned", r1.has_value());
     ASSERT_EQUAL("read ABC", toString(*r1), std::string("ABC"));
-    auto e1 = fifo.Extract(2); // remove AB
+    auto e1 = fifo.Extract(2); // extract from position 3, gets "DE"
     ASSERT_TRUE("e1 returned", e1.has_value());
-    ASSERT_EQUAL("extract AB", toString(*e1), std::string("AB"));
+    ASSERT_EQUAL("extract DE", toString(*e1), std::string("DE"));
     fifo.Write("12"); // wrap at capacity
     // Seek to beginning and read remaining 4 bytes Follows non-destructive read position semantics
     fifo.Seek(0, Position::Absolute);
@@ -397,9 +404,9 @@ int test_shared_fifo_available_bytes_basic() {
     fifo.Seek(2, Position::Absolute);
     ASSERT_EQUAL("after seek to 2", fifo.AvailableBytes(), static_cast<std::size_t>(9));
     
-    // Extract removes data
+    // Extract 3 from position 2, removes 3 bytes, position stays at 2
     auto e1 = fifo.Extract(3);
-    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(8));
+    ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(6));
     
     RETURN_TEST("test_shared_fifo_available_bytes_basic", 0);
 }

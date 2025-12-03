@@ -3,7 +3,7 @@
 #include <StormByte/buffer/position.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 
-#include <deque>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -20,7 +20,7 @@ namespace StormByte::Buffer {
 	* @brief Byte-oriented FIFO buffer with grow-on-demand.
 	*
 	* @par Overview
-	*  A contiguous growable buffer implemented atop @c std::deque<std::byte> that tracks
+	*  A contiguous growable buffer implemented atop @c std::vector<std::byte> that tracks
 	*  a logical read position. It grows automatically to fit writes and supports
 	*  efficient non-destructive reads and destructive extracts.
 	*
@@ -299,9 +299,9 @@ namespace StormByte::Buffer {
 
 		protected:
 			/**
-			 * @brief Internal deque storing the buffer data.
+			 * @brief Internal vector storing the buffer data.
 			 */
-			std::deque<std::byte> m_buffer;
+			std::vector<std::byte> m_buffer;
 
 			/**
 			 * @brief Current read position for non-destructive reads.
