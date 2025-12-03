@@ -789,7 +789,7 @@ int test_fifo_read_span_basic() {
     FIFO fifo;
     fifo.Write("ABCDEF");
     
-    auto span = fifo.ReadSpan(3);
+    auto span = fifo.Span(3);
     ASSERT_EQUAL("read_span size", span.size(), static_cast<std::size_t>(3));
     ASSERT_EQUAL("read_span first byte", static_cast<char>(span[0]), 'A');
     ASSERT_EQUAL("read_span second byte", static_cast<char>(span[1]), 'B');
@@ -807,8 +807,8 @@ int test_fifo_read_span_all_available() {
     FIFO fifo;
     fifo.Write("HelloWorld");
     
-    // ReadSpan with count=0 should read all available
-    auto span = fifo.ReadSpan(0);
+    // Span with count=0 should read all available
+    auto span = fifo.Span(0);
     ASSERT_EQUAL("read_span_all size", span.size(), static_cast<std::size_t>(10));
     
     std::string result;
@@ -828,7 +828,7 @@ int test_fifo_read_span_insufficient_data() {
     fifo.Write("ABC");
     
     // Try to read more than available
-    auto span = fifo.ReadSpan(10);
+    auto span = fifo.Span(10);
     ASSERT_TRUE("read_span_insufficient empty", span.empty());
     
     // Verify position didn't advance
@@ -839,79 +839,15 @@ int test_fifo_read_span_insufficient_data() {
     RETURN_TEST("test_fifo_read_span_insufficient_data", 0);
 }
 
-int test_fifo_peek_span_basic() {
-    FIFO fifo;
-    fifo.Write("ABCDEF");
-    
-    auto span = fifo.PeekSpan(3);
-    ASSERT_EQUAL("peek_span size", span.size(), static_cast<std::size_t>(3));
-    ASSERT_EQUAL("peek_span first byte", static_cast<char>(span[0]), 'A');
-    ASSERT_EQUAL("peek_span second byte", static_cast<char>(span[1]), 'B');
-    ASSERT_EQUAL("peek_span third byte", static_cast<char>(span[2]), 'C');
-    
-    // Verify position did NOT advance - peek again
-    auto span2 = fifo.PeekSpan(3);
-    ASSERT_EQUAL("peek_span2 size", span2.size(), static_cast<std::size_t>(3));
-    ASSERT_EQUAL("peek_span2 first byte", static_cast<char>(span2[0]), 'A');
-    
-    RETURN_TEST("test_fifo_peek_span_basic", 0);
-}
-
-int test_fifo_peek_span_all_available() {
-    FIFO fifo;
-    fifo.Write("TestData");
-    
-    // PeekSpan with count=0 should peek all available
-    auto span = fifo.PeekSpan(0);
-    ASSERT_EQUAL("peek_span_all size", span.size(), static_cast<std::size_t>(8));
-    
-    std::string result;
-    for (auto byte : span) {
-        result.push_back(static_cast<char>(byte));
-    }
-    ASSERT_EQUAL("peek_span_all content", result, std::string("TestData"));
-    
-    // Buffer should NOT be empty after peeking
-    ASSERT_EQUAL("peek_span_all not empty", fifo.Empty(), false);
-    ASSERT_EQUAL("peek_span_all available", fifo.AvailableBytes(), static_cast<std::size_t>(8));
-    
-    RETURN_TEST("test_fifo_peek_span_all_available", 0);
-}
-
-int test_fifo_span_zero_copy() {
-    FIFO fifo;
-    fifo.Write("DataInBuffer");
-    
-    // Get span and verify it points to internal buffer
-    auto span = fifo.PeekSpan(4);
-    ASSERT_EQUAL("span_zero_copy size", span.size(), static_cast<std::size_t>(4));
-    
-    const std::byte* span_ptr = span.data();
-    
-    // Read should advance, but peek span should still point to same memory location
-    auto read_result = fifo.Read(4);
-    ASSERT_TRUE("span_zero_copy read ok", read_result.has_value());
-    
-    // Peek the next 4 bytes
-    auto span2 = fifo.PeekSpan(4);
-    ASSERT_EQUAL("span_zero_copy span2 size", span2.size(), static_cast<std::size_t>(4));
-    
-    // The second span should point to where the first span started + 4
-    ASSERT_EQUAL("span_zero_copy memory continuity", 
-                 span2.data(), span_ptr + 4);
-    
-    RETURN_TEST("test_fifo_span_zero_copy", 0);
-}
-
 int test_fifo_read_span_vs_read() {
-    // Verify ReadSpan and Read produce same data
+    // Verify Span and Read produce same data
     FIFO fifo1, fifo2;
     const std::string data = "ComparisonTest";
     fifo1.Write(data);
     fifo2.Write(data);
     
-    // Use ReadSpan on fifo1
-    auto span = fifo1.ReadSpan(4);
+    // Use Span on fifo1
+    auto span = fifo1.Span(4);
     std::string span_result;
     for (auto byte : span) {
         span_result.push_back(static_cast<char>(byte));
@@ -977,9 +913,6 @@ int main() {
     result += test_fifo_read_span_basic();
     result += test_fifo_read_span_all_available();
     result += test_fifo_read_span_insufficient_data();
-    result += test_fifo_peek_span_basic();
-    result += test_fifo_peek_span_all_available();
-    result += test_fifo_span_zero_copy();
     result += test_fifo_read_span_vs_read();
 
     if (result == 0) {

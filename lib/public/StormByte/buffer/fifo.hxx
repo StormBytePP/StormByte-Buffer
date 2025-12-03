@@ -49,6 +49,12 @@ namespace StormByte::Buffer {
 			FIFO(const std::vector<std::byte>& data) noexcept;
 
 			/**
+			 * 	@brief Construct FIFO with initial data using move semantics.
+			 *  @param data Initial byte vector to move into the FIFO.
+			 */
+			FIFO(std::vector<std::byte>&& data) noexcept;
+
+			/**
 			 * 	@brief Copy construct, preserving buffer state and initial capacity.
 			 *  @param other Source FIFO to copy from.
 			 */
@@ -165,9 +171,9 @@ namespace StormByte::Buffer {
 			 *          
 			 *          Returns empty span on error (insufficient data or buffer empty).
 			 * @warning The returned span becomes invalid after any modifying operation.
-			 * @see Read(), Peek(), PeekSpan()
+			 * @see Read(), Peek()
 			 */
-			virtual std::span<const std::byte> ReadSpan(std::size_t count = 0) const noexcept;
+			virtual std::span<const std::byte> Span(std::size_t count = 0) const noexcept;
 
 			/**
 			 * @brief Destructive read that removes data from the buffer.
@@ -201,6 +207,16 @@ namespace StormByte::Buffer {
 			 * @see Write(const std::string&), IsClosed()
 			 */
 			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data);
+
+			/**
+			 * @brief Write bytes from a vector to the buffer.
+			 * @param data Byte vector to append to the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Appends data to the buffer, growing capacity automatically if needed.
+			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
+			 * @see Write(const std::string&), IsClosed()
+			 */
+			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>&& data);
 
 			/**
 			 * @brief Append the full contents of another FIFO to this buffer.
@@ -274,28 +290,11 @@ namespace StormByte::Buffer {
 			 *            if `count` is greater than the number of available bytes, a
 			 *            `ReadError` is returned.
 			 *
-		 * @see Read(), Seek()
-		 */
-		virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept;
+			 * @see Read(), Seek()
+			 */
+			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept;
 
-		/**
-		 * @brief Zero-copy peek that returns a view over the buffer data without advancing position.
-		 * @param count Number of bytes to peek; 0 peeks all available.
-		 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
-		 * @details Returns a non-owning view (std::span) over the buffer data without
-		 *          copying and without advancing the read position. This is more efficient
-		 *          than Peek() when you don't need to own the data.
-		 *          
-		 *          The span is valid until the next non-const operation
-		 *          (Write, Extract, Clear, etc.) on the FIFO.
-		 *          
-		 *          Returns empty span on error (insufficient data or buffer empty).
-		 * @warning The returned span becomes invalid after any modifying operation.
-		 * @see Peek(), ReadSpan(), Read()
-		 */
-		virtual std::span<const std::byte> PeekSpan(std::size_t count = 0) const noexcept;
-
-		// Removes count bytes from the read position
+			// Removes count bytes from the read position
 			// A value of 0 is a noop, clamped to AvailableBytes()
 			virtual void Skip(const std::size_t& count) noexcept;
 

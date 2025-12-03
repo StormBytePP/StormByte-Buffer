@@ -142,25 +142,25 @@ namespace StormByte::Buffer {
 			 *          semantics.
 			 * @see FIFO::Read(), Wait(), IsReadable()
 			 */
-		virtual ExpectedData<ReadError> Read(std::size_t count = 0) const override;
+			virtual ExpectedData<ReadError> Read(std::size_t count = 0) const override;
 
-		/**
-		 * @brief Thread-safe blocking zero-copy read from the buffer.
-		 * @param count Number of bytes to read; 0 reads all available.
-		 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
-		 * @details Blocks until @p count bytes are available from the current read position,
-		 *          or until the buffer becomes unreadable. Returns a non-owning view without
-		 *          copying. The span is valid until the next modifying operation.
-		 *          
-		 *          WARNING: The returned span becomes invalid after any write, extract, or
-		 *          clear operation. Since this is a thread-safe class, other threads may
-		 *          modify the buffer at any time, so the span should be used immediately.
-		 * @see FIFO::ReadSpan(), Read(), Wait()
-		 */
-		virtual std::span<const std::byte> ReadSpan(std::size_t count = 0) const noexcept override;
+			/**
+			 * @brief Thread-safe blocking zero-copy read from the buffer.
+			 * @param count Number of bytes to read; 0 reads all available.
+			 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
+			 * @details Blocks until @p count bytes are available from the current read position,
+			 *          or until the buffer becomes unreadable. Returns a non-owning view without
+			 *          copying. The span is valid until the next modifying operation.
+			 *          
+			 *          WARNING: The returned span becomes invalid after any write, extract, or
+			 *          clear operation. Since this is a thread-safe class, other threads may
+			 *          modify the buffer at any time, so the span should be used immediately.
+			 * @see FIFO::Span(), Read(), Wait()
+			 */
+			virtual std::span<const std::byte> Span(std::size_t count = 0) const noexcept override;
 
-		/**
-		 * @brief Thread-safe blocking extract from the buffer.
+			/**
+			 * @brief Thread-safe blocking extract from the buffer.
 			 * @param count Number of bytes to extract; 0 extracts all available immediately.
 			 * @return ExpectedData<ReadError> containing the requested bytes, or error.
 			 * @details Blocks until @p count bytes are available, or until the buffer becomes
@@ -179,6 +179,16 @@ namespace StormByte::Buffer {
 			 * @see FIFO::Write()
 			 */
 			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
+
+			/**
+			 * @brief Thread-safe write with move semantics for byte vector.
+			 * @param data Byte vector rvalue to move into the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Thread-safe version that uses move semantics to efficiently
+			 *          transfer data from the rvalue vector. Notifies waiting readers after write.
+			 * @see FIFO::Write()
+			 */
+			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>&& data) override;
 
 			/**
 			 * @brief Thread-safe append of another FIFO's full contents.
@@ -240,30 +250,17 @@ namespace StormByte::Buffer {
 			 *          semantics.
 			 * @see FIFO::Peek(), Wait(), IsReadable()
 			 */
-		virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept override;
+			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept override;
 
-		/**
-		 * @brief Thread-safe blocking zero-copy peek from the buffer.
-		 * @param count Number of bytes to peek; 0 peeks all available.
-		 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
-		 * @details Blocks until @p count bytes are available from the current read position,
-		 *          or until the buffer becomes unreadable. Returns a non-owning view without
-		 *          copying and without advancing the read position.
-		 *          
-		 *          WARNING: The returned span becomes invalid after any write, extract, or
-		 *          clear operation. Since this is a thread-safe class, other threads may
-		 *          modify the buffer at any time, so the span should be used immediately.
-		 * @see FIFO::PeekSpan(), Peek(), Wait()
-		 */
-		virtual std::span<const std::byte> PeekSpan(std::size_t count = 0) const noexcept override;
-
-		/**
-		 * @brief Thread-safe skip operation.
-		 * @details Notifies waiting readers after skipping.
-		 * @see FIFO::Skip()
-		 */
-		virtual void Skip(const std::size_t& count) noexcept override;
-		/** @} */			/**
+			/**
+			 * @brief Thread-safe skip operation.
+			 * @details Notifies waiting readers after skipping.
+			 * @see FIFO::Skip()
+			 */
+			virtual void Skip(const std::size_t& count) noexcept override;
+			/** @} */
+			
+			/**
 			 * @brief Check if the reader has reached end-of-file.
 			 * @return true if buffer is closed or in error state and no bytes available.
 			 * @details Returns true when the buffer has been closed or set to error

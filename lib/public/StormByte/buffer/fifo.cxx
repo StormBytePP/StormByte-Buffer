@@ -16,6 +16,8 @@ FIFO::FIFO(const std::vector<std::byte>& data) noexcept: m_position_offset(0) {
 	m_buffer.append_range(data);
 }
 
+FIFO::FIFO(std::vector<std::byte>&& data) noexcept: m_buffer(std::move(data)), m_position_offset(0) {}
+
 FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0) {
 	Copy(other);
 }
@@ -120,7 +122,7 @@ ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
-std::span<const std::byte> FIFO::ReadSpan(std::size_t count) const noexcept {
+std::span<const std::byte> FIFO::Span(std::size_t count) const noexcept {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
@@ -187,6 +189,16 @@ ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
 	}
 	m_buffer.reserve(m_buffer.size() + data.size());
 	m_buffer.append_range(data);
+	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>&& data) {
+	if (data.empty()) {
+		return {};
+	}
+	// Move elements from the rvalue vector into our buffer
+	m_buffer.reserve(m_buffer.size() + data.size());
+	m_buffer.append_range(std::move(data));
 	return {};
 }
 
@@ -276,23 +288,6 @@ ExpectedData<ReadError> FIFO::Peek(std::size_t count) const noexcept {
 	auto end_it = start_it + real_count;
 	std::vector<std::byte> result(start_it, end_it);
 	return result;
-}
-
-std::span<const std::byte> FIFO::PeekSpan(std::size_t count) const noexcept {
-	const std::size_t available = AvailableBytes();
-
-	if (available == 0) {
-		return std::span<const std::byte>();
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-	if (real_count > available) {
-		return std::span<const std::byte>();
-	}
-
-	// Create span from current position without advancing
-	auto start_ptr = m_buffer.data() + m_position_offset;
-	return std::span<const std::byte>(start_ptr, real_count);
 }
 
 void FIFO::Skip(const std::size_t& count) noexcept {

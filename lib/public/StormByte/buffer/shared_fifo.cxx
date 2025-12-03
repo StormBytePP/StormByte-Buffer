@@ -70,7 +70,7 @@ ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
-std::span<const std::byte> SharedFIFO::ReadSpan(std::size_t count) const noexcept {
+std::span<const std::byte> SharedFIFO::Span(std::size_t count) const noexcept {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
@@ -86,7 +86,7 @@ std::span<const std::byte> SharedFIFO::ReadSpan(std::size_t count) const noexcep
 	}
 	
 	// If closed it acts like FIFO: requesting more than available returns empty span
-	return FIFO::ReadSpan(real_count);
+	return FIFO::Span(real_count);
 }
 
 ExpectedData<ReadError> SharedFIFO::Extract(std::size_t count) {
@@ -118,8 +118,30 @@ ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>& data) {
 	return {};
 }
 
+ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>&& data) {
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		// Reject writes when closed or in error state.
+		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
+		// Delegate to base FIFO rvalue overload for efficient move.
+		(void)FIFO::Write(std::move(data));
+	}
+	// Notify waiters after performing the write.
+	m_cv.notify_all();
+	return {};
+}
+
 ExpectedVoid<WriteError> SharedFIFO::Write(const std::string& data) {
-	return Write(StormByte::String::ToByteVector(data));
+	{
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		// Reject writes when closed or in error state.
+		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
+		// Delegate to base FIFO implementation which avoids temporary vector allocation
+		(void)FIFO::Write(data);
+	}
+	// Notify waiters after performing the write.
+	m_cv.notify_all();
+	return {};
 }
 
 ExpectedVoid<WriteError> SharedFIFO::Write(const FIFO& other) {
@@ -195,25 +217,6 @@ ExpectedData<ReadError> SharedFIFO::Peek(std::size_t count) const noexcept {
 	
 	// If closed it acts like FIFO: requesting more than available is an error.
 	return FIFO::Peek(real_count);
-}
-
-std::span<const std::byte> SharedFIFO::PeekSpan(std::size_t count) const noexcept {
-	std::unique_lock<std::mutex> lock(m_mutex);
-	const std::size_t available = AvailableBytes();
-
-	if (m_error || (m_closed && available == 0)) {
-		return std::span<const std::byte>();
-	}
-	
-	std::size_t real_count = count == 0 ? available : count;
-
-	if (!m_closed && real_count > available) {
-		// Wait for enough data to be available
-		Wait(real_count, lock);
-	}
-	
-	// If closed it acts like FIFO: requesting more than available returns empty span
-	return FIFO::PeekSpan(real_count);
 }
 
 void SharedFIFO::Skip(const std::size_t& count) noexcept {
