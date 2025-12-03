@@ -7,7 +7,7 @@ on:
     branches: [ "master" ]
 
 env:
-  BUILD_TYPE: Release
+  BUILD_TYPE: Debug
 
 jobs:
   build-linux:
@@ -44,6 +44,7 @@ jobs:
           -G Ninja
           -DWITH_SYSTEM_STORMBYTE=OFF
           -DENABLE_TEST=ON
+          -DENABLE_ASAN=ON
         build-type: ${{ env.BUILD_TYPE }}
 
     - name: Run unit tests

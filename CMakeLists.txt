@@ -10,11 +10,12 @@ project("StormByte C++ Library: Buffer module"
 	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
 )
 
-option(ENABLE_ASAN "Enable AddressSanitizer (and UBSan) for debug builds" OFF)
+include(cmake/asan.cmake)
 
 enable_testing()
 add_subdirectory(thirdparty)
 add_subdirectory(doc)
-add_subdirectory(debug)
 add_subdirectory(lib)
 add_subdirectory(test)
+
+include(cmake/outputflags.cmake)
