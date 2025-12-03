@@ -70,12 +70,12 @@ ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
-std::span<const std::byte> SharedFIFO::Span(std::size_t count) const noexcept {
+ExpectedSpan<ReadError> SharedFIFO::Span(std::size_t count) const noexcept {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
 	if (m_error || (m_closed && available == 0)) {
-		return std::span<const std::byte>();
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	std::size_t real_count = count == 0 ? available : count;
@@ -85,7 +85,7 @@ std::span<const std::byte> SharedFIFO::Span(std::size_t count) const noexcept {
 		Wait(real_count, lock);
 	}
 	
-	// If closed it acts like FIFO: requesting more than available returns empty span
+	// If closed it acts like FIFO: requesting more than available returns error
 	return FIFO::Span(real_count);
 }
 

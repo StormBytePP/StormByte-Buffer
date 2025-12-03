@@ -157,7 +157,7 @@ namespace StormByte::Buffer {
 			 *          modify the buffer at any time, so the span should be used immediately.
 			 * @see FIFO::Span(), Read(), Wait()
 			 */
-			virtual std::span<const std::byte> Span(std::size_t count = 0) const noexcept override;
+			virtual ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept override;
 
 			/**
 			 * @brief Thread-safe blocking extract from the buffer.

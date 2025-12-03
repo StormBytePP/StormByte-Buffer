@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <span>
 #include <vector>
 
 /**
@@ -35,6 +36,9 @@ namespace StormByte::Buffer {
 	 */
 	template<class Exception>
 	using ExpectedData = Expected<std::vector<std::byte>, Exception>;
+
+	template<class Exception>
+	using ExpectedSpan = Expected<std::span<const std::byte>, Exception>;
 
 	template<class Exception>
 	using ExpectedVoid = Expected<void, Exception>;

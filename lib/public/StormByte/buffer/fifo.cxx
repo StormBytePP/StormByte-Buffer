@@ -126,24 +126,24 @@ ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
-std::span<const std::byte> FIFO::Span(std::size_t count) const noexcept {
+ExpectedSpan<ReadError> FIFO::Span(std::size_t count) const noexcept {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
-		return std::span<const std::byte>();
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	std::size_t real_count = count == 0 ? available : count;
 	if (real_count > available) {
-		return std::span<const std::byte>();
+		return StormByte::Unexpected(ReadError("Insufficient data to read"));
 	}
 
 	// Create span from current position
 	auto start_ptr = m_buffer.data() + m_position_offset;
-	
+
 	// Advance read position
 	m_position_offset += real_count;
-	
+
 	return std::span<const std::byte>(start_ptr, real_count);
 }
 

@@ -790,10 +790,11 @@ int test_fifo_read_span_basic() {
     fifo.Write("ABCDEF");
     
     auto span = fifo.Span(3);
-    ASSERT_EQUAL("read_span size", span.size(), static_cast<std::size_t>(3));
-    ASSERT_EQUAL("read_span first byte", static_cast<char>(span[0]), 'A');
-    ASSERT_EQUAL("read_span second byte", static_cast<char>(span[1]), 'B');
-    ASSERT_EQUAL("read_span third byte", static_cast<char>(span[2]), 'C');
+    ASSERT_TRUE("read_span returned", span.has_value());
+    ASSERT_EQUAL("read_span size", span->size(), static_cast<std::size_t>(3));
+    ASSERT_EQUAL("read_span first byte", static_cast<char>((*span)[0]), 'A');
+    ASSERT_EQUAL("read_span second byte", static_cast<char>((*span)[1]), 'B');
+    ASSERT_EQUAL("read_span third byte", static_cast<char>((*span)[2]), 'C');
     
     // Verify position advanced
     auto read = fifo.Read(3);
@@ -809,10 +810,11 @@ int test_fifo_read_span_all_available() {
     
     // Span with count=0 should read all available
     auto span = fifo.Span(0);
-    ASSERT_EQUAL("read_span_all size", span.size(), static_cast<std::size_t>(10));
+    ASSERT_TRUE("read_span_all returned", span.has_value());
+    ASSERT_EQUAL("read_span_all size", span->size(), static_cast<std::size_t>(10));
     
     std::string result;
-    for (auto byte : span) {
+    for (auto byte : *span) {
         result.push_back(static_cast<char>(byte));
     }
     ASSERT_EQUAL("read_span_all content", result, std::string("HelloWorld"));
@@ -829,7 +831,7 @@ int test_fifo_read_span_insufficient_data() {
     
     // Try to read more than available
     auto span = fifo.Span(10);
-    ASSERT_TRUE("read_span_insufficient empty", span.empty());
+    ASSERT_TRUE("read_span_insufficient error", !span.has_value());
     
     // Verify position didn't advance
     auto read = fifo.Read(3);
@@ -848,8 +850,9 @@ int test_fifo_read_span_vs_read() {
     
     // Use Span on fifo1
     auto span = fifo1.Span(4);
+    ASSERT_TRUE("span_vs_read span ok", span.has_value());
     std::string span_result;
-    for (auto byte : span) {
+    for (auto byte : *span) {
         span_result.push_back(static_cast<char>(byte));
     }
     

@@ -123,6 +123,19 @@ namespace StormByte::Buffer {
 			 */
 
 			inline ExpectedData<ReadError> Read(std::size_t count = 0) const { return m_buffer->Read(count); }
+
+			/**
+			 * @brief Zero-copy read that returns a view over the buffer data (blocks until data available).
+			 * @param count Number of bytes to read; 0 reads all available without blocking.
+			 * @return ExpectedSpan<ReadError> with a span over the requested bytes, or an error.
+			 * @details **Blocks** until count bytes available or buffer becomes unreadable
+			 *          (closed or error) (if count > 0). Returns a non-owning view (std::span)
+			 *          over the buffer data without copying. The span is valid until the next
+			 *          non-const operation (Write, Extract, Clear, etc.) on the FIFO.
+			 * @warning The returned span becomes invalid after any modifying operation.
+			 * @see SharedFIFO::Span(), Read(), Peek()
+			 */
+			inline ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept { return m_buffer->Span(count); }
 			
 			/**
 			* @brief Destructive read that removes data from the buffer (blocks until data available).

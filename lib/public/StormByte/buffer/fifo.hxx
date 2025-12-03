@@ -173,7 +173,7 @@ namespace StormByte::Buffer {
 			 * @warning The returned span becomes invalid after any modifying operation.
 			 * @see Read(), Peek()
 			 */
-			virtual std::span<const std::byte> Span(std::size_t count = 0) const noexcept;
+			virtual ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept;
 
 			/**
 			 * @brief Destructive read that removes data from the buffer.
