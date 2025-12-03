@@ -24,6 +24,20 @@ else()
 	target_compile_options(StormByte-Buffer PRIVATE -fvisibility=hidden $<$<COMPILE_LANGUAGE:CXX>:-fvisibility-inlines-hidden>)
 endif()
 
+# Compiler/runtime needs
+# Detect support for C++23 containers ranges (e.g., std::vector::append_range)
+# and define a build macro to gate usage in the codebase.
+include(CheckCXXSourceCompiles)
+set(_APPEND_RANGE_TEST "#include <version>\nint main(){\n#ifndef __cpp_lib_containers_ranges\n#error no containers_ranges\n#endif\nstatic_assert(__cpp_lib_containers_ranges >= 202202L, \"containers_ranges too old\");\nreturn 0;\n}")
+check_cxx_source_compiles("${_APPEND_RANGE_TEST}" STORMBYTE_HAS_CONTAINERS_RANGES)
+
+# Scope the macro definition to this target only (PRIVATE)
+if(STORMBYTE_HAS_CONTAINERS_RANGES)
+	target_compile_definitions(StormByte-Buffer PRIVATE STORMBYTE_HAS_CONTAINERS_RANGES=1)
+else()
+	target_compile_definitions(StormByte-Buffer PRIVATE STORMBYTE_HAS_CONTAINERS_RANGES=0)
+endif()
+
 # Include directories
 target_include_directories(StormByte-Buffer
 	SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_LIST_DIR}/public" "${CMAKE_CURRENT_LIST_DIR}/private"
