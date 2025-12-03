@@ -884,6 +884,31 @@ int test_fifo_write_span_basic() {
     RETURN_TEST("test_fifo_write_span_basic", 0);
 }
 
+int test_fifo_multiple_spans_consume_all() {
+    FIFO fifo;
+    fifo.Write("ABCDEFGHIJ"); // 10 bytes
+
+    // Consume in chunks using Span
+    {
+        auto s1 = fifo.Span(3);
+        ASSERT_TRUE("span1 ok", s1.has_value());
+        ASSERT_EQUAL("span1 size", s1->size(), static_cast<std::size_t>(3));
+    }
+    {
+        auto s2 = fifo.Span(2);
+        ASSERT_TRUE("span2 ok", s2.has_value());
+        ASSERT_EQUAL("span2 size", s2->size(), static_cast<std::size_t>(2));
+    }
+    {
+        auto s3 = fifo.Span(5);
+        ASSERT_TRUE("span3 ok", s3.has_value());
+        ASSERT_EQUAL("span3 size", s3->size(), static_cast<std::size_t>(5));
+    }
+
+    ASSERT_EQUAL("available after spans", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    RETURN_TEST("test_fifo_multiple_spans_consume_all", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -931,6 +956,7 @@ int main() {
     result += test_fifo_read_span_insufficient_data();
     result += test_fifo_read_span_vs_read();
     result += test_fifo_write_span_basic();
+    result += test_fifo_multiple_spans_consume_all();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

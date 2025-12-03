@@ -29,6 +29,34 @@ int test_shared_fifo_write_span_basic() {
     RETURN_TEST("test_shared_fifo_write_span_basic", 0);
 }
 
+int test_shared_fifo_multiple_spans_eof() {
+    SharedFIFO fifo;
+    fifo.Write(std::string("ABCDEFGHIJ")); // 10 bytes
+
+    // Consume in chunks using Span
+    {
+        auto s1 = fifo.Span(4);
+        ASSERT_TRUE("sf span1 ok", s1.has_value());
+        ASSERT_EQUAL("sf span1 size", s1->size(), static_cast<std::size_t>(4));
+    }
+    {
+        auto s2 = fifo.Span(3);
+        ASSERT_TRUE("sf span2 ok", s2.has_value());
+        ASSERT_EQUAL("sf span2 size", s2->size(), static_cast<std::size_t>(3));
+    }
+    {
+        auto s3 = fifo.Span(3);
+        ASSERT_TRUE("sf span3 ok", s3.has_value());
+        ASSERT_EQUAL("sf span3 size", s3->size(), static_cast<std::size_t>(3));
+    }
+
+    ASSERT_EQUAL("sf available after spans", fifo.AvailableBytes(), static_cast<std::size_t>(0));
+    ASSERT_TRUE("sf eof after spans when closed false", !fifo.EoF());
+    fifo.Close();
+    ASSERT_TRUE("sf eof after close and empty", fifo.EoF());
+    RETURN_TEST("test_shared_fifo_multiple_spans_eof", 0);
+}
+
 int test_shared_fifo_producer_consumer_blocking() {
     SharedFIFO fifo;
     std::atomic<bool> done{false};
@@ -635,6 +663,7 @@ int main() {
     result += test_shared_fifo_close_suppresses_writes();
     result += test_shared_fifo_wrap_boundary_blocking();
     result += test_shared_fifo_write_span_basic();
+    result += test_shared_fifo_multiple_spans_eof();
     result += test_shared_fifo_growth_under_contention();
     result += test_shared_fifo_read_insufficient_closed_returns_available();
     result += test_shared_fifo_extract_insufficient_closed_returns_available();

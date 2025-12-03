@@ -82,6 +82,40 @@ int test_producer_write_span_consumer_read() {
     RETURN_TEST("test_producer_write_span_consumer_read", 0);
 }
 
+int test_producer_consumer_span_until_eof() {
+    Producer producer; // owns SharedFIFO
+    auto consumer = producer.Consumer();
+
+    // Write 8 bytes via span
+    const char* msg = "ABCDEFGH";
+    std::span<const std::byte> sp{reinterpret_cast<const std::byte*>(msg), 8};
+    auto w = producer.Write(sp);
+    ASSERT_TRUE("pc span write ok", w.has_value());
+
+    // Read in multiple spans via Consumer
+    {
+        auto s1 = consumer.Span(3);
+        ASSERT_TRUE("pc span1 ok", s1.has_value());
+        ASSERT_EQUAL("pc span1 size", s1->size(), static_cast<std::size_t>(3));
+    }
+    {
+        auto s2 = consumer.Span(3);
+        ASSERT_TRUE("pc span2 ok", s2.has_value());
+        ASSERT_EQUAL("pc span2 size", s2->size(), static_cast<std::size_t>(3));
+    }
+    {
+        auto s3 = consumer.Span(2);
+        ASSERT_TRUE("pc span3 ok", s3.has_value());
+        ASSERT_EQUAL("pc span3 size", s3->size(), static_cast<std::size_t>(2));
+    }
+
+    ASSERT_EQUAL("pc available after spans", consumer.AvailableBytes(), static_cast<std::size_t>(0));
+    ASSERT_TRUE("pc not eof until closed", !consumer.EoF());
+    producer.Close();
+    ASSERT_TRUE("pc eof after close", consumer.EoF());
+    RETURN_TEST("test_producer_consumer_span_until_eof", 0);
+}
+
 int test_producer_consumer_multiple_writes() {
     Producer producer;
     auto consumer = producer.Consumer();
@@ -1286,6 +1320,7 @@ int main() {
     result += test_producer_consumer_with_reserve();
     result += test_producer_consumer_interleaved_operations();
     result += test_producer_write_span_consumer_read();
+    result += test_producer_consumer_span_until_eof();
     
     // Threading tests
     result += test_single_producer_single_consumer_threaded();
