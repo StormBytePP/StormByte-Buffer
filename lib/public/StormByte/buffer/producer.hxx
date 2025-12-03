@@ -115,6 +115,16 @@ namespace StormByte::Buffer {
 			inline ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
 
 			/**
+			 * @brief Write bytes to the buffer using move semantics.
+			 * @param data Byte vector to move into the buffer.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Moves data into buffer for efficient write. Ignored if closed.
+			 *          Notifies waiting consumers.
+			 * @see SharedFIFO::Write(), Close()
+			 */
+			inline ExpectedVoid<WriteError> Write(std::vector<std::byte>&& data) { return m_buffer->Write(std::move(data)); }
+
+			/**
 			 * @brief Write another FIFO's contents to the buffer.
 			 * @param other FIFO whose contents to append.
 			 * @return ExpectedVoid<WriteError> indicating success or failure.
@@ -122,6 +132,16 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Write(), Close()
 			 */
 			inline ExpectedVoid<WriteError> Write(const FIFO& other) { return m_buffer->Write(other); }
+
+			/**
+			 * @brief Write another FIFO's contents to the buffer using move semantics.
+			 * @param other FIFO to move from.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Moves contents of `other` into the buffer. Ignored if closed.
+			 *          Notifies waiting consumers.
+			 * @see SharedFIFO::Write(), Close()
+			 */
+			inline ExpectedVoid<WriteError> Write(FIFO&& other) { return m_buffer->Write(std::move(other)); }
 			
 			/**
 			 * @brief Write a string to the buffer.
