@@ -178,6 +178,15 @@ namespace StormByte::Buffer {
 			 * @details Thread-safe version that notifies waiting readers after write.
 			 * @see FIFO::Write()
 			 */
+			virtual ExpectedVoid<WriteError> Write(std::span<const std::byte> data) override;
+
+			/**
+			 * @brief Thread-safe write to the buffer.
+			 * @param data Byte vector to append to the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Thread-safe version that notifies waiting readers after write.
+			 * @see FIFO::Write()
+			 */
 			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
 
 			/**

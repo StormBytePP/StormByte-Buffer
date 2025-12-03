@@ -206,6 +206,16 @@ namespace StormByte::Buffer {
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see Write(const std::string&), IsClosed()
 			 */
+			virtual ExpectedVoid<WriteError> Write(std::span<const std::byte> data);
+
+			/**
+			 * @brief Write bytes from a vector to the buffer.
+			 * @param data Byte vector to append to the FIFO.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Appends data to the buffer, growing capacity automatically if needed.
+			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
+			 * @see Write(const std::string&), IsClosed()
+			 */
 			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data);
 
 			/**

@@ -68,6 +68,20 @@ int test_producer_consumer_basic_write_read() {
     RETURN_TEST("test_producer_consumer_basic_write_read", 0);
 }
 
+int test_producer_write_span_consumer_read() {
+    auto fifo = std::make_shared<StormByte::Buffer::SharedFIFO>();
+    Producer producer(fifo);
+    auto consumer = producer.Consumer();
+    const char* msg = "PCSPAN";
+    std::span<const std::byte> sp{reinterpret_cast<const std::byte*>(msg), 6};
+    auto w = producer.Write(sp);
+    ASSERT_TRUE("producer_write_span ok", w.has_value());
+    auto r = consumer.Read(6);
+    ASSERT_TRUE("consumer_read_span ok", r.has_value());
+    ASSERT_EQUAL("producer_consumer_span content", StormByte::String::FromByteVector(*r), std::string("PCSPAN"));
+    RETURN_TEST("test_producer_write_span_consumer_read", 0);
+}
+
 int test_producer_consumer_multiple_writes() {
     Producer producer;
     auto consumer = producer.Consumer();
@@ -1271,6 +1285,7 @@ int main() {
     result += test_producer_consumer_clear_operation();
     result += test_producer_consumer_with_reserve();
     result += test_producer_consumer_interleaved_operations();
+    result += test_producer_write_span_consumer_read();
     
     // Threading tests
     result += test_single_producer_single_consumer_threaded();

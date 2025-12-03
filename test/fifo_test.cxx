@@ -871,6 +871,19 @@ int test_fifo_read_span_vs_read() {
     RETURN_TEST("test_fifo_read_span_vs_read", 0);
 }
 
+int test_fifo_write_span_basic() {
+    FIFO fifo;
+    const char* msg = "SPAN";
+    std::span<const std::byte> sp{reinterpret_cast<const std::byte*>(msg), 4};
+    auto w = fifo.Write(sp);
+    ASSERT_TRUE("write_span ok", w.has_value());
+    ASSERT_EQUAL("write_span size", fifo.Size(), static_cast<std::size_t>(4));
+    auto read = fifo.Read(4);
+    ASSERT_TRUE("write_span read ok", read.has_value());
+    ASSERT_EQUAL("write_span content", StormByte::String::FromByteVector(*read), std::string("SPAN"));
+    RETURN_TEST("test_fifo_write_span_basic", 0);
+}
+
 int main() {
     int result = 0;
     result += test_fifo_write_read_vector();
@@ -917,6 +930,7 @@ int main() {
     result += test_fifo_read_span_all_available();
     result += test_fifo_read_span_insufficient_data();
     result += test_fifo_read_span_vs_read();
+    result += test_fifo_write_span_basic();
 
     if (result == 0) {
         std::cout << "FIFO tests passed!" << std::endl;

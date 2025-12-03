@@ -17,6 +17,18 @@ static std::string toString(const std::vector<std::byte>& v) {
     return StormByte::String::FromByteVector(v);
 }
 
+int test_shared_fifo_write_span_basic() {
+    SharedFIFO fifo;
+    const char* msg = "SFPAN";
+    std::span<const std::byte> sp{reinterpret_cast<const std::byte*>(msg), 5};
+    auto w = fifo.Write(sp);
+    ASSERT_TRUE("shared_write_span ok", w.has_value());
+    auto read = fifo.Read(5);
+    ASSERT_TRUE("shared_write_span read ok", read.has_value());
+    ASSERT_EQUAL("shared_write_span content", StormByte::String::FromByteVector(*read), std::string("SFPAN"));
+    RETURN_TEST("test_shared_fifo_write_span_basic", 0);
+}
+
 int test_shared_fifo_producer_consumer_blocking() {
     SharedFIFO fifo;
     std::atomic<bool> done{false};
@@ -622,6 +634,7 @@ int main() {
     result += test_shared_fifo_multiple_consumers_total_coverage();
     result += test_shared_fifo_close_suppresses_writes();
     result += test_shared_fifo_wrap_boundary_blocking();
+    result += test_shared_fifo_write_span_basic();
     result += test_shared_fifo_growth_under_contention();
     result += test_shared_fifo_read_insufficient_closed_returns_available();
     result += test_shared_fifo_extract_insufficient_closed_returns_available();

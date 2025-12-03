@@ -187,7 +187,7 @@ ExpectedData<ReadError> FIFO::Extract(std::size_t count) {
 	return result;
 }
 
-ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
+ExpectedVoid<WriteError> FIFO::Write(std::span<const std::byte> data) {
 	if (data.empty()) {
 		return {};
 	}
@@ -199,6 +199,10 @@ ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
 	m_buffer.insert(m_buffer.end(), data.begin(), data.end());
 #endif
 	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
+	return Write(std::span<const std::byte>(data));
 }
 
 ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>&& data) {

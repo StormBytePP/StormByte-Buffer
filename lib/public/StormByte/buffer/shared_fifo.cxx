@@ -105,17 +105,20 @@ ExpectedData<ReadError> SharedFIFO::Extract(std::size_t count) {
 	return FIFO::Extract(real_count);
 }
 
-ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>& data) {
+ExpectedVoid<WriteError> SharedFIFO::Write(std::span<const std::byte> data) {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
 		// Reject writes when closed or in error state.
 		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		if (!data.empty())
-			m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+		(void)FIFO::Write(data);
 	}
 	// Notify waiters even for empty writes so readers can re-check predicates.
 	m_cv.notify_all();
 	return {};
+}
+
+ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>& data) {
+	return Write(std::span<const std::byte>(data));
 }
 
 ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>&& data) {

@@ -112,6 +112,15 @@ namespace StormByte::Buffer {
 			 * @details Appends data to buffer. Ignored if closed. Notifies waiting consumers.
 			 * @see SharedFIFO::Write(), Close()
 			 */
+			inline ExpectedVoid<WriteError> Write(std::span<const std::byte> data) { return m_buffer->Write(data); }
+
+			/**
+			 * @brief Write bytes to the buffer.
+			 * @param data Byte vector to append.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Appends data to buffer. Ignored if closed. Notifies waiting consumers.
+			 * @see SharedFIFO::Write(), Close()
+			 */
 			inline ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) { return m_buffer->Write(data); }
 
 			/**
