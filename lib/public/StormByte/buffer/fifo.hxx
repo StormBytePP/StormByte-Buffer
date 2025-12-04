@@ -329,18 +329,6 @@ namespace StormByte::Buffer {
 			 */
 			virtual std::string HexDump(const std::size_t& collumns = 16, const std::size_t& byte_limit = 0) const noexcept;
 
-			/**
-			 * @brief Format a hex dump from an arbitrary byte sequence.
-			 * @param data Byte vector to format.
-			 * @param start_offset Absolute offset to use for the left-hand offsets.
-			 * @param collumns Number of columns per line (defaults to 16 when 0).
-			 * @return Formatted hex lines joined by '\n' (no trailing newline).
-			 * @note This is a public helper so other components can reuse the same
-			 *       formatting logic. It returns only the hex/ASCII block and does
-			 *       not include any header lines such as "Read Position".
-			 */
-			static std::string FormatHexLines(const std::vector<std::byte>& data, std::size_t start_offset, std::size_t collumns = 16) noexcept;
-
 		protected:
 			/**
 			 * @brief Internal vector storing the buffer data.
@@ -355,7 +343,14 @@ namespace StormByte::Buffer {
 			 */
 			mutable std::size_t m_position_offset;
 
-			
+			/**
+			 * @brief Format a hex dump from an arbitrary byte sequence.
+			 * @param data Byte vector to format.
+			 * @param start_offset Absolute offset to use for the left-hand offsets.
+			 * @param collumns Number of columns per line (defaults to 16 when 0).
+			 * @return Formatted hex lines joined by '\n' (no trailing newline).
+			 */
+			static std::string FormatHexLines(const std::vector<std::byte>& data, std::size_t start_offset, std::size_t collumns = 16) noexcept;
 
 		private:
 			void Copy(const FIFO& other) noexcept;
