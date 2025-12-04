@@ -12,7 +12,7 @@ m_readFunction(ErrorReadFunction()), m_writeFunction(writeFunc) {}
 Forwarder::Forwarder(const ExternalReadFunction& readFunc, const ExternalWriteFunction& writeFunc) noexcept:
 m_readFunction(readFunc), m_writeFunction(writeFunc) {}
 
-ExpectedData<ReadError> Forwarder::Read(std::size_t count) const {
+ExpectedData<ReadError> Forwarder::Read(const std::size_t& count) const {
 	if (!IsReadable()) {
 		return StormByte::Unexpected(ReadError("Buffer in not readable"));
 	}
@@ -50,7 +50,7 @@ ExpectedData<ReadError> Forwarder::Read(std::size_t count) const {
 	return result;
 }
 
-ExpectedData<ReadError> Forwarder::Extract(std::size_t count) {
+ExpectedData<ReadError> Forwarder::Extract(const std::size_t& count) {
 	if (!IsReadable()) {
 		return StormByte::Unexpected(ReadError("Buffer in not readable"));
 	}
@@ -128,7 +128,7 @@ void Forwarder::Seek(const std::ptrdiff_t& offset, const Position& mode) const n
 	FIFO::Seek(offset, mode);
 }
 
-ExpectedData<ReadError> Forwarder::Peek(std::size_t count) const noexcept {
+ExpectedData<ReadError> Forwarder::Peek(const std::size_t& count) const noexcept {
 	if (count == 0)
 		return StormByte::Unexpected(ReadError("Peek count must be greater than 0 for Forwarder"));
 	if (count > FIFO::AvailableBytes()) {

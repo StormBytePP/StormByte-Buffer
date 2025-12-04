@@ -33,7 +33,7 @@ void SharedFIFO::SetError() noexcept {
 	m_cv.notify_all();
 }
 
-void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
+void SharedFIFO::Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const {
 	if (n == 0) return;
 	m_cv.wait(lock, [&] {
 		// Wake when closed or error state set so waiters don't remain blocked
@@ -46,7 +46,7 @@ void SharedFIFO::Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const {
 	});
 }
 
-ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
+ExpectedData<ReadError> SharedFIFO::Read(const std::size_t& count) const {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
@@ -70,7 +70,7 @@ ExpectedData<ReadError> SharedFIFO::Read(std::size_t count) const {
 	return FIFO::Read(real_count);
 }
 
-ExpectedSpan<ReadError> SharedFIFO::Span(std::size_t count) const noexcept {
+ExpectedSpan<ReadError> SharedFIFO::Span(const std::size_t& count) const noexcept {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();
 
@@ -89,7 +89,7 @@ ExpectedSpan<ReadError> SharedFIFO::Span(std::size_t count) const noexcept {
 	return FIFO::Span(real_count);
 }
 
-ExpectedData<ReadError> SharedFIFO::Extract(std::size_t count) {
+ExpectedData<ReadError> SharedFIFO::Extract(const std::size_t& count) {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	if (m_error)
 		return StormByte::Unexpected(ReadError("Buffer in error state"));
@@ -199,7 +199,7 @@ void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const 
 	m_cv.notify_all();
 }
 
-ExpectedData<ReadError> SharedFIFO::Peek(std::size_t count) const noexcept {
+ExpectedData<ReadError> SharedFIFO::Peek(const std::size_t& count) const noexcept {
 	// Peek will wait for data in case it is not enough available, similar to Read().
 	std::unique_lock<std::mutex> lock(m_mutex);
 	const std::size_t available = AvailableBytes();

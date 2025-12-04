@@ -99,7 +99,7 @@ bool FIFO::EoF() const noexcept {
 	return false;
 }
 
-ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
+ExpectedData<ReadError> FIFO::Read(const std::size_t& count) const {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
@@ -122,7 +122,7 @@ ExpectedData<ReadError> FIFO::Read(std::size_t count) const {
 	return result;
 }
 
-ExpectedSpan<ReadError> FIFO::Span(std::size_t count) const noexcept {
+ExpectedSpan<ReadError> FIFO::Span(const std::size_t& count) const noexcept {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
@@ -143,7 +143,7 @@ ExpectedSpan<ReadError> FIFO::Span(std::size_t count) const noexcept {
 	return std::span<const std::byte>(start_ptr, real_count);
 }
 
-ExpectedData<ReadError> FIFO::Extract(std::size_t count) {
+ExpectedData<ReadError> FIFO::Extract(const std::size_t& count) {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {
@@ -277,7 +277,7 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
-ExpectedData<ReadError> FIFO::Peek(std::size_t count) const noexcept {
+ExpectedData<ReadError> FIFO::Peek(const std::size_t& count) const noexcept {
 	const std::size_t available = AvailableBytes();
 
 	if (available == 0) {

@@ -25,11 +25,11 @@ namespace StormByte::Buffer {
 	*  extracts.
 	*
 	* @par Blocking semantics
-	*  - @ref Read(std::size_t) blocks until the requested number of bytes are
+	*  - @ref Read(const std::size_t&) blocks until the requested number of bytes are
 	*    available from the current non-destructive read position, or until
 	*    the FIFO is closed via @ref Close(). If @c count == 0, it returns
 	*    immediately with all bytes available from the current read position.
-	*  - @ref Extract(std::size_t) blocks until at least @c count bytes exist
+	*  - @ref Extract(const std::size_t&) blocks until at least @c count bytes exist
 	*    in the buffer (destructive), or until closed. If @c count == 0, it
 	*    returns immediately with all available data and clears the buffer.
 	*
@@ -142,7 +142,7 @@ namespace StormByte::Buffer {
 			 *          semantics.
 			 * @see FIFO::Read(), Wait(), IsReadable()
 			 */
-			virtual ExpectedData<ReadError> Read(std::size_t count = 0) const override;
+			virtual ExpectedData<ReadError> Read(const std::size_t& count = 0) const override;
 
 			/**
 			 * @brief Thread-safe blocking zero-copy read from the buffer.
@@ -157,7 +157,7 @@ namespace StormByte::Buffer {
 			 *          modify the buffer at any time, so the span should be used immediately.
 			 * @see FIFO::Span(), Read(), Wait()
 			 */
-			virtual ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept override;
+			virtual ExpectedSpan<ReadError> Span(const std::size_t& count = 0) const noexcept override;
 
 			/**
 			 * @brief Thread-safe blocking extract from the buffer.
@@ -169,7 +169,7 @@ namespace StormByte::Buffer {
 			 *          `FIFO::Extract()` for the core (content-only) semantics.
 			 * @see FIFO::Extract(), Wait(), IsReadable()
 			 */
-			virtual ExpectedData<ReadError> Extract(std::size_t count = 0) override;
+			virtual ExpectedData<ReadError> Extract(const std::size_t& count = 0) override;
 
 			/**
 			 * @brief Thread-safe write to the buffer.
@@ -259,7 +259,7 @@ namespace StormByte::Buffer {
 			 *          semantics.
 			 * @see FIFO::Peek(), Wait(), IsReadable()
 			 */
-			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept override;
+			virtual ExpectedData<ReadError> Peek(const std::size_t& count = 0) const noexcept override;
 
 			/**
 			 * @brief Thread-safe skip operation.
@@ -328,7 +328,7 @@ namespace StormByte::Buffer {
 			 *       requested @p n bytes are not available.
 			 * @see Close(), SetError(), IsReadable()
 			 */
-			void Wait(std::size_t n, std::unique_lock<std::mutex>& lock) const;
+			void Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const;
 
 			/** @brief Internal mutex guarding all state mutations and reads. */
 			mutable std::mutex m_mutex;

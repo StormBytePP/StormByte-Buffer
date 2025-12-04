@@ -156,7 +156,7 @@ namespace StormByte::Buffer {
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Read().
 			 * @see Extract(), Seek(), SharedFIFO::Read(), IsReadable()
 			 */
-			virtual ExpectedData<ReadError>Read(std::size_t count = 0) const;
+			virtual ExpectedData<ReadError>Read(const std::size_t& count = 0) const;
 
 			/**
 			 * @brief Zero-copy read that returns a view over the buffer data.
@@ -173,7 +173,7 @@ namespace StormByte::Buffer {
 			 * @warning The returned span becomes invalid after any modifying operation.
 			 * @see Read(), Peek()
 			 */
-			virtual ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept;
+			virtual ExpectedSpan<ReadError> Span(const std::size_t& count = 0) const noexcept;
 
 			/**
 			 * @brief Destructive read that removes data from the buffer.
@@ -196,7 +196,7 @@ namespace StormByte::Buffer {
 			 * @note This class is not thread-safe. For blocking behavior, see SharedFIFO::Extract().
 			 * @see Read(), SharedFIFO::Extract(), IsReadable()
 			 */
-			virtual ExpectedData<ReadError> Extract(std::size_t count = 0);
+			virtual ExpectedData<ReadError> Extract(const std::size_t& count = 0);
 
 			/**
 			 * @brief Write bytes from a vector to the buffer.
@@ -302,7 +302,7 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			virtual ExpectedData<ReadError> Peek(std::size_t count = 0) const noexcept;
+			virtual ExpectedData<ReadError> Peek(const std::size_t& count = 0) const noexcept;
 
 			// Removes count bytes from the read position
 			// A value of 0 is a noop, clamped to AvailableBytes()

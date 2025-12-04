@@ -122,7 +122,7 @@ namespace StormByte::Buffer {
 			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
 			 */
 
-			inline ExpectedData<ReadError> Read(std::size_t count = 0) const { return m_buffer->Read(count); }
+			inline ExpectedData<ReadError> Read(const std::size_t& count = 0) const { return m_buffer->Read(count); }
 
 			/**
 			 * @brief Zero-copy read that returns a view over the buffer data (blocks until data available).
@@ -135,7 +135,7 @@ namespace StormByte::Buffer {
 			 * @warning The returned span becomes invalid after any modifying operation.
 			 * @see SharedFIFO::Span(), Read(), Peek()
 			 */
-			inline ExpectedSpan<ReadError> Span(std::size_t count = 0) const noexcept { return m_buffer->Span(count); }
+			inline ExpectedSpan<ReadError> Span(const std::size_t& count = 0) const noexcept { return m_buffer->Span(count); }
 			
 			/**
 			* @brief Destructive read that removes data from the buffer (blocks until data available).
@@ -146,7 +146,7 @@ namespace StormByte::Buffer {
 			*          Multiple consumers share data fairly.
 			* @see SharedFIFO::Extract(), Read(), IsReadable()
 			*/
-			inline ExpectedData<ReadError> Extract(std::size_t count = 0) { return m_buffer->Extract(count); }
+			inline ExpectedData<ReadError> Extract(const std::size_t& count = 0) { return m_buffer->Extract(count); }
 			
 			/**
 			 * @brief Check if the buffer is readable (not in error state).

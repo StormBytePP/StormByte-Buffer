@@ -87,7 +87,7 @@ namespace StormByte::Buffer {
 			 * @note `count` must be > 0. Reading 0 bytes returns an error because the
 			 *       forwarder cannot determine external reader size.
 			 */
-			ExpectedData<ReadError> Read(std::size_t count = 0) const override;
+			ExpectedData<ReadError> Read(const std::size_t& count = 0) const override;
 
 			/**
 			 * @brief Destructive read operation with internal buffering.
@@ -97,7 +97,7 @@ namespace StormByte::Buffer {
 			 *          First checks buffer, then calls external function if needed.
 			 * @note `count` must be > 0. Extracting 0 bytes returns an error.
 			 */
-			ExpectedData<ReadError> Extract(std::size_t count = 0) override;
+			ExpectedData<ReadError> Extract(const std::size_t& count = 0) override;
 
 			/**
 			 * @brief Write bytes to the internal buffer.
@@ -154,7 +154,7 @@ namespace StormByte::Buffer {
 			 *          Does not call external read function.
 			 * @note `count` must be > 0. Peeking 0 bytes returns an error.
 			 */
-			ExpectedData<ReadError> Peek(std::size_t count) const noexcept override;
+			ExpectedData<ReadError> Peek(const std::size_t& count) const noexcept override;
 
 			/**
 			 * @brief Skip bytes in the internal buffer.
