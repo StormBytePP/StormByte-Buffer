@@ -18,27 +18,35 @@
  * interfaces, and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
-	/** @brief Forward declaration of Consumer class. */
-	class Consumer;
-	
-	/** @brief Forward declaration of Producer class. */
-	class Producer;
+	class Consumer;					///< Forward declaration of Consumer class.
+	class Producer;					///< Forward declaration of Producer class.
 
 	/**
-	 * @brief Type alias for Expected containing byte vector data.
-	 * @tparam Exception The exception type to use for error cases.
-	 * 
-	 * @details This type represents the result of buffer read/extract operations.
-	 *          It returns either a vector of bytes on success, or an exception
-	 *          wrapped in std::unexpected on failure (e.g., ReadError).
-	 * 
-	 * @see Expected, ReadError
+	 * @enum Position
+	 * @brief Specifies positioning mode for buffer operations.
+	 *
+	 * This enumeration defines how position values should be interpreted
+	 * in buffer operations such as seeking or reading.
 	 */
-	template<class Exception>
-	using ExpectedData = Expected<std::vector<std::byte>, Exception>;
+	enum class STORMBYTE_BUFFER_PUBLIC Position {
+		/**
+		 * @brief Absolute positioning from the beginning of the buffer.
+		 *
+		 * When this mode is used, position values are interpreted as
+		 * offsets from the start of the buffer (position 0).
+		 */
+		Absolute,
+		
+		/**
+		 * @brief Relative positioning from the current position.
+		 *
+		 * When this mode is used, position values are interpreted as
+		 * offsets from the current read/write position.
+		 */
+		Relative
+	};
 
-	template<class Exception>
-	using ExpectedSpan = Expected<std::span<const std::byte>, Exception>;
+	using DataType = std::vector<std::byte>;
 
 	template<class Exception>
 	using ExpectedVoid = Expected<void, Exception>;
@@ -72,7 +80,4 @@ namespace StormByte::Buffer {
 		Sync,   ///< Sequential single-threaded execution of all stages.
 		Async   ///< Concurrent detached-thread execution per stage.
 	};
-
-	using ExternalReadFunction = std::function<ExpectedData<ReadError>(const std::size_t&)>;
-	using ExternalWriteFunction = std::function<ExpectedVoid<WriteError>(const std::vector<std::byte>&)>;
 }

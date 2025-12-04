@@ -4,175 +4,48 @@
 #include <sstream>
 #include <iomanip>
 #include <cctype>
+#include <iostream>
+#include <thread>
 
 using namespace StormByte::Buffer;
 
-SharedFIFO::SharedFIFO() noexcept: FIFO(), m_closed(false), m_error(false) {}
+SharedFIFO& SharedFIFO::operator=(const FIFO& other) {
+	std::unique_lock<std::mutex> lock(m_mutex);
+
+	FIFO::operator=(other);
+	m_closed = false;
+	m_error = false;
+
+	m_cv.notify_all();
+
+	return *this;
+}
+
+SharedFIFO& SharedFIFO::operator=(FIFO&& other) noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+
+	FIFO::operator=(std::move(other));
+	m_closed = false;
+	m_error = false;
+
+	m_cv.notify_all();
+
+	return *this;
+}
 
 bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
-	// Lock both mutexes to safely compare internal state and delegate to
-	// FIFO::operator== so behavior remains coherent if FIFO's equality
-	// semantics change in the future.
-	std::scoped_lock lock1(m_mutex, other.m_mutex);
+	std::scoped_lock<std::mutex, std::mutex> lock(m_mutex, other.m_mutex);
 	return static_cast<const FIFO&>(*this) == static_cast<const FIFO&>(other);
 }
 
-void SharedFIFO::Close() noexcept {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		m_closed = true;
-	}
-	m_cv.notify_all();
+std::size_t SharedFIFO::AvailableBytes() const noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	return FIFO::AvailableBytes();
 }
 
-void SharedFIFO::SetError() noexcept {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		m_error = true;
-	}
-	m_cv.notify_all();
-}
-
-void SharedFIFO::Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const {
-	if (n == 0) return;
-	m_cv.wait(lock, [&] {
-		// Wake when closed or error state set so waiters don't remain blocked
-		// indefinitely when the FIFO is no longer usable.
-		if (m_closed) return true;
-		if (m_error) return true;
-		const std::size_t sz = m_buffer.size();
-		const std::size_t rp = m_position_offset;
-		return sz >= rp + n; // at least n bytes available from current read position
-	});
-}
-
-ExpectedData<ReadError> SharedFIFO::Read(const std::size_t& count) const {
-	std::unique_lock<std::mutex> lock(m_mutex);
-	const std::size_t available = AvailableBytes();
-
-	if (m_error)
-		return StormByte::Unexpected(ReadError("Buffer in error state"));
-
-	if (m_closed && available == 0) {
-		// If closed and no data available, return EOF indication (empty read)
-		return StormByte::Unexpected(ReadError("End of file reached"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-
-	if (!m_closed && real_count > available) {
-		// When not closed, requesting more than available must wait.
-		// Wait() will block until enough data is written or buffer is closed/error.
-		Wait(real_count, lock);
-	}
-	
-	// If closed it acts like FIFO: requesting more than available is an error.
-	return FIFO::Read(real_count);
-}
-
-ExpectedSpan<ReadError> SharedFIFO::Span(const std::size_t& count) const noexcept {
-	std::unique_lock<std::mutex> lock(m_mutex);
-	const std::size_t available = AvailableBytes();
-
-	if (m_error || (m_closed && available == 0)) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-
-	if (!m_closed && real_count > available) {
-		// Wait for enough data to be available
-		Wait(real_count, lock);
-	}
-	
-	// If closed it acts like FIFO: requesting more than available returns error
-	return FIFO::Span(real_count);
-}
-
-ExpectedData<ReadError> SharedFIFO::Extract(const std::size_t& count) {
-	std::unique_lock<std::mutex> lock(m_mutex);
-	if (m_error)
-		return StormByte::Unexpected(ReadError("Buffer in error state"));
-
-	std::size_t real_count = count == 0 ? AvailableBytes() : count;
-
-	if (!m_closed && count > AvailableBytes()) {
-		// When not closed, requesting more than available must wait.
-		// Wait() will block until enough data is written or buffer is closed/error.
-		Wait(real_count, lock);
-	}
-	// If closed it acts like FIFO: requesting more than available is an error.
-	return FIFO::Extract(real_count);
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(std::span<const std::byte> data) {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		(void)FIFO::Write(data);
-	}
-	// Notify waiters even for empty writes so readers can re-check predicates.
-	m_cv.notify_all();
-	return {};
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>& data) {
-	return Write(std::span<const std::byte>(data));
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(const std::vector<std::byte>&& data) {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		// Delegate to base FIFO rvalue overload for efficient move.
-		(void)FIFO::Write(std::move(data));
-	}
-	// Notify waiters after performing the write.
-	m_cv.notify_all();
-	return {};
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(const std::string& data) {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		// Delegate to base FIFO implementation which avoids temporary vector allocation
-		(void)FIFO::Write(data);
-	}
-	// Notify waiters after performing the write.
-	m_cv.notify_all();
-	return {};
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(const FIFO& other) {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		// Delegate to base FIFO implementation to append the full contents.
-		(void)FIFO::Write(other);
-	}
-	// Notify waiters after performing the write.
-	m_cv.notify_all();
-	return {};
-}
-
-ExpectedVoid<WriteError> SharedFIFO::Write(FIFO&& other) noexcept {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		// Reject writes when closed or in error state.
-		if (m_closed || m_error) return StormByte::Unexpected(WriteError("Buffer is closed or in error state"));
-		// Delegate to base FIFO rvalue overload; it will perform efficient
-		// move/steal semantics when possible and leave `other` in a valid
-		// empty state.
-		(void)FIFO::Write(std::move(other));
-	}
-	// Notify waiters after performing the write.
-	m_cv.notify_all();
-	return {};
+void SharedFIFO::Clean() noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	FIFO::Clean();
 }
 
 void SharedFIFO::Clear() noexcept {
@@ -183,112 +56,145 @@ void SharedFIFO::Clear() noexcept {
 	m_cv.notify_all();
 }
 
-void SharedFIFO::Clean() noexcept {
+void SharedFIFO::Close() noexcept {
 	{
 		std::scoped_lock<std::mutex> lock(m_mutex);
-		FIFO::Clean();
+		m_closed = true;
 	}
 	m_cv.notify_all();
 }
 
-void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+ExpectedVoid<WriteError> SharedFIFO::Drop(const std::size_t& count) noexcept {
+	ExpectedVoid<WriteError> result;
 	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-		FIFO::Seek(offset, mode);
+		std::unique_lock<std::mutex> lock(m_mutex);
+		if (count != 0 && count > FIFO::AvailableBytes())
+			Wait(count, lock);
+
+		result = FIFO::Drop(count);
 	}
 	m_cv.notify_all();
+	return result;
 }
 
-ExpectedData<ReadError> SharedFIFO::Peek(const std::size_t& count) const noexcept {
-	// Peek will wait for data in case it is not enough available, similar to Read().
-	std::unique_lock<std::mutex> lock(m_mutex);
-	const std::size_t available = AvailableBytes();
-	if (m_error)
-		return StormByte::Unexpected(ReadError("Buffer in error state"));
-	if (m_closed && available == 0) {
-		// If closed and no data available, return EOF indication (empty peek)
-		return StormByte::Unexpected(ReadError("End of file reached"));
-	}
-	
-	std::size_t real_count = count == 0 ? available : count;
-
-	if (!m_closed && real_count > available) {
-		// When not closed, requesting more than available must wait.
-		// Wait() will block until enough data is written or buffer is closed/error.
-		Wait(real_count, lock);
-	}
-	
-	// If closed it acts like FIFO: requesting more than available is an error.
-	return FIFO::Peek(real_count);
-}
-
-void SharedFIFO::Skip(const std::size_t& count) noexcept {
-	{
-		std::scoped_lock<std::mutex> lock(m_mutex);
-
-		// Replicate FIFO::Skip logic but call the non-virtual FIFO::Clean()
-		// to avoid invoking the overridden SharedFIFO::Clean() while holding
-		// the mutex (which would deadlock trying to re-lock the same mutex).
-		if (count == 0) {
-			// noop
-		} else {
-			if (m_position_offset + count >= m_buffer.size())
-				m_position_offset = m_buffer.size();
-			else
-				m_position_offset += count;
-
-			// call base class Clean directly (non-virtual) while still holding lock
-			FIFO::Clean();
-		}
-	}
-	m_cv.notify_all();
+bool SharedFIFO::Empty() const noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	return FIFO::Empty();
 }
 
 bool SharedFIFO::EoF() const noexcept {
-	std::scoped_lock lock(m_mutex);
-	return m_error || (m_closed && AvailableBytes() == 0);
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	return m_error || (m_closed && FIFO::AvailableBytes() == 0);
+}
+
+bool SharedFIFO::HasError() const noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	return m_error;
 }
 
 std::string SharedFIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
-	bool fifo_closed, fifo_status;
-	std::vector<std::byte> snapshot;
-	std::size_t start_offset = 0;
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	
+	return FIFO::HexDump(collumns, byte_limit);
+}
+
+void SharedFIFO::SetError() noexcept {
 	{
-		// Acquire read lock to produce a consistent snapshot
-		std::unique_lock<std::mutex> lock(m_mutex);
-		fifo_closed = m_closed;
-		fifo_status = m_error;
-
-		// Determine available bytes from current read position and apply byte_limit
-		const std::size_t available = AvailableBytes();
-		const std::size_t to_copy = (byte_limit > 0) ? std::min(available, byte_limit) : available;
-
-		if (to_copy > 0) {
-			start_offset = m_position_offset;
-			auto start_it = m_buffer.begin() + start_offset;
-			auto end_it = start_it + to_copy;
-			snapshot.assign(start_it, end_it);
-		}
+		std::scoped_lock<std::mutex> lock(m_mutex);
+		m_error = true;
 	}
-	// Build status line
-	std::string status = "Status: ";
-	status += (fifo_closed ? "closed" : "opened");
-	status += ", ";
-	status += (fifo_status ? "error" : "ready");
+	m_cv.notify_all();
+}
 
-	// If nothing to dump, return just the status
-	if (snapshot.empty()) return status;
 
-	// Format the hex dump from the snapshot using the shared FIFO helper.
-	const std::size_t cols = (collumns == 0) ? 16 : collumns;
-	const std::string lines = FIFO::FormatHexLines(snapshot, start_offset, cols);
+void SharedFIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	FIFO::Seek(offset, mode);
+}
 
-	if (lines.empty()) return status; // defensive: shouldn't happen since we checked snapshot
+std::size_t SharedFIFO::Size() const noexcept {
+	std::scoped_lock<std::mutex> lock(m_mutex);
+	return FIFO::Size();
+}
 
-	std::ostringstream oss;
-	oss << status << '\n';
-	oss << "Read Position: " << start_offset << '\n';
-	oss << lines;
+std::ostringstream SharedFIFO::HexDumpHeader() const noexcept {
+	std::ostringstream oss = FIFO::HexDumpHeader();
+	oss << "Status: " << (m_closed ? "closed" : "opened") << " and " << (m_error ? "error" : "ready");
+	return oss;
+}
 
-	return oss.str();
+ExpectedVoid<ReadError> SharedFIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
+	std::unique_lock<std::mutex> lock(m_mutex);
+	// Check EOF / error under the lock to avoid re-locking inside EoF().
+	std::size_t avail = FIFO::AvailableBytes();
+	if (m_error || (m_closed && avail == 0))
+		return StormByte::Unexpected(ReadError("End of file reached"));
+
+	std::size_t real_count = count == 0 ? avail : count;
+	if (real_count > avail && !m_closed) {
+		Wait(real_count, lock);
+	}
+
+	auto result = FIFO::ReadInternal(count, outBuffer, flag);
+	return result;
+}
+
+ExpectedVoid<Error> SharedFIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
+	std::unique_lock<std::mutex> lock(m_mutex);
+	// Check EOF / error under the lock to avoid re-locking inside EoF().
+	std::size_t avail = FIFO::AvailableBytes();
+	if (m_error || (m_closed && avail == 0))
+		return StormByte::Unexpected(ReadError("End of file reached"));
+
+	std::size_t real_count = count == 0 ? avail : count;
+	if (real_count > avail && !m_closed) {
+		Wait(real_count, lock);
+	}
+
+	auto result = FIFO::ReadInternal(count, outBuffer, flag);
+	return result;
+}
+
+void SharedFIFO::Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const {
+	if (n == 0) return;
+	m_cv.wait(lock, [&] {
+		if (m_closed) { return true; }
+		if (m_error) { return true; }
+		const std::size_t sz = m_buffer.size();
+		const std::size_t rp = m_position_offset;
+		bool ready = sz >= rp + n;
+		return ready;
+	});
+}
+
+ExpectedVoid<WriteError> SharedFIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
+	ExpectedVoid<WriteError> result;
+	{
+		std::scoped_lock lock(m_mutex);
+		if (m_closed) {
+		return StormByte::Unexpected(WriteError("Buffer is closed"));
+		}
+		if (m_error) {
+		return StormByte::Unexpected(WriteError("Buffer in error state"));
+		}
+		result = FIFO::WriteInternal(count, src);
+	}
+	m_cv.notify_all();
+	return result;
+}
+
+ExpectedVoid<WriteError> SharedFIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
+	ExpectedVoid<WriteError> result;
+	{
+		std::scoped_lock lock(m_mutex);
+		if (m_closed) {
+		return StormByte::Unexpected(WriteError("Buffer is closed"));
+		}
+		if (m_error) {
+		return StormByte::Unexpected(WriteError("Buffer in error state"));
+		}
+		result = FIFO::WriteInternal(count, std::move(src));
+	}
+	m_cv.notify_all();
+	return result;
 }

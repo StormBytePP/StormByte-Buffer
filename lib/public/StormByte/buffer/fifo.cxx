@@ -3,68 +3,34 @@
 #include <StormByte/string.hxx>
 
 #include <algorithm>
-#include <iterator>
-#include <sstream>
-#include <iomanip>
 #include <cctype>
+#include <cstring>
+#include <iterator>
 
 using namespace StormByte::Buffer;
 
-FIFO::FIFO() noexcept: m_buffer(), m_position_offset(0) {}
-
-FIFO::FIFO(const std::vector<std::byte>& data) noexcept: m_position_offset(0) {
-	StormByte::append_vector(m_buffer, data);
+FIFO::FIFO(const FIFO& other) noexcept: ReadWrite(), m_position_offset(other.m_position_offset) {
+	m_buffer = other.m_buffer;
 }
 
-FIFO::FIFO(std::vector<std::byte>&& data) noexcept: m_buffer(std::move(data)), m_position_offset(0) {}
-
-FIFO::FIFO(const FIFO& other) noexcept: m_buffer(), m_position_offset(0) {
-	Copy(other);
-}
-
-FIFO::FIFO(FIFO&& other) noexcept: m_buffer(std::move(other.m_buffer)),
-m_position_offset(other.m_position_offset) {
-	other.m_position_offset = 0;
-}
-
-FIFO::~FIFO() {
-	Clear();
+FIFO::FIFO(FIFO&& other) noexcept: ReadWrite(), m_position_offset(other.m_position_offset) {
+	m_buffer = std::move(other.m_buffer);
 }
 
 FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
-		Clear();
-		Copy(other);
+		m_buffer = other.m_buffer;
+		m_position_offset = other.m_position_offset;
 	}
 	return *this;
 }
 
 FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	if (this != &other) {
-		Clear();
 		m_buffer = std::move(other.m_buffer);
 		m_position_offset = other.m_position_offset;
-		other.m_position_offset = 0;
 	}
 	return *this;
-}
-
-std::size_t FIFO::AvailableBytes() const noexcept {
-	const std::size_t current_size = m_buffer.size();
-	return (m_position_offset <= current_size) ? (current_size - m_position_offset) : 0;
-}
-
-std::size_t FIFO::Size() const noexcept {
-	return m_buffer.size();
-}
-
-bool FIFO::Empty() const noexcept {
-	return m_buffer.empty();
-}
-
-void FIFO::Clear() noexcept {
-	m_buffer.clear();
-	m_position_offset = 0;
 }
 
 void FIFO::Clean() noexcept {
@@ -72,7 +38,8 @@ void FIFO::Clean() noexcept {
 		// For vector, move remaining data to front instead of erase
 		const std::size_t remaining = m_buffer.size() - m_position_offset;
 		if (remaining > 0) {
-			std::move(m_buffer.begin() + m_position_offset, m_buffer.end(), m_buffer.begin());
+			// Use a raw memory move for trivially-copyable element types (std::byte)
+			std::memmove(m_buffer.data(), m_buffer.data() + m_position_offset, remaining);
 			m_buffer.resize(remaining);
 			// Shrink capacity only if massively over-allocated
 			if (m_buffer.capacity() > remaining * 4 && m_buffer.capacity() > 4096) {
@@ -93,249 +60,65 @@ void FIFO::Clean() noexcept {
 	m_position_offset = 0;
 }
 
-bool FIFO::EoF() const noexcept {
-	// FIFO core does not track closed/error; EOF semantics are provided by
-	// SharedFIFO. For the raw FIFO, there's no EOF marker to query.
-	return false;
-}
-
-ExpectedData<ReadError> FIFO::Read(const std::size_t& count) const {
-	const std::size_t available = AvailableBytes();
-
-	if (available == 0) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-	if (real_count > available) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	// Read from current position using iterator constructor for efficiency
-	auto start_it = m_buffer.begin() + m_position_offset;
-	auto end_it = start_it + real_count;
-	std::vector<std::byte> result(start_it, end_it);
+ExpectedVoid<WriteError> FIFO::Drop(const std::size_t& count) noexcept {
+	if (FIFO::AvailableBytes() == 0 || count > FIFO::AvailableBytes())
+		return StormByte::Unexpected(WriteError("Insufficient data to drop: Asked {} but have available {}", count, AvailableBytes()));
 	
-	// Advance read position
-	m_position_offset += real_count;
-	
-	return result;
-}
-
-ExpectedSpan<ReadError> FIFO::Span(const std::size_t& count) const noexcept {
-	const std::size_t available = AvailableBytes();
-
-	if (available == 0) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-	if (real_count > available) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	// Create span from current position
-	auto start_ptr = m_buffer.data() + m_position_offset;
-
-	// Advance read position
-	m_position_offset += real_count;
-
-	return std::span<const std::byte>(start_ptr, real_count);
-}
-
-ExpectedData<ReadError> FIFO::Extract(const std::size_t& count) {
-	const std::size_t available = AvailableBytes();
-
-	if (available == 0) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-	if (real_count > available) {
-		return StormByte::Unexpected(ReadError("Insufficient data to read"));
-	}
-
-	// Extract from current read position (m_position_offset)
-	auto start_it = m_buffer.begin() + m_position_offset;
-	auto end_it = start_it + real_count;
-	std::vector<std::byte> result(start_it, end_it);
-
-	// Remove extracted bytes by shifting remaining data
-	const std::size_t extract_end = m_position_offset + real_count;
-	const std::size_t remaining_after = m_buffer.size() - extract_end;
-	
-	if (remaining_after > 0) {
-		// Move data after extracted portion to fill the gap
-		std::move(m_buffer.begin() + extract_end, m_buffer.end(), m_buffer.begin() + m_position_offset);
-	}
-	
-	// Resize buffer to remove extracted portion
-	const std::size_t new_size = m_buffer.size() - real_count;
-	m_buffer.resize(new_size);
-	
-	// Shrink capacity only if massively over-allocated
-	if (m_buffer.capacity() > new_size * 4 && m_buffer.capacity() > 4096) {
-		m_buffer.shrink_to_fit();
-	}
-	
-	// Position stays at m_position_offset (we removed data at that position)
-
-	return result;
-}
-
-ExpectedVoid<WriteError> FIFO::Write(std::span<const std::byte> data) {
-	if (data.empty()) {
-		return {};
-	}
-
-	// Append elements from the span into our buffer
-	StormByte::append_vector(m_buffer, data);
-	
-	return {};
-}
-
-ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>& data) {
-	return Write(std::span<const std::byte>(data));
-}
-
-ExpectedVoid<WriteError> FIFO::Write(const std::vector<std::byte>&& data) {
-	if (data.empty()) {
-		return {};
-	}
-	// Move elements from the rvalue vector into our buffer
-	StormByte::append_vector(m_buffer, std::move(data));
-	return {};
-}
-
-ExpectedVoid<WriteError> FIFO::Write(const FIFO& other) {
-	// Append the entire contents of the other FIFO (including bytes
-	// before/at its read position). This preserves the full buffer
-	// contents rather than only the unread portion.
-	if (other.m_buffer.empty()) {
-		return {}; // nothing to append
-	}
-
-	// Append data
-	StormByte::append_vector(m_buffer, other.m_buffer);
-
-	return {};
-}
-
-ExpectedVoid<WriteError> FIFO::Write(FIFO&& other) noexcept {
-	// Append the entire contents of the rvalue FIFO. If the destination is
-	// empty we can steal the vector via move (O(1)). Otherwise move-append
-	// the elements and leave `other` empty.
-	if (other.m_buffer.empty()) {
-		other.m_position_offset = 0;
-		return {};
-	}
-
-	if (m_buffer.empty()) {
-		// Preserve the source read position when stealing its storage.
-		m_position_offset = other.m_position_offset;
-		m_buffer = std::move(other.m_buffer);
-		other.m_position_offset = 0;
-		return {};
-	}
-
-	// General case: reserve and move-append
-	StormByte::append_vector(m_buffer, std::move(other.m_buffer));
-	other.m_buffer.clear();
-	other.m_position_offset = 0;
-
-	return {};
-}
-
-ExpectedVoid<WriteError> FIFO::Write(const std::string& data) {
-	if (data.empty()) {
-		return {};
-	}
-	// Avoid temporary vector allocation by directly appending
-	m_buffer.reserve(m_buffer.size() + data.size());
-	for (char c : data) {
-		m_buffer.push_back(static_cast<std::byte>(c));
-	}
+	// Call the non-virtual FIFO::Seek implementation to avoid
+	// virtual dispatch into a derived class (e.g. SharedFIFO::Seek)
+	// which may acquire external locks and cause re-entrant
+	// locking deadlocks when Drop() is called while already
+	// holding a wrapper mutex.
+	FIFO::Seek(static_cast<std::ptrdiff_t>(count), Position::Relative);
+	// Call non-virtual FIFO::Clean to avoid dispatching to
+	// SharedFIFO::Clean which would attempt to lock the wrapper
+	// mutex while Drop() may already be holding it.
+	FIFO::Clean();
 	return {};
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
-	std::ptrdiff_t new_offset;
-	
-	if (mode == Position::Absolute) {
-		new_offset = offset;
-	} else { // Position::Relative
-		new_offset = static_cast<std::ptrdiff_t>(m_position_offset) + offset;
+	switch (mode) {
+		case Position::Absolute:
+			if (offset < 0) {
+				// Negative absolute offset, clamp to 0
+				m_position_offset = 0;
+			}
+			else {
+				m_position_offset = std::min(static_cast<std::size_t>(offset), m_buffer.size());
+			}
+			break;
+		case Position::Relative:
+			if (offset < 0) {
+				m_position_offset = static_cast<std::size_t>(std::max<std::ptrdiff_t>(0, static_cast<std::ptrdiff_t>(m_position_offset) + offset));
+			} else {
+				m_position_offset = std::min(m_position_offset + static_cast<std::size_t>(offset), m_buffer.size());
+			}
+			break;
+		default:
+			// Invalid position mode, do nothing
+			return;
 	}
-	
-	// Clamp to valid range [0, buffer.size()]
-	if (new_offset < 0) {
-		m_position_offset = 0;
-	} else if (static_cast<std::size_t>(new_offset) > m_buffer.size()) {
-		m_position_offset = m_buffer.size();
-	} else {
-		m_position_offset = static_cast<std::size_t>(new_offset);
-	}
-}
-
-ExpectedData<ReadError> FIFO::Peek(const std::size_t& count) const noexcept {
-	const std::size_t available = AvailableBytes();
-
-	if (available == 0) {
-		return StormByte::Unexpected(ReadError("Insufficient data to peek"));
-	}
-
-	std::size_t real_count = count == 0 ? available : count;
-	if (real_count > available) {
-		return StormByte::Unexpected(ReadError("Insufficient data to peek"));
-	}
-
-	// Read from current position using iterator constructor for efficiency
-	auto start_it = m_buffer.begin() + m_position_offset;
-	auto end_it = start_it + real_count;
-	std::vector<std::byte> result(start_it, end_it);
-	return result;
-}
-
-void FIFO::Skip(const std::size_t& count) noexcept {
-	// Advance read position by count, clamped to buffer size
-	if (count == 0) {
-		return; // noop
-	}
-
-	if (m_position_offset + count >= m_buffer.size())
-		m_position_offset = m_buffer.size();
-	else
-		m_position_offset += count;
-
-	Clean();
 }
 
 std::string FIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
-	// Build a snapshot of the unread bytes (respecting byte_limit) and delegate
-	// the per-line formatting to the shared helper so formatting logic is
-	// centralized and consistent with SharedFIFO.
 	const std::size_t cols = (collumns == 0) ? 16 : collumns;
-	const std::size_t start = m_position_offset;
-	const std::size_t end = (byte_limit > 0) ? std::min(m_buffer.size(), start + byte_limit) : m_buffer.size();
+	const std::size_t end = (byte_limit > 0) ? std::min(m_buffer.size(), m_position_offset + byte_limit) : m_buffer.size();
 
-	std::vector<std::byte> snapshot;
-	if (end > start) {
-		snapshot.assign(m_buffer.begin() + start, m_buffer.begin() + end);
-	}
+	std::ostringstream oss = HexDumpHeader();
 
-	std::ostringstream oss;
-	oss << "Read Position: " << m_position_offset;
+	oss << '\n';
 
-	if (!snapshot.empty()) {
-		oss << '\n';
-		const std::string lines = FIFO::FormatHexLines(snapshot, start, cols);
+	if (end > m_position_offset) {
+		std::span<const std::byte> view(m_buffer.data() + m_position_offset, end - m_position_offset);
+		const std::string lines = FormatHexLines(view, m_position_offset, cols);
 		oss << lines;
 	}
 
 	return oss.str();
 }
 
-std::string FIFO::FormatHexLines(const std::vector<std::byte>& data, std::size_t start_offset, std::size_t collumns) noexcept {
+std::string FIFO::FormatHexLines(std::span<const std::byte>& data, std::size_t start_offset, std::size_t collumns) noexcept {
 	const std::size_t cols = (collumns == 0) ? 16 : collumns;
 	const int offset_width = 8;
 
@@ -377,7 +160,176 @@ std::string FIFO::FormatHexLines(const std::vector<std::byte>& data, std::size_t
 	return oss.str();
 }
 
-void FIFO::Copy(const FIFO& other) noexcept {
-	m_buffer = other.m_buffer;
-	m_position_offset = other.m_position_offset;
+std::ostringstream FIFO::HexDumpHeader() const noexcept {
+	std::ostringstream oss;
+	oss << "Size: " << m_buffer.size() << " bytes\n";
+	oss << "Read Position: " << m_position_offset << '\n';
+	return oss;
+}
+
+ExpectedVoid<ReadError> FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
+	const std::size_t available_bytes = FIFO::AvailableBytes();
+	const std::size_t real_count = count == 0 ? available_bytes : count;
+	// If buffer is empty and count==0, return immediately with error
+	if ((available_bytes == 0 && count == 0) || real_count > available_bytes)
+		return StormByte::Unexpected(ReadError("Insufficient data: Asked {} but have available {}", real_count, available_bytes));
+
+	outBuffer.reserve(outBuffer.size() + real_count);
+
+	const auto start_it = m_buffer.begin() + m_position_offset;
+	switch(flag) {
+		case Operation::Read: {
+			outBuffer.insert(outBuffer.end(), start_it, start_it + real_count);
+			m_position_offset += real_count;
+			break;
+		}
+		case Operation::Peek: {
+			outBuffer.insert(outBuffer.end(), start_it, start_it + real_count);
+			break;
+		}
+		case Operation::Extract: {
+			// Move bytes out to avoid extra copy, then drop from buffer
+			outBuffer.insert(outBuffer.end(), std::make_move_iterator(start_it), std::make_move_iterator(start_it + real_count));
+			m_buffer.erase(start_it, start_it + real_count);
+			// Ensure read position remains valid after destructive erase
+			if (m_position_offset > m_buffer.size()) {
+				m_position_offset = m_buffer.size();
+			}
+			break;
+		}
+		default:
+			return StormByte::Unexpected(ReadError("Invalid read operation"));;
+	}
+
+	return {};
+}
+
+ExpectedVoid<Error> FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
+	const std::size_t available_bytes = FIFO::AvailableBytes();
+	const std::size_t real_count = count == 0 ? available_bytes : count;
+	if ((count == 0 && available_bytes == 0) || real_count > available_bytes)
+		return StormByte::Unexpected(ReadError("Insufficient data: Asked {} but have available {}", real_count, available_bytes));
+
+	DataType temp;
+	temp.reserve(real_count);
+	switch(flag) {
+		case Operation::Extract: {
+			auto res = FIFO::ReadInternal(count, temp, Operation::Extract);
+			if (!res.has_value())
+				return res;
+			break;
+		}
+		case Operation::Read: {
+			auto res = FIFO::ReadInternal(count, temp, Operation::Read);
+			if (!res.has_value())
+				return res;
+			break;
+		}
+		case Operation::Peek: {
+			auto res = FIFO::ReadInternal(count, temp, Operation::Peek);
+			if (!res.has_value())
+				return res;
+			break;
+		}
+		default:
+			return StormByte::Unexpected(ReadError("Invalid read operation"));;
+	}
+
+	auto res = outBuffer.Write(std::move(temp));
+	if (!res.has_value()) {
+		return StormByte::Unexpected(res.error());
+	}
+	return {};
+}
+
+void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noexcept {
+	while (true) {
+		switch(flag) {
+			case Operation::Read: {
+				(void)Read(0, outBuffer);
+				break;
+			}
+			case Operation::Extract: {
+				(void)Extract(0, outBuffer);
+				break;
+			}
+			default:
+				return;
+		}
+		DataType unused;
+		if (!Peek(1, unused).has_value()) {
+			return;
+		}
+	}
+}
+
+ExpectedVoid<Error> FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept {
+	while (true) {
+		switch(flag) {
+			case Operation::Read: {
+				(void)Read(0, outBuffer);
+				break;
+			}
+			case Operation::Extract: {
+				(void)Extract(0, outBuffer);
+				break;
+			}
+			default:
+				return {};
+		}
+		DataType unused;
+		if (!Peek(1, unused).has_value()) {
+			return {};
+		}
+	}
+}
+
+ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
+	if (count > 0 && src.size() < count)
+		return StormByte::Unexpected(WriteError("Insufficient data to write: Asked {} but have {}", count, src.size()));
+
+	const std::size_t real_count = (count == 0) ? src.size() : count;
+
+	// Reserve target space to avoid repeated reallocations
+	m_buffer.reserve(m_buffer.size() + real_count);
+
+	if (real_count == src.size()) {
+		// Copy entire source
+		append_vector(m_buffer, src);
+	}
+	else {
+		m_buffer.insert(m_buffer.end(), src.begin(), src.begin() + real_count);
+	}
+
+	return {};
+}
+
+ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
+	if (count > 0 && src.size() < count)
+		return StormByte::Unexpected(WriteError("Insufficient data to write: Asked {} but have {}", count, src.size()));
+
+	const std::size_t real_count = (count == 0) ? src.size() : count;
+
+	// Reserve target space to avoid repeated reallocations
+	m_buffer.reserve(m_buffer.size() + real_count);
+
+	if (real_count == src.size()) {
+		// Move entire source
+		append_vector(m_buffer, std::move(src));
+	}
+	else {
+		m_buffer.insert(m_buffer.end(), std::make_move_iterator(src.begin()), std::make_move_iterator(src.begin() + real_count));
+		// Rearrange src to remove moved elements
+		src.erase(src.begin(), src.begin() + real_count);
+	}
+
+	return {};
+}
+
+ExpectedVoid<Error> FIFO::WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept {
+	return src.Read(count, m_buffer);
+}
+
+ExpectedVoid<Error> FIFO::WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept {
+	return src.Extract(count, m_buffer);
 }

@@ -1,4 +1,3 @@
-#include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/producer.hxx>
 

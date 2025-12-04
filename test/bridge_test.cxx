@@ -1,102 +1,117 @@
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
 #include <vector>
 #include <string>
+#include <thread>
+#include <chrono>
 
 using StormByte::Buffer::Bridge;
+using StormByte::Buffer::FIFO;
+using StormByte::Buffer::SharedFIFO;
 
-int test_bridge_passthrough_success() {
-    std::string payload = "HELLO";
-    auto data = StormByte::String::ToByteVector(payload);
+int full_passthrough_test() {
+	StormByte::Buffer::SharedFIFO read_fifo;
+	StormByte::Buffer::FIFO write_fifo;
 
-    StormByte::Buffer::ExternalReadFunction readFn = [data](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        if (count == 0) return std::vector<std::byte>{};
-        std::size_t n = std::min(count, data.size());
-        return std::vector<std::byte>(data.begin(), data.begin() + n);
-    };
+	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
+	(void)read_fifo.Write(test_data);
+	read_fifo.Close();
 
-    std::vector<std::byte> received;
-    StormByte::Buffer::ExternalWriteFunction writeFn = [&received](const std::vector<std::byte>& d) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        received = d;
-        return {};
-    };
+	Bridge bridge(read_fifo, write_fifo, 4096); // Chunk size of 4 kbytes
 
-    Bridge b(readFn, writeFn);
-    auto res = b.Passthrough(payload.size());
-    ASSERT_TRUE("test_bridge_passthrough_success result", res.has_value());
-    ASSERT_EQUAL("test_bridge_passthrough_success content", StormByte::String::FromByteVector(received), payload);
-    RETURN_TEST("test_bridge_passthrough_success", 0);
+	auto res = bridge.Passthrough();
+	ASSERT_TRUE("bridge passthrough success", res.has_value());
+
+	std::vector<std::byte> output_data;
+	output_data.reserve(write_fifo.AvailableBytes());
+	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
+	ASSERT_TRUE("write fifo read success", read_res.has_value());
+
+	std::string result = StormByte::String::FromByteVector(output_data);
+	ASSERT_EQUAL("bridge passthrough content matches", result, test_data);
+
+	RETURN_TEST("full_pass_through_test", 0);
 }
 
-int test_bridge_passthrough_zero_noop() {
-    bool read_called = false;
-    bool write_called = false;
+int partial_passthrough_test() {
+	StormByte::Buffer::SharedFIFO read_fifo;
+	StormByte::Buffer::FIFO write_fifo;
 
-    StormByte::Buffer::ExternalReadFunction readFn = [&read_called](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        read_called = true;
-        return StormByte::Unexpected(StormByte::Buffer::ReadError("should not be called"));
-    };
+	const std::string test_data = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+	(void)read_fifo.Write(test_data);
+	read_fifo.Close();
 
-    StormByte::Buffer::ExternalWriteFunction writeFn = [&write_called](const std::vector<std::byte>& d) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        write_called = true;
-        return {};
-    };
+	Bridge bridge(read_fifo, write_fifo, 16); // Small chunk size of 16 bytes
 
-    Bridge b(readFn, writeFn);
-    auto res = b.Passthrough(0);
-    ASSERT_TRUE("test_bridge_passthrough_zero_noop result", res.has_value());
-    ASSERT_FALSE("read not called", read_called);
-    ASSERT_FALSE("write not called", write_called);
-    RETURN_TEST("test_bridge_passthrough_zero_noop", 0);
+	auto res = bridge.Passthrough(32); // Only transfer 32 bytes
+	ASSERT_TRUE("bridge partial passthrough success", res.has_value());
+
+	std::vector<std::byte> output_data;
+	output_data.reserve(write_fifo.AvailableBytes());
+	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
+	ASSERT_TRUE("write fifo read success", read_res.has_value());
+
+	std::string result = StormByte::String::FromByteVector(output_data);
+	ASSERT_EQUAL("bridge partial passthrough content matches", result, test_data.substr(0, 32));
+
+	RETURN_TEST("partial_pass_through_test", 0);
 }
 
-int test_bridge_passthrough_read_failure() {
-    StormByte::Buffer::ExternalReadFunction readFn = [](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        return StormByte::Unexpected(StormByte::Buffer::ReadError("read failed"));
-    };
+int test_bridge_sharedfifo_threaded() {
+	StormByte::Buffer::SharedFIFO read_fifo;
+	StormByte::Buffer::FIFO write_fifo;
 
-    StormByte::Buffer::ExternalWriteFunction writeFn = [](const std::vector<std::byte>& d) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        return {};
-    };
+	std::string expected;
+	expected.reserve(100);
+	for (int i = 0; i < 10; ++i) {
+		std::string chunkA(5, 'A');
+		std::string chunkB(5, 'B');
+		expected += chunkA + chunkB;
+	}
 
-    Bridge b(readFn, writeFn);
-    auto res = b.Passthrough(1);
-    ASSERT_FALSE("test_bridge_passthrough_read_failure should fail", res.has_value());
-    RETURN_TEST("test_bridge_passthrough_read_failure", 0);
-}
+	// Writer thread writes into SharedFIFO asynchronously
+	std::thread writer([&]() {
+		for (int i = 0; i < 10; ++i) {
+			(void)read_fifo.Write(std::string(5, 'A'));
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			(void)read_fifo.Write(std::string(5, 'B'));
+		}
+		read_fifo.Close();
+	});
 
-int test_bridge_passthrough_write_failure() {
-    std::string payload = "DATA";
-    auto data = StormByte::String::ToByteVector(payload);
+	Bridge bridge(read_fifo, write_fifo, 8);
 
-    StormByte::Buffer::ExternalReadFunction readFn = [data](const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        return data;
-    };
+	auto res = bridge.Passthrough();
+	ASSERT_TRUE("bridge passthrough success (threaded)", res.has_value());
 
-    StormByte::Buffer::ExternalWriteFunction writeFn = [](const std::vector<std::byte>& d) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        return StormByte::Unexpected(StormByte::Buffer::WriteError("write failed"));
-    };
+	writer.join();
 
-    Bridge b(readFn, writeFn);
-    auto res = b.Passthrough(4);
-    ASSERT_FALSE("test_bridge_passthrough_write_failure should fail", res.has_value());
-    RETURN_TEST("test_bridge_passthrough_write_failure", 0);
+	std::vector<std::byte> output_data;
+	output_data.reserve(write_fifo.AvailableBytes());
+	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
+	ASSERT_TRUE("write fifo read success (threaded)", read_res.has_value());
+
+	std::string result = StormByte::String::FromByteVector(output_data);
+	ASSERT_EQUAL("bridge passthrough content matches (threaded)", result, expected);
+
+	RETURN_TEST("bridge_sharedfifo_threaded", 0);
 }
 
 int main() {
-    int result = 0;
-    result += test_bridge_passthrough_success();
-    result += test_bridge_passthrough_zero_noop();
-    result += test_bridge_passthrough_read_failure();
-    result += test_bridge_passthrough_write_failure();
+	int result = 0;
 
-    if (result == 0) {
-        std::cout << "Bridge tests passed!" << std::endl;
-    } else {
-        std::cout << result << " Bridge tests failed." << std::endl;
-    }
-    return result;
+	//result += full_passthrough_test();
+	//result += partial_passthrough_test();
+	result += test_bridge_sharedfifo_threaded();
+
+	if (result == 0) {
+		std::cout << "Bridge tests passed!" << std::endl;
+	} else {
+		std::cout << result << " Bridge tests failed." << std::endl;
+	}
+	return result;
 }

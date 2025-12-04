@@ -79,19 +79,22 @@ int main() {
     fifo.Write("Hello World");
     
     // Non-destructive read
-    auto data = fifo.Read(5);               // Read "Hello"
-    if (data) {
-        std::string s(reinterpret_cast<const char*>(data->data()), data->size());
+    StormByte::Buffer::DataType data;
+    auto res = fifo.Read(5, data);               // Read "Hello" into `data`
+    if (res.has_value()) {
+        std::string s(reinterpret_cast<const char*>(data.data()), data.size());
         // s == "Hello", data remains in buffer
     }
-    
+
     // Seek and read more
     fifo.Seek(6, Position::Absolute);       // Move to "World"
-    auto more = fifo.Read(5);               // Read "World"
-    
+    StormByte::Buffer::DataType more;
+    auto res_more = fifo.Read(5, more);     // Read "World" into `more`
+
     // Destructive read (removes data)
-    auto extracted = fifo.Extract(11);      // Extracts all data
-    // Buffer is now empty
+    StormByte::Buffer::DataType extracted;
+    auto res_ex = fifo.Extract(11, extracted);      // Extracts up to 11 bytes into `extracted`
+    // Buffer is now empty (if extraction succeeded)
 }
 ```
 
@@ -135,8 +138,9 @@ int main() {
     // Reader thread (blocks until data available)
     std::thread reader([consumer]() mutable {
         while (!consumer.EoF()) {
-            auto data = consumer.Extract(0); // Extract all available
-            if (data && !data->empty()) {
+            StormByte::Buffer::DataType data;
+            auto res = consumer.Extract(0, data); // Extract all available into `data`
+            if (res.has_value() && !data.empty()) {
                 // Process data...
             }
         }
@@ -200,100 +204,60 @@ int main() {
 }
 ```
 
-#### Forwarder
-
-`Forwarder` implements a `SharedFIFO`-compatible API with internal buffering and
-delegating actual I/O to user-supplied callables when needed.
-
-- **Purpose**: Expose the `SharedFIFO` API surface with internal buffering that only
-    calls external handlers when the buffer cannot satisfy the operation (useful for
-    bridging sockets, files, or custom callback-based sources).
-- **Behaviour**:
-    - `Read(count)` first checks the internal buffer. If sufficient data is available,
-        it returns from the buffer without calling the external function. If more data
-        is needed, it reads the remaining bytes from the external function and combines
-        both sources. Example: `Read(2)` with 1 byte in buffer reads 1 byte from external
-        function and returns both bytes combined.
-    - `Extract(count)` behaves like `Read()` but removes data from the internal buffer.
-    - `Write(...)` is a direct passthrough to the external write handler without storing
-        data in the internal buffer.
-    - `Read(0)` and `Extract(0)` return an error because the forwarder cannot determine
-        how many bytes the external reader would provide. Always specify a count > 0.
-    - `Clear()`, `Clean()`, `Seek()`, and `Skip()` operate on the internal buffer.
-
-**Usage examples:**
-
-```cpp
-#include <StormByte/buffer/forwarder.hxx>
-#include <StormByte/string.hxx>
-
-using StormByte::Buffer::Forwarder;
-
-// Read-only forwarder: returns up to `count` bytes from an external source
-auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        std::string s = "HelloWorld";
-        if (count == 0) return std::vector<std::byte>{}; // noop
-        std::size_t n = std::min(count, s.size());
-        return StormByte::String::ToByteVector(s.substr(0, n));
-};
-
-Forwarder readOnly(reader);
-auto data = readOnly.Read(5);
-if (data.has_value()) {
-        std::string s = StormByte::String::FromByteVector(*data);
-        // s == "Hello"
-}
-
-// Write-only forwarder: capture written bytes
-std::vector<std::byte> captured;
-auto writer = [&captured](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        captured = v; return {};
-};
-
-Forwarder writeOnly(writer);
-auto result = writeOnly.Write(StormByte::String::ToByteVector("Data"));
-if (result.has_value()) {
-        std::string out = StormByte::String::FromByteVector(captured);
-        // out == "Data"
-}
-```
+> Note: The older `Forwarder` adapter has been removed from the public API.
+> Use the provided `ReadOnly`/`WriteOnly` implementations (for example
+> `SharedFIFO`/`FIFO`) together with `Bridge` for passthrough scenarios.
 
 #### Bridge
 
-`Bridge` is a small adapter that privately inherits from `Forwarder` and exposes a
-convenience operation `Passthrough(count)` which reads exactly `count` bytes from the
-configured read handler and immediately writes them to the configured write handler.
+`Bridge` is a lightweight adapter that forwards bytes from a `ReadOnly` source to a
+`WriteOnly` sink in user-space. It does not require (or reference) the old `Forwarder`
+adapter; instead, construct a `Bridge` with any objects implementing the `ReadOnly`
+and `WriteOnly` interfaces (for example `SharedFIFO` for reading and `FIFO` for
+writing).
 
-- **Purpose**: Pass through a specified number of bytes from a source to a sink without
-    buffering them in user code.
+- **Purpose**: Move bytes from a source to a sink without custom buffering logic.
 - **Behaviour**:
-    - `Passthrough(0)` is a no-op and returns success without invoking handlers.
-    - On success, the requested bytes are forwarded from read -> write.
-    - On failure, `Passthrough()` returns an `ExpectedVoid<Exception>` containing an
-        `Exception` describing the underlying read or write error (note: the base
-        `Exception` type is used to accommodate both read and write failures).
+    - `Passthrough()` (no arguments) reads until end-of-file (EoF) from the read
+        handler and writes everything to the write handler.
+    - `Passthrough(count)` reads up to `count` bytes and writes them to the sink.
+        If `count == 0`, the call will process all currently available bytes but will
+        not block until EoF; to process until EoF use the parameterless `Passthrough()`.
+    - On failure, `Passthrough()` returns an `ExpectedVoid<Error>` describing the
+        underlying read or write error.
 
-**Usage example:**
+**Usage example (recommended):**
 
 ```cpp
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/shared_fifo.hxx>
+#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/string.hxx>
 
 using StormByte::Buffer::Bridge;
+using StormByte::Buffer::SharedFIFO;
+using StormByte::Buffer::FIFO;
 
-auto reader = [] (const std::size_t& count) -> StormByte::Buffer::ExpectedData<StormByte::Buffer::ReadError> {
-        std::string s = "ABCD";
-        if (count == 0) return std::vector<std::byte>{};
-        return StormByte::String::ToByteVector(s.substr(0, std::min(count, s.size())));
-};
+int main() {
+        SharedFIFO read_fifo;   // ReadOnly implementation
+        FIFO write_fifo;        // WriteOnly implementation
 
-std::vector<std::byte> received;
-auto writer = [&received](const std::vector<std::byte>& v) -> StormByte::Buffer::ExpectedVoid<StormByte::Buffer::WriteError> {
-        received = v; return {};
-};
+        const std::string test_data = "ABCD";
+        (void)read_fifo.Write(test_data);
+        read_fifo.Close();
 
-Bridge bridge(reader, writer);
-auto res = bridge.Passthrough(4); // forwards "ABCD" into `received`
+        Bridge bridge(read_fifo, write_fifo, 4096); // chunk size
+        auto res = bridge.Passthrough(); // forwards all bytes until EoF
+        if (!res.has_value()) {
+                // handle error
+        }
+
+        std::vector<std::byte> output;
+        output.reserve(write_fifo.AvailableBytes());
+        (void)write_fifo.Extract(write_fifo.AvailableBytes(), output);
+        std::string result = StormByte::String::FromByteVector(output);
+        // result == "ABCD"
+}
 ```
 
 
@@ -329,9 +293,10 @@ int main() {
     // Stage 1: Convert to uppercase
     pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
         while (!in.EoF()) {
-            auto data = in.Extract(0);
-            if (data && !data->empty()) {
-                std::string str(reinterpret_cast<const char*>(data->data()), data->size());
+            StormByte::Buffer::DataType data;
+            auto res = in.Extract(0, data);
+            if (res.has_value() && !data.empty()) {
+                std::string str(reinterpret_cast<const char*>(data.data()), data.size());
                 for (auto& c : str) c = std::toupper(c);
                 out.Write(str);
             }
@@ -342,9 +307,10 @@ int main() {
     // Stage 2: Replace spaces with underscores
     pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
         while (!in.EoF()) {
-            auto data = in.Extract(0);
-            if (data && !data->empty()) {
-                std::string str(reinterpret_cast<const char*>(data->data()), data->size());
+            StormByte::Buffer::DataType data;
+            auto res = in.Extract(0, data);
+            if (res.has_value() && !data.empty()) {
+                std::string str(reinterpret_cast<const char*>(data.data()), data.size());
                 std::replace(str.begin(), str.end(), ' ', '_');
                 out.Write(str);
             }
@@ -356,9 +322,10 @@ int main() {
     pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
         out.Write("[");
         while (!in.EoF()) {
-            auto data = in.Extract(0);
-            if (data && !data->empty()) {
-                out.Write(*data);
+            StormByte::Buffer::DataType data;
+            auto res = in.Extract(0, data);
+            if (res.has_value() && !data.empty()) {
+                out.Write(data);
             }
         }
         out.Write("]");
@@ -374,9 +341,10 @@ int main() {
 
     // Wait and read result without sleeps (poll EoF)
     while (!result.EoF()) { std::this_thread::yield(); }
-    auto final_data = result.Extract(0);
-    if (final_data) {
-        std::string output(reinterpret_cast<const char*>(final_data->data()), final_data->size());
+    StormByte::Buffer::DataType final_data;
+    auto final_res = result.Extract(0, final_data);
+    if (final_res.has_value()) {
+        std::string output(reinterpret_cast<const char*>(final_data.data()), final_data.size());
         // output == "[HELLO_WORLD]"
     }
 }
@@ -386,15 +354,16 @@ int main() {
 
 The library uses `std::expected`-like (`StormByte::Expected`) for error handling:
 
-**Read/Extract operations** return `ExpectedData<ReadError>`:
+**Read/Extract operations** return `ExpectedVoid<ReadError>` and fill a `DataType` buffer passed as the second parameter:
 ```cpp
-auto data = fifo.Read(100);  // Request more than available
-if (data.has_value()) {
-    // Success - use *data
-    process(*data);
+StormByte::Buffer::DataType data;
+auto res = fifo.Read(100, data);  // Request up to 100 bytes into `data`
+if (res.has_value()) {
+    // Success - use `data`
+    process(data);
 } else {
-    // Error - insufficient data available
-    std::cerr << "Read error: " << data.error()->what() << std::endl;
+    // Error - insufficient data available or other read error
+    std::cerr << "Read error: " << res.error()->what() << std::endl;
 }
 ```
 

@@ -1,22 +1,32 @@
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/fifo.hxx>
+
+#include <algorithm>
 
 using namespace StormByte::Buffer;
 
-Bridge::Bridge(const ExternalReadFunction& readFunc, const ExternalWriteFunction& writeFunc) noexcept:
-Forwarder(readFunc, writeFunc) {}
+ExpectedVoid<Error> Bridge::Passthrough(const std::size_t& count) noexcept {
+	const std::size_t bytes_to_transfer = count == 0 ? m_readHandler.get().AvailableBytes() : count;
+	std::size_t remaining = bytes_to_transfer;
 
-ExpectedVoid<Exception> Bridge::Passthrough(const std::size_t& count) {
-	if (count == 0) {
-		// Passthrough of 0 bytes is a noop
-		return {};
+	while (remaining > 0) {
+		const std::size_t chunk_size = std::min(remaining, m_chunk_size);
+		auto res = m_readHandler.get().Extract(chunk_size, m_writeHandler.get());
+		if (!res.has_value())
+			return StormByte::Unexpected(res.error());
+
+		remaining -= chunk_size;
 	}
-	auto expected_data = Read(count);
-	if (!expected_data) {
-		return StormByte::Unexpected(Exception("Bridge read failed: " + std::string(expected_data.error()->what())));
+
+	return {};
+}
+
+ExpectedVoid<Error> Bridge::Passthrough() noexcept {
+	while (!m_readHandler.get().EoF()) {
+		auto res = Passthrough(m_readHandler.get().AvailableBytes());
+		if (!res.has_value())
+			return StormByte::Unexpected(res.error());
 	}
-	auto write_result = Write(*expected_data);
-	if (!write_result) {
-		return StormByte::Unexpected(Exception("Bridge write failed"));
-	}
+
 	return {};
 }

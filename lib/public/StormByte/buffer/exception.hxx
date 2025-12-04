@@ -13,10 +13,21 @@
  */
 namespace StormByte::Buffer {
 	// Generic Buffer exceptions
-    class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
-        public:
-            using StormByte::Exception::Exception;
-    };
+	class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
+		public:
+			template <typename... Args>
+			Exception(const std::string& component, std::format_string<Args...> fmt, Args&&... args):
+			StormByte::Exception("Buffer::" +component, fmt, std::forward<Args>(args)...) {}
+	};
+
+	/**
+	 * @class Error
+	 * @brief General exception class for buffer errors.
+	 */
+	class STORMBYTE_BUFFER_PUBLIC Error: public Exception {
+		public:
+			using Exception::Exception;
+	};
 
 	/**
 	 * @class ReadError
@@ -24,9 +35,11 @@ namespace StormByte::Buffer {
 	 * 
 	 * @details Thrown when a read operation fails
 	 */
-	class STORMBYTE_BUFFER_PUBLIC ReadError: public Exception {
+	class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
 		public:
-			using Exception::Exception;
+			template <typename... Args>
+			ReadError(std::format_string<Args...> fmt, Args&&... args):
+			Error("Buffer::ReadError", fmt, std::forward<Args>(args)...) {}
 	};
 
 	/**
@@ -35,8 +48,10 @@ namespace StormByte::Buffer {
 	 * 
 	 * @details Thrown when a write operation fails
 	 */
-	class STORMBYTE_BUFFER_PUBLIC WriteError: public Exception {
+	class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
 		public:
-			using Exception::Exception;
+			template <typename... Args>
+			WriteError(std::format_string<Args...> fmt, Args&&... args):
+			Error("Buffer::WriteError", fmt, std::forward<Args>(args)...) {}
 	};
 }

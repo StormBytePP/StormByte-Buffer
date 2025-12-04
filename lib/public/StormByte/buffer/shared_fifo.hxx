@@ -9,7 +9,7 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
- * The Buffer namespace provides classes and utilities for byte buffers,
+			void  Wait(const std::size_t& n, std::unique_lock<std::recursive_mutex>& lock) const;
  * including FIFO buffers, thread-safe shared buffers, and producer-consumer patterns.
  */
 namespace StormByte::Buffer {
@@ -56,10 +56,34 @@ namespace StormByte::Buffer {
 			 * @param capacity Initial number of bytes to allocate in the buffer.
 			 *        Behaves like @ref FIFO and may grow as needed.
 			 */
-			SharedFIFO() noexcept;
+			SharedFIFO() noexcept 								= default;
 
 			/**
-			 * @brief Copy and move constructors are deleted.
+			 * @brief Construct a SharedFIFO with initial data.
+			 * @param data Initial byte vector to populate the FIFO.
+			 */
+			inline SharedFIFO(const DataType& data): FIFO(data) {}
+
+			/**
+			 * @brief Construct a SharedFIFO with initial data using move semantics.
+			 * @param data Initial byte vector to move into the FIFO.
+			 */
+			inline SharedFIFO(DataType&& data) noexcept: FIFO(std::move(data)) {}
+
+			/**
+			 * @brief Construct a SharedFIFO by copying or moving from a FIFO.
+			 * @param other Source FIFO to copy or move from.
+			 */
+			inline SharedFIFO(const FIFO& other): FIFO(other) {}
+
+			/**
+			 * @brief Construct a SharedFIFO by moving from a FIFO.
+			 * @param other Source FIFO to move from; left empty after move.
+			 */
+			inline SharedFIFO(FIFO&& other) noexcept: FIFO(std::move(other)) {}
+
+			/**
+			 * @brief Copy constructors are deleted.
 			 * @details `SharedFIFO` contains synchronization primitives and
 			 *          shared internal state (mutex, condition variable, etc.).
 			 *          Copying or moving instances would require careful transfer
@@ -70,14 +94,32 @@ namespace StormByte::Buffer {
 			 *          copy the data via the base `FIFO` and construct a new
 			 *          `SharedFIFO`.
 			 */
-			SharedFIFO(const SharedFIFO&) = delete;
+			SharedFIFO(const SharedFIFO&) 						= delete;
 			
-			SharedFIFO(SharedFIFO&&) = delete;
+			/**
+			 * @brief Move constructor
+			 * @param other Source SharedFIFO to move from; left in a valid but
+			 */
+			SharedFIFO(SharedFIFO&& other) noexcept				= default;
 			
 			/**
 			 * @brief Virtual destructor.
 			 */
-			virtual ~SharedFIFO() = default;
+			virtual ~SharedFIFO() noexcept 						= default;
+
+			/**
+			 * @brief Copy assignment from FIFO.
+			 * @param other Source FIFO to copy from.
+			 * @return Reference to this SharedFIFO.
+			 */
+			SharedFIFO& operator=(const FIFO& other);
+
+			/**
+			 * @brief Move assignment from FIFO.
+			 * @param other Source FIFO to move from.
+			 * @return Reference to this SharedFIFO.
+			 */
+			SharedFIFO& operator=(FIFO&& other) noexcept;
 
 			/**
 			 * @brief Copy and move assignment operators are deleted.
@@ -87,9 +129,15 @@ namespace StormByte::Buffer {
 			 *          is unsafe and therefore these operators are explicitly
 			 *          deleted. Use explicit data-copy via `FIFO` if needed.
 			 */
-			SharedFIFO& operator=(const SharedFIFO&) = delete;
+			SharedFIFO& operator=(const SharedFIFO&) 			= delete;
 
-			SharedFIFO& operator=(SharedFIFO&&) = delete;
+			/**
+			 * @brief Move assignment operator.
+			 * @param other Source SharedFIFO to move from; left in a valid but
+			 *              unspecified state.
+			 * @return Reference to this SharedFIFO.
+			 */
+			SharedFIFO& operator=(SharedFIFO&&) noexcept;
 
 			/**
 			 * @brief Equality comparison (thread-safe).
@@ -109,11 +157,23 @@ namespace StormByte::Buffer {
 				return !(*this == other);
 			}
 
+			/**
+			 * @brief Get the number of bytes available for reading.
+			 * @return Number of bytes available from the current read position.
+			 */
+			virtual std::size_t 								AvailableBytes() const noexcept override;
 
 			/**
-			 * @name Thread-safe overrides
-			 * @{
+			 * @brief Thread-safe clean of buffer data from start to read position.
+			 * @see FIFO::Clean()
 			 */
+			void 												Clean() noexcept override;
+
+			/**
+			 * @brief Thread-safe clear of all buffer contents.
+			 * @see FIFO::Clear()
+			 */
+			virtual void 										Clear() noexcept override;
 
 			/**
 			 * @brief Thread-safe close for further writes.
@@ -121,153 +181,23 @@ namespace StormByte::Buffer {
 			 *          are ignored. The buffer remains readable until all data is consumed.
 			 * @see FIFO::Close(), IsWritable()
 			 */
-			void Close() noexcept;
+			virtual void 										Close() noexcept;
 
 			/**
-			 * @brief Thread-safe error state setting.
-			 * @details Marks buffer as erroneous (unreadable and unwritable), notifies all
-			 *          waiting threads. Subsequent writes are ignored and reads will fail.
-			 * @see FIFO::SetError(), IsReadable(), IsWritable()
+			 * @brief Thread-safe drop operation.
+			 * @details Notifies waiting readers after dropping.
+			 * @see FIFO::Drop()
 			 */
-			void SetError() noexcept;
-
+			virtual ExpectedVoid<WriteError> 					Drop(const std::size_t& count) noexcept override;
+			
 			/**
-			 * @brief Thread-safe blocking read from the buffer.
-			 * @param count Number of bytes to read; 0 reads all available immediately.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error.
-			 * @details Blocks until @p count bytes are available from the current read position,
-			 *          or until the buffer becomes unreadable (closed or error). If buffer
-			 *          becomes unreadable before the requested bytes are available the call
-			 *          returns an error. See the base `FIFO::Read()` for the core (content-only)
-			 *          semantics.
-			 * @see FIFO::Read(), Wait(), IsReadable()
+			 * @brief Check if the buffer is empty.
+			 * @return true if the buffer contains no data, false otherwise.
+			 * @see Size(), AvailableBytes()
+			 * @note Since buffer works with read positions, Empty() might return false
+			 * 	   even if there is no unread data (i.e., when read position is at the end of the buffer).
 			 */
-			virtual ExpectedData<ReadError> Read(const std::size_t& count = 0) const override;
-
-			/**
-			 * @brief Thread-safe blocking zero-copy read from the buffer.
-			 * @param count Number of bytes to read; 0 reads all available.
-			 * @return std::span<const std::byte> view over the requested bytes, or empty span if error.
-			 * @details Blocks until @p count bytes are available from the current read position,
-			 *          or until the buffer becomes unreadable. Returns a non-owning view without
-			 *          copying. The span is valid until the next modifying operation.
-			 *          
-			 *          WARNING: The returned span becomes invalid after any write, extract, or
-			 *          clear operation. Since this is a thread-safe class, other threads may
-			 *          modify the buffer at any time, so the span should be used immediately.
-			 * @see FIFO::Span(), Read(), Wait()
-			 */
-			virtual ExpectedSpan<ReadError> Span(const std::size_t& count = 0) const noexcept override;
-
-			/**
-			 * @brief Thread-safe blocking extract from the buffer.
-			 * @param count Number of bytes to extract; 0 extracts all available immediately.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error.
-			 * @details Blocks until @p count bytes are available, or until the buffer becomes
-			 *          unreadable (closed or error). If buffer becomes unreadable before the
-			 *          requested bytes are available the call returns an error. See the base
-			 *          `FIFO::Extract()` for the core (content-only) semantics.
-			 * @see FIFO::Extract(), Wait(), IsReadable()
-			 */
-			virtual ExpectedData<ReadError> Extract(const std::size_t& count = 0) override;
-
-			/**
-			 * @brief Thread-safe write to the buffer.
-			 * @param data Byte vector to append to the FIFO.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Thread-safe version that notifies waiting readers after write.
-			 * @see FIFO::Write()
-			 */
-			virtual ExpectedVoid<WriteError> Write(std::span<const std::byte> data) override;
-
-			/**
-			 * @brief Thread-safe write to the buffer.
-			 * @param data Byte vector to append to the FIFO.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Thread-safe version that notifies waiting readers after write.
-			 * @see FIFO::Write()
-			 */
-			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>& data) override;
-
-			/**
-			 * @brief Thread-safe write with move semantics for byte vector.
-			 * @param data Byte vector rvalue to move into the FIFO.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Thread-safe version that uses move semantics to efficiently
-			 *          transfer data from the rvalue vector. Notifies waiting readers after write.
-			 * @see FIFO::Write()
-			 */
-			virtual ExpectedVoid<WriteError> Write(const std::vector<std::byte>&& data) override;
-
-			/**
-			 * @brief Thread-safe append of another FIFO's full contents.
-			 * @param other FIFO whose contents will be appended (const reference).
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Acquires the internal mutex, checks `m_closed` and `m_error`,
-			 * then delegates to the base `FIFO::Write(const FIFO&)` to append the
-			 * entire contents of `other`. Notifies waiting readers after the write.
-			 */
-			virtual ExpectedVoid<WriteError> Write(const FIFO& other) override;
-
-			/**
-			 * @brief Thread-safe append by moving another FIFO's full contents.
-			 * @param other FIFO rvalue whose contents will be moved into this SharedFIFO.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Acquires the internal mutex, checks `m_closed` and `m_error`,
-			 * then delegates to the base `FIFO::Write(FIFO&&)` to perform an
-			 * efficient move/steal of `other`'s contents. Notifies waiting readers
-			 * after the write. Marked `noexcept` to reflect the base rvalue overload.
-			 */
-			virtual ExpectedVoid<WriteError> Write(FIFO&& other) noexcept override;
-
-			/**
-			 * @brief Thread-safe write to the buffer.
-			 * @param data String to append to the FIFO.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Thread-safe version that notifies waiting readers after write.
-			 * @see FIFO::Write()
-			 */
-			virtual ExpectedVoid<WriteError> Write(const std::string& data) override;
-
-			/**
-			 * @brief Thread-safe clear of all buffer contents.
-			 * @see FIFO::Clear()
-			 */
-			virtual void Clear() noexcept override;
-
-			/**
-			 * @brief Thread-safe clean of buffer data from start to read position.
-			 * @see FIFO::Clean()
-			 */
-			virtual void Clean() noexcept override;
-
-			/**
-			 * @brief Thread-safe seek operation.
-			 * @details Notifies waiting readers after seeking.
-			 * @see FIFO::Seek()
-			 */
-			virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
-
-			/**
-			 * @brief Thread-safe peek operation.
-			 * @param count Number of bytes to peek; 0 peeks all available immediately.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error.
-			 * @details Blocks until @p count bytes are available from the current read position,
-			 *          or until the buffer becomes unreadable (closed or error). If buffer
-			 *          becomes unreadable before the requested bytes are available the call
-			 *          returns an error. See the base `FIFO::Peek()` for the core (content-only)
-			 *          semantics.
-			 * @see FIFO::Peek(), Wait(), IsReadable()
-			 */
-			virtual ExpectedData<ReadError> Peek(const std::size_t& count = 0) const noexcept override;
-
-			/**
-			 * @brief Thread-safe skip operation.
-			 * @details Notifies waiting readers after skipping.
-			 * @see FIFO::Skip()
-			 */
-			virtual void Skip(const std::size_t& count) noexcept override;
-			/** @} */
+			virtual bool 										Empty() const noexcept override;
 			
 			/**
 			 * @brief Check if the reader has reached end-of-file.
@@ -275,25 +205,13 @@ namespace StormByte::Buffer {
 			 * @details Returns true when the buffer has been closed or set to error
 			 *          and there are no available bytes remaining.
 			 */
-			bool EoF() const noexcept override;
+			virtual bool 										EoF() const noexcept override;
 
 			/**
-			 * @brief Check if the buffer is readable (not in error state).
-			 * @return true if readable, false if buffer is in error state.
-			 * @details A buffer becomes unreadable when SetError() is called. Use in
-			 *          combination with AvailableBytes() to check if there is data
-			 *          pending to read.
-			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
+			 * @brief Check if the buffer is in an error state.
+			 * @return true if the buffer is in error state, false otherwise.
 			 */
-			inline bool IsReadable() const noexcept { return !m_error; }
-
-			/**
-			 * @brief Check if the buffer is writable (not closed and not in error state).
-			 * @return true if writable, false if closed or in error state.
-			 * @details A buffer becomes unwritable when Close() or SetError() is called.
-			 * @see Close(), SetError(), IsReadable()
-			 */
-			inline bool IsWritable() const noexcept { return !m_closed && !m_error; }
+			bool 												HasError() const noexcept;
 
 			/**
 			 * @brief Produce a thread-safe hexdump of the buffer.
@@ -304,19 +222,95 @@ namespace StormByte::Buffer {
 			 *          a consistent snapshot. The returned string begins with a
 			 *          status line of the form `Status: opened|closed, ready|error`\n
 			*          followed by the same output produced by `FIFO::HexDump()`.
-			*
+			* Example output:
 			* @code{.text}
-			* // Example output:
-			* // Status: opened, ready
-			* // Read Position: 0
-			* // 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
+			* Size: 13 bytes
+			* Read Position: 0
+			* Status: opened and ready
+			* 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
 			* @endcode
 			*/
-			std::string HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept override;
+			virtual std::string 								HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept override;
+
+			/**
+			 * @brief Check if the buffer is readable (not in error state).
+			 * @return true if readable, false if buffer is in error state.
+			 * @details A buffer becomes unreadable when SetError() is called. Use in
+			 *          combination with AvailableBytes() to check if there is data
+			 *          pending to read.
+			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
+			 */
+			inline virtual bool 								IsReadable() const noexcept override { return !m_error; }
+
+			/**
+			 * @brief Check if the buffer is writable (not closed and not in error state).
+			 * @return true if writable, false if closed or in error state.
+			 * @details A buffer becomes unwritable when Close() or SetError() is called.
+			 * @see Close(), SetError(), IsReadable()
+			 */
+			inline virtual bool 								IsWritable() const noexcept override { return !m_closed && !m_error; }
+
+			/**
+			 * @brief Move the read position for non-destructive reads.
+			 * @param position The offset value to apply.
+			 * @param mode Unused for base class; included for API consistency.
+			 * @details Changes where subsequent Read() operations will start reading from.
+			 *          Position is clamped to [0, Size()]. Does not affect stored data.
+			 * @see Read(), Position
+			 * If Position is set to Absolute and offset is negative the operation is noop
+			 */
+			virtual void 										Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
+
+			/**
+			 * @brief Thread-safe error state setting.
+			 * @details Marks buffer as erroneous (unreadable and unwritable), notifies all
+			 *          waiting threads. Subsequent writes are ignored and reads will fail.
+			 * @see FIFO::SetError(), IsReadable(), IsWritable()
+			 */
+			virtual void 										SetError() noexcept;
+			
+			/**
+			 * @brief Get the current number of bytes stored in the buffer.
+			 * @return The total number of bytes available for reading.
+			 * @see Empty(), AvailableBytes()
+			 */
+			virtual std::size_t 								Size() const noexcept override;
+
+		protected:
+			bool m_closed {false};    							///< Whether the SharedFIFO is closed for further writes.
+			bool m_error {false};    							///< Whether the SharedFIFO is in an error state.
 
 		private:
-			bool m_closed;    	///< Whether the SharedFIFO is closed for further writes.
-			bool m_error;    	///< Whether the SharedFIFO is in an error state.
+			mutable std::mutex m_mutex;							///< Mutex protecting internal state.
+			mutable std::condition_variable_any m_cv;			///< Condition variable for blocking reads/writes.
+
+			/**
+			 * @brief Produce a hexdump header with size and read position.
+			 * @return ostringstream containing the hexdump header.
+			 */
+			std::ostringstream 									HexDumpHeader() const noexcept override;
+
+			/**
+			 * @brief Internal helper for read operations.
+			 * @param count Number of bytes to read.
+			 * @param outBuffer Output buffer to store read bytes.
+			 * @param flag Additional flag for read operation (1: copy, 2: move)
+			 * @return `ExpectedVoid<ReadError>` indicating success or failure.
+			 * @details Shared logic for read operations that first checks the internal
+			 *          buffer, then calls the external read function if needed.
+			 */
+			virtual ExpectedVoid<ReadError> 					ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept override;
+
+			/**
+			 * @brief Internal helper for read operations.
+			 * @param count Number of bytes to read.
+			 * @param outBuffer Output buffer to store read bytes.
+			 * @param flag Additional flag for read operation (1: copy, 2: move)
+			 * @return `ExpectedVoid<Error>` indicating success or failure.
+			 * @details Shared logic for read operations that first checks the internal
+			 *          buffer, then calls the external read function if needed.
+			 */
+			virtual ExpectedVoid<Error> 						ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept override;
 
 			/**
 			 * @brief Wait until at least @p n bytes are available from the current read position
@@ -328,11 +322,22 @@ namespace StormByte::Buffer {
 			 *       requested @p n bytes are not available.
 			 * @see Close(), SetError(), IsReadable()
 			 */
-			void Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const;
+			void 												Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const;
 
-			/** @brief Internal mutex guarding all state mutations and reads. */
-			mutable std::mutex m_mutex;
-			/** @brief Condition variable used to block until data is available or closed. */
-			mutable std::condition_variable_any m_cv;
+			/**
+			 * @brief Internal helper for write operations.
+			 * @param dst Destination buffer to write into.
+			 * @param src Source buffer to write from.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 */
+			virtual ExpectedVoid<WriteError> 					WriteInternal(const std::size_t& count, const DataType& src) noexcept override;
+
+			/**
+			 * @brief Internal helper for write operations.
+			 * @param dst Destination buffer to write into.
+			 * @param src Source buffer to write from.
+			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 */
+			virtual ExpectedVoid<WriteError> 					WriteInternal(const std::size_t& count, DataType&& src) noexcept override;
 	};
 }

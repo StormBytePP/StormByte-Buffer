@@ -13,169 +13,269 @@
  * interfaces, and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
-    /**
-     * @class Consumer
-     * @brief Read-only interface for consuming data from a shared FIFO buffer.
-     *
-     * @par Overview
-     *  Consumer provides a read-only interface to a SharedFIFO buffer.
-     *  Multiple Consumer instances can share the same underlying buffer,
-     *  allowing multiple consumers to read data concurrently in a thread-safe manner.
-     *  Consumers can only be created through a Producer instance.
-     *
-     * @par Thread safety
-     *  All read operations are thread-safe as they delegate to the underlying
-     *  SharedFIFO which is fully thread-safe. Multiple consumers can safely
-     *  read from the same buffer concurrently.
-     *
-     * @par Blocking behavior
-     *  - @ref Read() blocks until the requested number of bytes are available
-     *    or the buffer becomes unreadable (closed or error). If count is 0, returns
-     *    all available data from the current read position without blocking.
-     *  - @ref Extract() blocks until the requested number of bytes are available
-     *    or the buffer becomes unreadable (closed or error). If count is 0, returns
-     *    all available data immediately and clears the buffer.
-     *
-     * @par Producer-Consumer relationship
-     *  Consumer instances cannot be created directly. They must be obtained from
-     *  a Producer using Producer::Consumer(). This ensures proper buffer sharing
-     *  between producers and consumers.
-     *
-     * @see Producer
-     */
-    class STORMBYTE_BUFFER_PUBLIC Consumer final {
+	/**
+	 * @class Consumer
+	 * @brief Read-only interface for consuming data from a shared FIFO buffer.
+	 *
+	 * @par Overview
+	 *  Consumer provides a read-only interface to a SharedFIFO buffer.
+	 *  Multiple Consumer instances can share the same underlying buffer,
+	 *  allowing multiple consumers to read data concurrently in a thread-safe manner.
+	 *  Consumers can only be created through a Producer instance.
+	 *
+	 * @par Thread safety
+	 *  All read operations are thread-safe as they delegate to the underlying
+	 *  SharedFIFO which is fully thread-safe. Multiple consumers can safely
+	 *  read from the same buffer concurrently.
+	 *
+	 * @par Blocking behavior
+	 *  - @ref Read() blocks until the requested number of bytes are available
+	 *    or the buffer becomes unreadable (closed or error). If count is 0, returns
+	 *    all available data from the current read position without blocking.
+	 *  - @ref Extract() blocks until the requested number of bytes are available
+	 *    or the buffer becomes unreadable (closed or error). If count is 0, returns
+	 *    all available data immediately and clears the buffer.
+	 *
+	 * @par Producer-Consumer relationship
+	 *  Consumer instances cannot be created directly. They must be obtained from
+	 *  a Producer using Producer::Consumer(). This ensures proper buffer sharing
+	 *  between producers and consumers.
+	 *
+	 * @see Producer
+	 */
+	class STORMBYTE_BUFFER_PUBLIC Consumer final: public ReadOnly {
 		friend class Producer;
-        public:
-            /**
-             * @brief Copy constructor.
-             * @details Copies the Consumer instance, sharing the same underlying buffer.
-             *          Both instances will read from the same SharedFIFO and share the
-             *          read position state.
-             */
-            Consumer(const Consumer&) = default;
-
-            /**
-             * @brief Move constructor.
-             * @details Transfers ownership of the buffer from the moved-from Consumer.
-             */
-            Consumer(Consumer&&) = default;
-
-            /**
-             * @brief Destructor.
-             */
-            ~Consumer() = default;
-
+		public:
 			/**
-             * @brief Copy assignment operator.
-             * @return Reference to this Consumer.
-             */
-            Consumer& operator=(const Consumer&) = default;
-
-			/**
-             * @brief Move assignment operator.
-             * @return Reference to this Consumer.
-             */
-            Consumer& operator=(Consumer&&) = default;
-
-			bool operator==(const Consumer& other) const noexcept = delete;
-			bool operator!=(const Consumer& other) const noexcept = delete;
-
-			/**
-			 * @brief Get the number of bytes available for non-blocking read.
-			 * @return The number of bytes that can be read from the current read position
-			 *         without blocking.
-			 * @details Returns the amount of data available for immediate Read() operations.
-			 *          Useful for checking if data is available before attempting a blocking read.
-			 * @see SharedFIFO::AvailableBytes(), Size(), Read()
+			 * @brief Copy constructor.
+			 * @param other Source Consumer to copy from.
+			 * @details Copies the Consumer instance, sharing the same underlying buffer.
+			 *          Both instances will read from the same SharedFIFO and share the
+			 *          read position state.
 			 */
-			inline std::size_t AvailableBytes() const noexcept { return m_buffer->AvailableBytes(); }
+			inline Consumer(const Consumer& other) noexcept {
+				m_buffer = other.m_buffer;
+			}
 
 			/**
-			 * @brief Get the current number of bytes stored in the buffer.
-			 * @return The total number of bytes available for reading.
-			 * @see SharedFIFO::Size(), Empty()
+			 * @brief Move constructor.
+			 * @param other Source Consumer to move from.
+			 * @details Transfers ownership of the buffer from the moved-from Consumer.
 			 */
-			inline std::size_t Size() const noexcept { return m_buffer->Size(); }
+			inline Consumer(Consumer&& other) noexcept {
+				m_buffer = std::move(other.m_buffer);
+			}
+
+			/**
+			 * @brief Destructor.
+			 */
+			~Consumer() noexcept										= default;
+
+			/**
+			 * @brief Copy assignment operator.
+			 * @return Reference to this Consumer.
+			 */
+			inline Consumer& operator=(const Consumer& other) noexcept {
+				if (this != &other)
+					m_buffer = other.m_buffer;
+				return *this;
+			}
+
+			/**
+			 * @brief Move assignment operator.
+			 * @param other Source Consumer to move from.
+			 * @return Reference to this Consumer.
+			 */
+			inline Consumer& operator=(Consumer&& other) noexcept {
+				if (this != &other)
+					m_buffer = std::move(other.m_buffer);
+				return *this;
+			}
+
+			/**
+			 * @brief Equality comparison.
+			 * @return true if both Consumers share the same underlying buffer.
+			 */
+			inline bool operator==(const Consumer& other) const noexcept {
+				return m_buffer.get() == other.m_buffer.get();
+			}
+
+			/**
+			 * @brief Inequality comparison.
+			 * @return true if Consumers have different underlying buffers.
+			 */
+			inline bool operator!=(const Consumer& other) const noexcept {
+				return !(*this == other);
+			}
+
+			/**
+			 * @brief Gets available bytes for reading.
+			 * @return Number of bytes available from the current read position.
+			 */
+			inline std::size_t 											AvailableBytes() const noexcept override {
+				return m_buffer->AvailableBytes();
+			}
+
+			/**
+			 * @brief Clean buffer data from start to read position.
+			 * @see Size(), Empty()
+			 */
+			inline void 												Clean() noexcept override {
+				m_buffer->Clean();
+			}
+
+			/**
+			 * @brief Clear all buffer contents.
+			 * @details Removes all data from the buffer, resets head/tail/read positions,
+			 *          and restores capacity to the initial value requested in the constructor.
+			 * @see Size(), Empty()
+			 */
+			inline void 												Clear() noexcept override {
+				m_buffer->Clear();
+			}
+
+			/**
+			 * @brief Thread-safe close for further writes.
+			 * @details Marks buffer as closed, notifies all waiting threads. Subsequent writes
+			 *          are ignored. The buffer remains readable until all data is consumed.
+			 * @see FIFO::Close(), IsWritable()
+			 */
+			inline void 												Close() noexcept {
+				m_buffer->Close();
+			}
+
+			/**
+			 * @brief Drop bytes in the buffer
+			 * @param count Number of bytes to drop.
+			 * @see Read()
+			 */
+			inline ExpectedVoid<WriteError> 							Drop(const std::size_t& count) noexcept override {
+				return m_buffer->Drop(count);
+			}
 
 			/**
 			 * @brief Check if the buffer is empty.
 			 * @return true if the buffer contains no data, false otherwise.
 			 * @see Size()
 			 */
-			inline bool Empty() const noexcept { return m_buffer->Empty(); }
+			inline bool 												Empty() const noexcept override {
+				return m_buffer->Empty();
+			}
 
 			/**
-			 * @brief Clear all buffer contents.
-			 * @details Removes all data and resets positions. Affects all consumers
-			 *          sharing this buffer.
-			 * @see SharedFIFO::Clear()
+			 * @brief Check if the reader has reached end-of-file.
+			 * @return true if buffer is closed or in error state and no bytes available.
+			 * @details Returns true when the buffer has been closed or set to error
+			 *          and there are no available bytes remaining.
 			 */
-			inline void Clear() noexcept { m_buffer->Clear(); }
+			inline bool 												EoF() const noexcept override {
+				return m_buffer->EoF();
+			}
 
 			/**
-			 * @brief Non-destructive read from the buffer (blocks until data available).
-			 * @param count Number of bytes to read; 0 reads all available without blocking.
-			 * @return ExpectedData<ReadError> containing a vector with the requested bytes, or an error.
-			 * @details **Blocks** until count bytes available or buffer becomes unreadable
-			 *          (closed or error) (if count > 0). Data remains in buffer and can be
-			 *          re-read using Seek().
-			 * @see SharedFIFO::Read(), Extract(), Seek(), IsReadable()
+			 * @brief Destructive read that removes data from the buffer into an existing vector.
+			 * @param count Number of bytes to extract; 0 extracts all available.
+			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
+			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @note For base class is the same than Read
 			 */
-
-			inline ExpectedData<ReadError> Read(const std::size_t& count = 0) const { return m_buffer->Read(count); }
+			inline ExpectedVoid<ReadError> 								Extract(const std::size_t& count, DataType& outBuffer) noexcept override {
+				return m_buffer->Extract(count, outBuffer);
+			}
 
 			/**
-			 * @brief Zero-copy read that returns a view over the buffer data (blocks until data available).
-			 * @param count Number of bytes to read; 0 reads all available without blocking.
-			 * @return ExpectedSpan<ReadError> with a span over the requested bytes, or an error.
-			 * @details **Blocks** until count bytes available or buffer becomes unreadable
-			 *          (closed or error) (if count > 0). Returns a non-owning view (std::span)
-			 *          over the buffer data without copying. The span is valid until the next
-			 *          non-const operation (Write, Extract, Clear, etc.) on the FIFO.
-			 * @warning The returned span becomes invalid after any modifying operation.
-			 * @see SharedFIFO::Span(), Read(), Peek()
+			 * @brief Destructive read that removes data from the buffer into a FIFO.
+			 * @param count Number of bytes to extract; 0 extracts all available.
+			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
-			inline ExpectedSpan<ReadError> Span(const std::size_t& count = 0) const noexcept { return m_buffer->Span(count); }
-			
+			inline ExpectedVoid<Error> 									Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept {
+				return m_buffer->Extract(count, outBuffer);
+			}
+
 			/**
-			* @brief Destructive read that removes data from the buffer (blocks until data available).
-			* @param count Number of bytes to extract; 0 extracts all available without blocking.
-			* @return ExpectedData<ReadError> containing a vector with the requested bytes, or an error.
-			* @details **Blocks** until count bytes available or buffer becomes unreadable
-			*          (closed or error) (if count > 0). Removes data from buffer.
-			*          Multiple consumers share data fairly.
-			* @see SharedFIFO::Extract(), Read(), IsReadable()
-			*/
-			inline ExpectedData<ReadError> Extract(const std::size_t& count = 0) { return m_buffer->Extract(count); }
-			
+			 * @brief Read all bytes until end-of-file into an existing buffer.
+			 * @param outBuffer Vector to fill with read bytes; resized as needed.
+			 */
+			inline void													ExtractUntilEoF(DataType& outBuffer) noexcept override {
+				m_buffer->ExtractUntilEoF(outBuffer);
+			}
+
+			/**
+			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
+			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
+			 */
+			inline ExpectedVoid<Error>									ExtractUntilEoF(WriteOnly& outBuffer) noexcept override {
+				return m_buffer->ExtractUntilEoF(outBuffer);
+			}
+
 			/**
 			 * @brief Check if the buffer is readable (not in error state).
 			 * @return true if readable, false if buffer is in error state.
-			 * @details When not readable, blocked Read()/Extract() calls wake up and return
-			 *          an error. A buffer becomes unreadable via SetError().
-			 * @see SetError(), IsWritable(), EoF()
+			 * @details A buffer becomes unreadable when SetError() is called. Use in
+			 *          combination with AvailableBytes() to check if there is data
+			 *          pending to read.
+			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
 			 */
-			inline bool IsReadable() const noexcept { return m_buffer->IsReadable(); }
+			inline bool 												IsReadable() const noexcept override {
+				return m_buffer->IsReadable();
+			}
 
 			/**
 			 * @brief Check if the buffer is writable (not closed and not in error state).
 			 * @return true if writable, false if closed or in error state.
-			 * @details While a consumer cannot write, it might be useful to know
-			 *          if it can expect further data to arrive or not. A buffer becomes
-			 *          unwritable via Close() or SetError().
+			 * @details A buffer becomes unwritable when Close() or SetError() is called.
 			 * @see Close(), SetError(), IsReadable()
 			 */
-			inline bool IsWritable() const noexcept { return m_buffer->IsWritable(); }
+			inline bool 												IsWritable() const noexcept {
+				return m_buffer->IsWritable();
+			}
 
 			/**
-			 * @brief Move the read position for non-destructive reads.
-			 * @param position The offset value to apply.
-			 * @param mode Position::Absolute or Position::Relative.
-			 * @details Changes where subsequent Read() operations start. Position is
-			 *          clamped to valid range. Does not affect stored data.
-			 * @see SharedFIFO::Seek(), Read()
+			 * @brief Check if the buffer is in an error state.
+			 * @return true if the buffer is in error state, false otherwise.
 			 */
-			inline void Seek(const std::size_t& position, const Position& mode) const { m_buffer->Seek(position, mode); }
+			inline bool 												HasError() const noexcept {
+				return m_buffer->HasError();
+			}
+
+			/**
+			 * @brief Read bytes into an existing buffer.
+			 * @param count Number of bytes to read; 0 reads all available from read position.
+			 * @param outBuffer Vector to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 */
+			inline ExpectedVoid<ReadError> 								Read(const std::size_t& count, DataType& outBuffer) const noexcept override {
+				return m_buffer->Read(count, outBuffer);
+			}
+
+			/**
+			 * @brief Read bytes into a WriteOnly buffer.
+			 * @param count Number of bytes to read; 0 reads all available from read position.
+			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
+			 */
+			inline ExpectedVoid<Error> 									Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
+				return m_buffer->Read(count, outBuffer);
+			}
+
+			/**
+			 * @brief Read all bytes until end-of-file into an existing buffer.
+			 * @param outBuffer Vector to fill with read bytes; resized as needed.
+			 */
+			inline void													ReadUntilEoF(DataType& outBuffer) const noexcept override {
+				m_buffer->ReadUntilEoF(outBuffer);
+			}
+
+			/**
+			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
+			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
+			 */
+			inline ExpectedVoid<Error>									ReadUntilEoF(WriteOnly& outBuffer) const noexcept override {
+				return m_buffer->ReadUntilEoF(outBuffer);
+			}
 
 			/**
 			 * @brief Non-destructive peek at buffer data without advancing read position.
@@ -192,106 +292,66 @@ namespace StormByte::Buffer {
 			 *            if `count` is greater than the number of available bytes, a
 			 *            `ReadError` is returned.
 			 *
-			 * @see SharedFIFO::Peek(), Read()
+			 * @see Read(), Seek()
 			 */
-			inline ExpectedData<ReadError> Peek(const std::size_t& count) const noexcept { return m_buffer->Peek(count); }
+			inline ExpectedVoid<ReadError> 								Peek(const std::size_t& count, DataType& outBuffer) const noexcept override {
+				return m_buffer->Peek(count, outBuffer);
+			}
 
 			/**
-			 * @brief Removes count bytes from the read position.
-			 * @param count Number of bytes to skip; 0 is a noop.
-			 * @details Advances the read position by count bytes without reading data.
-			 *          Clamped to AvailableBytes(). Does not affect stored data.
-			 * @see SharedFIFO::Skip(), Read()
+			 * @brief Non-destructive peek at buffer data without advancing read position.
+			 * @param count Number of bytes to peek; 0 peeks all available from read position.
+			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @details Similar to Read(), but does not advance the read position.
+			 *          Allows inspecting upcoming data without consuming it.
+			 *
+			 *          Semantics:
+			 *          - If `count == 0`: the call returns all available bytes. If no
+			 *            bytes are available, a `ReadError` is returned.
+			 *          - If `count > 0`: the call returns exactly `count` bytes when
+			 *            that many bytes are available. If zero bytes are available, or
+			 *            if `count` is greater than the number of available bytes, a
+			 *            `ReadError` is returned.
+			 *
+			 * @see Read(), Seek()
 			 */
-			inline void Skip(const std::size_t& count) { m_buffer->Skip(count); }
+			inline ExpectedVoid<Error> 									Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
+				return m_buffer->Peek(count, outBuffer);
+			}
 
 			/**
-			 * @brief Check if the reader has reached end-of-file.
-			 * @return true if buffer is unreadable and no bytes available, false otherwise.
-			 * @details Returns true when IsReadable() is false AND AvailableBytes() == 0,
-			 *          indicating no more data can be read from this buffer.
-			 * @see IsReadable(), IsWritable(), AvailableBytes()
+			 * @brief Move the read position for non-destructive reads.
+			 * @param position The offset value to apply.
+			 * @param mode Unused for base class; included for API consistency.
+			 * @details Changes where subsequent Read() operations will start reading from.
+			 *          Position is clamped to [0, Size()]. Does not affect stored data.
+			 * @see Read(), Position
+			 * If Position is set to Absolute and offset is negative the operation is noop
 			 */
-			inline bool EoF() const noexcept { return m_buffer->EoF(); }
+			inline void 												Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+				m_buffer->Seek(offset, mode);
+			}
 
 			/**
-			 * @brief Read all available data until end-of-file (non-destructive).
-			 *
-			 * This method repeatedly performs non-destructive `Read()` operations and
-			 * accumulates the returned bytes into a fresh `Buffer::FIFO` which is
-			 * returned by value. The call will continue until the underlying buffer
-			 * reaches end-of-file (see `Consumer::EoF()`) or a read error occurs.
-			 *
-			 * Behavioural guarantees:
-			 * - Non-destructive (data preserved): the bytes stored in the underlying
-			 *   buffer are NOT removed by this call. The consumer's read position,
-			 *   however, is advanced to the end of the stream as the data is read.
-			 *   In other words, `Consumer::Size()` (total stored bytes) will remain
-			 *   unchanged but subsequent non-destructive reads will start from the
-			 *   end-of-stream (so `AvailableBytes()` may report 0 after completion).
-			 * - Blocking: this method may block internally while waiting for data from
-			 *   producers. It will return when the buffer is closed and all available
-			 *   data has been read, or when a read error is observed.
-			 * - Partial results on error: if a read error occurs, the returned `FIFO`
-			 *   contains any bytes successfully read before the error was detected.
-			 *
-			 * Use this when you want a snapshot of the full stream without consuming
-			 * the data from the shared buffer.
-			 *
-			 * @return A `Buffer::FIFO` containing the concatenated bytes read until EOF
-			 *         (or until an error occurred).
+			 * @brief Get the current number of bytes stored in the buffer.
+			 * @return The total number of bytes available for reading.
+			 * @see Capacity(), Empty()
 			 */
-			Buffer::FIFO ReadUntilEoF();
+			inline std::size_t 											Size() const noexcept override {
+				return m_buffer->Size();
+			}
+
+		private:
+			std::shared_ptr<SharedFIFO> m_buffer;						///< Underlying shared FIFO buffer.
 
 			/**
-			 * @brief Extract all available data until end-of-file (destructive).
-			 *
-			 * This method repeatedly performs destructive `Extract()` operations and
-			 * accumulates the returned bytes into a fresh `Buffer::FIFO` which is
-			 * returned by value. The call will continue until the underlying buffer
-			 * reaches end-of-file (see `Consumer::EoF()`) or a read error occurs.
-			 *
-			 * Behavioural guarantees:
-			 * - Destructive: bytes returned by this call are removed from the
-			 *   underlying buffer. After successful completion the original
-			 *   `Consumer::Size()` will reflect that the extracted bytes have been
-			 *   removed (typically zero if the buffer was fully consumed). The
-			 *   consumer's read position will be adjusted accordingly (typically to
-			 *   the start/end consistent with an empty buffer).
-			 * - Blocking: this method may block internally while waiting for data from
-			 *   producers. It will return when the buffer is closed and all available
-			 *   data has been extracted, or when a read error is observed.
-			 * - Partial results on error: if a read error occurs, the returned `FIFO`
-			 *   contains any bytes successfully extracted before the error was detected.
-			 *
-			 * Use this when you want to consume the entire stream and obtain its
-			 * contents in a single contiguous `FIFO` instance.
-			 *
-			 * @return A `Buffer::FIFO` containing the concatenated bytes extracted
-			 *         until EOF (or until an error occurred).
+			 * @brief Construct a Consumer with an existing SharedFIFO buffer.
+			 * @param buffer Shared pointer to the SharedFIFO buffer to consume from.
+			 * @details Private constructor only accessible by Producer (friend class).
+			 *          Creates a new Consumer instance that shares the given buffer.
+			 *          Consumers cannot be created directly; use Producer::Consumer()
+			 *          to obtain a Consumer instance.
 			 */
-			Buffer::FIFO ExtractUntilEoF();
-
-			/**
-			 * @brief Clean buffer data (from start to readposition).
-			 * @details Removes all data from the start of the buffer up to the current
-			 *          read position. Adjusts internal offsets accordingly.
-			 * @see SharedFIFO::Clean()
-			 */
-			inline void Clean() noexcept { m_buffer->Clean(); }
-
-        private:
-            /** @brief Shared pointer to the underlying thread-safe FIFO buffer. */
-            std::shared_ptr<SharedFIFO> m_buffer { std::make_shared<SharedFIFO>() };
-
-			/**
-             * @brief Construct a Consumer with an existing SharedFIFO buffer.
-             * @param buffer Shared pointer to the SharedFIFO buffer to consume from.
-             * @details Private constructor only accessible by Producer (friend class).
-             *          Creates a new Consumer instance that shares the given buffer.
-             *          Consumers cannot be created directly; use Producer::Consumer()
-             *          to obtain a Consumer instance.
-             */
-            inline Consumer(std::shared_ptr<SharedFIFO> buffer): m_buffer(std::move(buffer)) {}
-    };
+			inline Consumer(std::shared_ptr<SharedFIFO> buffer): m_buffer(buffer) {}
+	};
 }
