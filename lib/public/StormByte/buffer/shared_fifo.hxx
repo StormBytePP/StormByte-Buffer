@@ -71,6 +71,38 @@ namespace StormByte::Buffer {
 			inline SharedFIFO(DataType&& data) noexcept: FIFO(std::move(data)) {}
 
 			/**
+			 * @brief Construct FIFO from an input range.
+			 * @tparam R Input range whose elements are convertible to `std::byte`.
+			 * @param r The input range to copy from.
+			 * @note This overload is constrained so that it does not participate when
+			 *       the argument type is the library `DataType` to avoid ambiguity
+			 *       with the existing `DataType` overloads.
+			 */
+			template<std::ranges::input_range R>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
+				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
+				(!std::same_as<std::remove_cvref_t<R>, DataType>)
+			inline SharedFIFO(const R& r) noexcept: FIFO(r), m_closed(false),
+			m_error(false), m_error_message() {}
+
+			/**
+			 * @brief Construct FIFO from an rvalue range (moves when DataType rvalue).
+			 * @tparam Rr Input range type; if it's `DataType` this will be moved into
+			 *            the internal buffer, otherwise elements are converted.
+			 */
+			template<std::ranges::input_range Rr>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
+				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			inline SharedFIFO(Rr&& r) noexcept: FIFO(std::forward<Rr>(r)), m_closed(false),
+			m_error(false), m_error_message() {}
+
+			/**
+			 * @brief Construct FIFO from a string view (does not include terminating NUL).
+		 	*/
+			inline SharedFIFO(std::string_view sv) noexcept: FIFO(sv), m_closed(false),
+			m_error(false), m_error_message() {}
+
+			/**
 			 * @brief Construct a SharedFIFO by copying or moving from a FIFO.
 			 * @param other Source FIFO to copy or move from.
 			 */
@@ -279,6 +311,7 @@ namespace StormByte::Buffer {
 		protected:
 			bool m_closed {false};    							///< Whether the SharedFIFO is closed for further writes.
 			bool m_error {false};    							///< Whether the SharedFIFO is in an error state.
+			std::string m_error_message;    					///< Optional error message associated with the error state.
 
 		private:
 			mutable std::mutex m_mutex;							///< Mutex protecting internal state.
