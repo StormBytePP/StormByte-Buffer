@@ -140,7 +140,7 @@ namespace StormByte::Buffer {
 			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see Write(const std::string&), IsClosed()
+			 * @see IsClosed()
 			 */
 			inline ExpectedVoid<WriteError> 							Write(const std::size_t& count, const DataType& data) noexcept override {
 				return m_buffer->Write(count, data);
@@ -153,7 +153,7 @@ namespace StormByte::Buffer {
 			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see Write(const std::string&), IsClosed()
+			 * @see IsClosed()
 			 */
 			inline ExpectedVoid<WriteError> 							Write(const std::size_t& count, DataType&& data) noexcept override {
 				return m_buffer->Write(count, std::move(data));
@@ -166,7 +166,7 @@ namespace StormByte::Buffer {
 			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see Write(const std::string&), IsClosed()
+			 * @see IsClosed()
 			 */
 			inline ExpectedVoid<Error> 									Write(const std::size_t& count, const ReadOnly& data) noexcept override {
 				return m_buffer->Write(count, data);
@@ -179,22 +179,10 @@ namespace StormByte::Buffer {
 			 * @return ExpectedVoid<WriteError> indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see Write(const std::string&), IsClosed()
+			 * @see IsClosed()
 			 */
 			inline ExpectedVoid<Error> 									Write(const std::size_t& count, ReadOnly&& data) noexcept override {
 				return m_buffer->Write(count, std::move(data));
-			}
-
-			/**
-			 * @brief Write a string to the buffer.
-			 * @param data String to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see Write(const std::size_t&, const DataType&), IsClosed()
-			 */
-			inline ExpectedVoid<WriteError>								Write(const std::string& data) noexcept override {
-				return m_buffer->Write(data);
 			}
 
 			using WriteOnly::Write;
