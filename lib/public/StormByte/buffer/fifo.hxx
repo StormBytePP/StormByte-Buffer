@@ -57,6 +57,46 @@ namespace StormByte::Buffer {
 			inline FIFO(DataType&& data) noexcept: ReadWrite(), m_buffer(std::move(data)), m_position_offset(0) {}
 
 			/**
+			 * @brief Construct FIFO from an input range.
+			 * @tparam R Input range whose elements are convertible to `std::byte`.
+			 * @param r The input range to copy from.
+			 * @note This overload is constrained so that it does not participate when
+			 *       the argument type is the library `DataType` to avoid ambiguity
+			 *       with the existing `DataType` overloads.
+			 */
+			template<std::ranges::input_range R>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
+				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
+				(!std::same_as<std::remove_cvref_t<R>, DataType>)
+			inline FIFO(const R& r) noexcept: ReadWrite(), m_buffer(), m_position_offset(0) {
+				m_buffer = WriteOnly::DataConvert(r);
+			}
+
+			/**
+			 * @brief Construct FIFO from an rvalue range (moves when DataType rvalue).
+			 * @tparam Rr Input range type; if it's `DataType` this will be moved into
+			 *            the internal buffer, otherwise elements are converted.
+			 */
+			template<std::ranges::input_range Rr>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
+				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			inline FIFO(Rr&& r) noexcept: ReadWrite(), m_buffer(), m_position_offset(0) {
+				m_buffer = WriteOnly::DataConvert(std::forward<Rr>(r));
+			}
+
+			/**
+			 * @brief Construct FIFO from a string view (does not include terminating NUL).
+		 	*/
+			inline FIFO(std::string_view sv) noexcept: ReadWrite(), m_buffer(), m_position_offset(0) {
+				m_buffer = WriteOnly::DataConvert(sv);
+			}
+
+			/**
+			 * @brief Construct FIFO from a C string pointer (null-terminated).
+		 	*/
+			inline FIFO(const char* s) noexcept: FIFO(s ? std::string_view(s) : std::string_view()) {}
+
+			/**
 			 * 	@brief Copy construct, preserving buffer state and initial capacity.
 			 *  @param other Source FIFO to copy from.
 			 */

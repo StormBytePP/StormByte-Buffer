@@ -312,6 +312,66 @@ namespace StormByte::Buffer {
 	 *  for reading.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteOnly: virtual public Generic {
+		protected:
+			/**
+			 * @brief Convert various source types into the library `DataType`.
+			 *
+			 * Overload forms:
+			 * - `DataType DataConvert(const Src&)` for copying/converting from lvalue ranges
+			 * - `DataType DataConvert(Src&&)` for consuming rvalue ranges and moving when
+			 *   the source type is already `DataType`.
+			 */
+			template<std::ranges::input_range Src>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
+				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			static DataType DataConvert(const Src& src) noexcept {
+				DataType out;
+				if constexpr (requires { std::ranges::size(src); }) {
+					auto s = std::ranges::size(src);
+					if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
+				}
+				std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
+							[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+				return out;
+			}
+
+			template<std::ranges::input_range Src>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
+				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			static DataType DataConvert(Src&& src) noexcept {
+				using Dec = std::remove_cvref_t<Src>;
+				if constexpr (std::same_as<Dec, DataType>) {
+					return std::move(src);
+				} else {
+					DataType out;
+					if constexpr (requires { std::ranges::size(src); }) {
+						auto s = std::ranges::size(src);
+						if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
+					}
+					std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
+							   [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+					return out;
+				}
+			}
+
+			/**
+			 * @brief Convert a `std::string_view` to `DataType`.
+			 */
+			static DataType DataConvert(std::string_view sv) noexcept {
+				DataType out;
+				if (!sv.empty()) out.reserve(static_cast<typename DataType::size_type>(sv.size()));
+				std::transform(sv.begin(), sv.end(), std::back_inserter(out), [] (char c) noexcept { return static_cast<std::byte>(c); });
+				return out;
+			}
+
+			/**
+			 * @brief Convert a null-terminated C string to `DataType`.
+			 */
+			static DataType DataConvert(const char* s) noexcept {
+				if (!s) return DataType{};
+				return DataConvert(std::string_view(s));
+			}
+			
 		public:
 			/**
 			 * 	@brief Construct WriteOnly.
