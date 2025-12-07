@@ -153,12 +153,31 @@ namespace StormByte::Buffer {
 			inline virtual ExpectedVoid<ReadError> 							Extract(const std::size_t& count, DataType& outBuffer) noexcept = 0;
 
 			/**
+			 * @brief Destructive read that removes all data from the buffer into an existing vector.
+			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
+			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @note For base class is the same than Read
+			 */
+			inline ExpectedVoid<ReadError> 									Extract(DataType& outBuffer) noexcept {
+				return Extract(0, outBuffer);
+			}
+
+			/**
 			 * @brief Destructive read that removes data from the buffer into a FIFO.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
 			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
 			inline virtual ExpectedVoid<Error> 								Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept = 0;
+
+			/**
+			 * @brief Destructive read that removes all data from the buffer into a FIFO.
+			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
+			 */
+			inline ExpectedVoid<Error> 										Extract(WriteOnly& outBuffer) noexcept {
+				return Extract(0, outBuffer);
+			}
 
 			/**
 			 * @brief Read all bytes until end-of-file into an existing buffer.
@@ -226,12 +245,30 @@ namespace StormByte::Buffer {
 			virtual ExpectedVoid<ReadError> 								Read(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
 
 			/**
+			 * @brief Read bytes into an existing buffer.
+			 * @param outBuffer Vector to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 */
+			inline ExpectedVoid<ReadError> 									Read(DataType& outBuffer) const noexcept {
+				return Read(0, outBuffer);
+			}
+
+			/**
 			 * @brief Read bytes into a WriteOnly buffer.
 			 * @param count Number of bytes to read; 0 reads all available from read position.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
 			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
 			virtual ExpectedVoid<Error> 									Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
+
+			/**
+			 * @brief Read bytes into a WriteOnly buffer.
+			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
+			 * @return ExpectedVoid<Error> indicating success or failure.
+			 */
+			inline ExpectedVoid<Error> 										Read(WriteOnly& outBuffer) const noexcept {
+				return Read(0, outBuffer);
+			}
 
 			/**
 			 * @brief Read all bytes until end-of-file into an existing buffer.

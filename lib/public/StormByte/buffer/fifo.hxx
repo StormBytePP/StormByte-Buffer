@@ -181,6 +181,9 @@ namespace StormByte::Buffer {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Extract);
 			}
 
+			/** Expose the rest of overloads */
+			using ReadOnly::Extract;
+
 			/**
 			 * @brief Read all bytes until end-of-file into an existing buffer.
 			 * @param outBuffer Vector to fill with read bytes; resized as needed.
@@ -297,6 +300,9 @@ namespace StormByte::Buffer {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 			}
 
+			/** Expose the rest of overloads */
+			using ReadOnly::Read;
+
 			/**
 			 * @brief Read all bytes until end-of-file into an existing buffer.
 			 * @param outBuffer Vector to fill with read bytes; resized as needed.
@@ -386,6 +392,7 @@ namespace StormByte::Buffer {
 				return WriteInternal(count, std::move(data));
 			}
 
+			/** Expose the rest of overloads */
 			using WriteOnly::Write;
 
 		protected:
