@@ -147,6 +147,18 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Write all bytes from a vector to the buffer.
+			 * @param data Byte vector to append to the WriteOnly.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Appends data to the buffer, growing capacity automatically if needed.
+			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
+			 * @see IsClosed()
+			 */
+			inline ExpectedVoid<WriteError> 							Write(const DataType& data) noexcept {
+				return Write(data.size(), data);
+			}
+
+			/**
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
@@ -157,6 +169,128 @@ namespace StormByte::Buffer {
 			 */
 			inline ExpectedVoid<WriteError> 							Write(const std::size_t& count, DataType&& data) noexcept override {
 				return m_buffer->Write(count, std::move(data));
+			}
+
+			/**
+			 * @brief Move all bytes from a vector to the buffer.
+			 * @param data Byte vector to append to the WriteOnly.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Appends data to the buffer, growing capacity automatically if needed.
+			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
+			 * @see IsClosed()
+			 */
+			inline ExpectedVoid<WriteError> 							Write(DataType&& data) noexcept {
+				return Write(data.size(), std::move(data));
+			}
+
+			/**
+			 * @brief Write all elements from an input range to the buffer.
+			 * @tparam R An input range whose element type is convertible to `std::byte`.
+			 * @param r The input range to write from. Elements are converted
+			 *          element-wise using `static_cast<std::byte>`.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details The entire range is converted into a `DataType` (the
+			 *          library's `std::vector<std::byte>`) and then forwarded to the
+			 *          canonical `Write(count, DataType)` entry point.
+			 */
+			template<std::ranges::input_range R>
+				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
+				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(const R& r) noexcept {
+				return m_buffer->Write(r);
+			}
+
+			/**
+			 * @brief Write up-to `count` elements from an input range.
+			 * @tparam Rw An input range whose value_type is convertible to `std::byte`.
+			 * @param count Maximum number of elements to write; pass `0` to write
+			 *              the entire range.
+			 * @param r The input range to read from.
+			 * @return ExpectedVoid<WriteError> with the number of bytes actually written
+			 *         (may be less than `count` if the range is shorter).
+			 * @details Elements are copied and converted into an internal `DataType`
+			 *          buffer before invoking the canonical `Write(count, DataType)`.
+			 */
+			template<std::ranges::input_range Rw>
+				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rw>>>) &&
+				requires(std::ranges::range_value_t<Rw> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(const std::size_t& count, const Rw& r) noexcept {
+				return m_buffer->Write(count, r);
+			}
+
+			/**
+			 * @brief Write up-to `count` elements from an rvalue range.
+			 * @tparam Rrw An input range type that may be an rvalue `DataType`.
+			 * @param count Maximum number of elements to write; pass `0` to write
+			 *              the entire range.
+			 * @param r The rvalue range to consume. If `r` is a `DataType` rvalue the
+			 *          implementation will move it into the write fast-path and trim
+			 *          it to `count` if necessary. Otherwise elements are converted
+			 *          and copied into a temporary `DataType`.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 */
+			template<std::ranges::input_range Rrw>
+				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rrw>>>) &&
+				requires(std::ranges::range_value_t<Rrw> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(const std::size_t& count, Rrw&& r) noexcept {
+				return m_buffer->Write(count, std::forward<Rrw>(r));
+			}
+
+			/**
+			 * @brief Write from an rvalue input range.
+			 * @tparam Rr Input range type; this overload prefers moving when the
+			 *            range type is the library `DataType` (i.e. `std::vector<std::byte>`).
+			 * @param r The rvalue range to write from. If `r` is a `DataType` rvalue
+			 *          it will be forwarded into the move-write fast-path; otherwise
+			 *          elements are converted and copied into a temporary `DataType`.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 */
+			template<std::ranges::input_range Rr>
+				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
+				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(Rr&& r) noexcept {
+				return m_buffer->Write(std::forward<Rr>(r));
+			}
+
+			/**
+			 * @brief Write from iterator pair whose value_type is convertible to `std::byte`.
+			 */
+			/**
+			 * @brief Write all elements from an iterator pair.
+			 * @tparam I Input iterator type whose `value_type` is convertible to `std::byte`.
+			 * @tparam S Corresponding sentinel type for `I`.
+			 * @param first Iterator to the beginning of the sequence.
+			 * @param last  Sentinel/iterator marking the end of the sequence.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Elements are converted via `static_cast<std::byte>` into an
+			 *          internal `DataType` buffer which is then forwarded to the
+			 *          canonical `Write(count, DataType)`.
+			 */
+			template<std::input_iterator I, std::sentinel_for<I> S>
+				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I>>>) &&
+				requires(std::iter_value_t<I> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(I first, S last) noexcept {
+				return m_buffer->Write(first, last);
+			}
+
+			/**
+			 * @brief Write up-to `count` bytes from an iterator pair (0 => all available).
+			 */
+			/**
+			 * @brief Write up-to `count` elements from an iterator pair.
+			 * @tparam I2 Input iterator type whose `value_type` is convertible to `std::byte`.
+			 * @tparam S2 Corresponding sentinel type for `I2`.
+			 * @param count Maximum number of elements to write; pass `0` to write all.
+			 * @param first Iterator to the beginning of the sequence.
+			 * @param last  Sentinel/iterator marking the end of the sequence.
+			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @details Iterates until `count` elements are consumed or `first == last`.
+			 */
+			template<std::input_iterator I2, std::sentinel_for<I2> S2>
+				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I2>>>) &&
+				requires(std::iter_value_t<I2> v) { static_cast<std::byte>(v); }
+			ExpectedVoid<WriteError> 									Write(const std::size_t& count, I2 first, S2 last) noexcept {
+				return m_buffer->Write(count, first, last);
 			}
 
 			/**
@@ -184,8 +318,6 @@ namespace StormByte::Buffer {
 			inline ExpectedVoid<Error> 									Write(const std::size_t& count, ReadOnly&& data) noexcept override {
 				return m_buffer->Write(count, std::move(data));
 			}
-
-			using WriteOnly::Write;
 			
 			/**
 			 * @brief Create a Consumer for reading from this Producer's buffer.
