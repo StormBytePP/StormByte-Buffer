@@ -30,17 +30,29 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Construct Generic.
 			 */
-			Generic() noexcept												= default;
+			Generic() noexcept 												= default;
+
+			/**
+			 * 	@brief Construct Generic.
+			 *  @param data Initial byte vector to populate the Generic.
+			 */
+			inline Generic(const DataType& data) noexcept: m_buffer(data) {}
+
+			/**
+			 * 	@brief Construct Generic with initial data using move semantics.
+			 *  @param data Initial byte vector to move into the Generic.
+			 */
+			inline Generic(DataType&& data) noexcept: m_buffer(std::move(data)) {}
 
 			/**
 			 * 	@brief Copy construct deleted
 			 */
-			Generic(const Generic&) noexcept 								= delete;
+			Generic(const Generic&) noexcept 								= default;
 			
 			/**
 			 * 	@brief Move construct deleted
 			 */
-			Generic(Generic&&) noexcept										= delete;
+			Generic(Generic&&) noexcept										= default;
 
 			/**
 			 * 	@brief Virtual destructor.
@@ -50,12 +62,74 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Copy assign deleted
 			 */
-			Generic& operator=(const Generic& other) 						= delete;
+			Generic& operator=(const Generic& other) 						= default;
 		
 			/**
 			 * 	@brief Move assign deleted
 			 */
-			Generic& operator=(Generic&&) noexcept							= delete;
+			Generic& operator=(Generic&&) noexcept							= default;
+
+		protected:
+			DataType m_buffer;												///< Internal buffer storage
+
+			/**
+			 * @brief Convert various source types into the library `DataType`.
+			 *
+			 * Overload forms:
+			 * - `DataType DataConvert(const Src&)` for copying/converting from lvalue ranges
+			 * - `DataType DataConvert(Src&&)` for consuming rvalue ranges and moving when
+			 *   the source type is already `DataType`.
+			 */
+			template<std::ranges::input_range Src>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
+				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			static DataType DataConvert(const Src& src) noexcept {
+				DataType out;
+				if constexpr (requires { std::ranges::size(src); }) {
+					auto s = std::ranges::size(src);
+					if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
+				}
+				std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
+							[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+				return out;
+			}
+
+			template<std::ranges::input_range Src>
+			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
+				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			static DataType DataConvert(Src&& src) noexcept {
+				using Dec = std::remove_cvref_t<Src>;
+				if constexpr (std::same_as<Dec, DataType>) {
+					return std::move(src);
+				} else {
+					DataType out;
+					if constexpr (requires { std::ranges::size(src); }) {
+						auto s = std::ranges::size(src);
+						if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
+					}
+					std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
+							   [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+					return out;
+				}
+			}
+
+			/**
+			 * @brief Convert a `std::string_view` to `DataType`.
+			 */
+			static DataType DataConvert(std::string_view sv) noexcept {
+				DataType out;
+				if (!sv.empty()) out.reserve(static_cast<typename DataType::size_type>(sv.size()));
+				std::transform(sv.begin(), sv.end(), std::back_inserter(out), [] (char c) noexcept { return static_cast<std::byte>(c); });
+				return out;
+			}
+
+			/**
+			 * @brief Convert a null-terminated C string to `DataType`.
+			 */
+			static DataType DataConvert(const char* s) noexcept {
+				if (!s) return DataType{};
+				return DataConvert(std::string_view(s));
+			}
 	};
 
 	class WriteOnly; // Forward declaration
@@ -77,14 +151,26 @@ namespace StormByte::Buffer {
 			inline ReadOnly() noexcept: Generic() {};
 
 			/**
+			 * 	@brief Construct ReadOnly.
+			 *  @param data Initial byte vector to populate the ReadOnly.
+			 */
+			inline ReadOnly(const DataType& data) noexcept: Generic(data) {}
+
+			/**
+			 * 	@brief Construct ReadOnly with initial data using move semantics.
+			 *  @param data Initial byte vector to move into the ReadOnly.
+			 */
+			inline ReadOnly(DataType&& data) noexcept: Generic(std::move(data)) {}
+
+			/**
 			 * 	@brief Copy construct deleted
 			 */
-			ReadOnly(const ReadOnly&) noexcept 								= delete;
+			ReadOnly(const ReadOnly&) noexcept 								= default;
 			
 			/**
 			 * 	@brief Move construct deleted
 			 */
-			ReadOnly(ReadOnly&&) noexcept									= delete;
+			ReadOnly(ReadOnly&&) noexcept									= default;
 
 			/**
 			 * 	@brief Virtual destructor.
@@ -94,12 +180,12 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Copy assign deleted
 			 */
-			ReadOnly& operator=(const ReadOnly&) 							= delete;
+			ReadOnly& operator=(const ReadOnly&) 							= default;
 		
 			/**
 			 * 	@brief Move assign deleted
 			 */
-			ReadOnly& operator=(ReadOnly&&) noexcept						= delete;
+			ReadOnly& operator=(ReadOnly&&) noexcept						= default;
 
 			/**
 			 * @brief Gets available bytes for reading.
@@ -126,7 +212,7 @@ namespace StormByte::Buffer {
 			 * @return Constant reference to the internal DataType buffer.
 			 */
 			virtual const DataType& 										Data() const noexcept {
-				// Default is a noop
+				return m_buffer;
 			}
 
 			/**
@@ -320,66 +406,6 @@ namespace StormByte::Buffer {
 	 *  for reading.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteOnly: virtual public Generic {
-		protected:
-			/**
-			 * @brief Convert various source types into the library `DataType`.
-			 *
-			 * Overload forms:
-			 * - `DataType DataConvert(const Src&)` for copying/converting from lvalue ranges
-			 * - `DataType DataConvert(Src&&)` for consuming rvalue ranges and moving when
-			 *   the source type is already `DataType`.
-			 */
-			template<std::ranges::input_range Src>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
-				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
-			static DataType DataConvert(const Src& src) noexcept {
-				DataType out;
-				if constexpr (requires { std::ranges::size(src); }) {
-					auto s = std::ranges::size(src);
-					if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
-				}
-				std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
-							[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
-				return out;
-			}
-
-			template<std::ranges::input_range Src>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
-				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
-			static DataType DataConvert(Src&& src) noexcept {
-				using Dec = std::remove_cvref_t<Src>;
-				if constexpr (std::same_as<Dec, DataType>) {
-					return std::move(src);
-				} else {
-					DataType out;
-					if constexpr (requires { std::ranges::size(src); }) {
-						auto s = std::ranges::size(src);
-						if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
-					}
-					std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
-							   [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
-					return out;
-				}
-			}
-
-			/**
-			 * @brief Convert a `std::string_view` to `DataType`.
-			 */
-			static DataType DataConvert(std::string_view sv) noexcept {
-				DataType out;
-				if (!sv.empty()) out.reserve(static_cast<typename DataType::size_type>(sv.size()));
-				std::transform(sv.begin(), sv.end(), std::back_inserter(out), [] (char c) noexcept { return static_cast<std::byte>(c); });
-				return out;
-			}
-
-			/**
-			 * @brief Convert a null-terminated C string to `DataType`.
-			 */
-			static DataType DataConvert(const char* s) noexcept {
-				if (!s) return DataType{};
-				return DataConvert(std::string_view(s));
-			}
-			
 		public:
 			/**
 			 * 	@brief Construct WriteOnly.
@@ -387,14 +413,26 @@ namespace StormByte::Buffer {
 			inline WriteOnly() noexcept: Generic() {};
 
 			/**
+			 * 	@brief Construct WriteOnly.
+			 *  @param data Initial byte vector to populate the WriteOnly.
+			 */
+			inline WriteOnly(const DataType& data) noexcept: Generic(data) {}
+
+			/**
+			 * 	@brief Construct WriteOnly with initial data using move semantics.
+			 *  @param data Initial byte vector to move into the WriteOnly.
+			 */
+			inline WriteOnly(DataType&& data) noexcept: Generic(std::move(data)) {}
+
+			/**
 			 * 	@brief Copy construct deleted
 			 */
-			WriteOnly(const WriteOnly&) 									= delete;
+			WriteOnly(const WriteOnly&) 									= default;
 			
 			/**
 			 * 	@brief Move construct deleted
 			 */
-			WriteOnly(WriteOnly&&) noexcept									= delete;
+			WriteOnly(WriteOnly&&) noexcept									= default;
 
 			/**
 			 * 	@brief Virtual destructor.
@@ -404,12 +442,12 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Copy assign deleted
 			 */
-			WriteOnly& operator=(const WriteOnly&) 							= delete;
+			WriteOnly& operator=(const WriteOnly&) 							= default;
 		
 			/**
 			 * 	@brief Move assign deleted
 			 */
-			WriteOnly& operator=(WriteOnly&&) noexcept						= delete;
+			WriteOnly& operator=(WriteOnly&&) noexcept						= default;
 
 			/**
 			 * @brief Check if the buffer is writable.
@@ -732,14 +770,26 @@ namespace StormByte::Buffer {
 			inline ReadWrite() noexcept: Generic() {};
 
 			/**
+			 * 	@brief Construct ReadWrite.
+			 *  @param data Initial byte vector to populate the ReadWrite.
+			 */
+			inline ReadWrite(const DataType& data) noexcept: Generic(data) {}
+
+			/**
+			 * 	@brief Construct ReadWrite with initial data using move semantics.
+			 *  @param data Initial byte vector to move into the ReadWrite.
+			 */
+			inline ReadWrite(DataType&& data) noexcept: Generic(std::move(data)) {}
+
+			/**
 			 * 	@brief Copy construct deleted
 			 */
-			ReadWrite(const ReadWrite& other) noexcept 						= delete;
+			ReadWrite(const ReadWrite& other) noexcept 						= default;
 			
 			/**
 			 * 	@brief Move construct deleted
 			 */
-			ReadWrite(ReadWrite&& other) noexcept							= delete;
+			ReadWrite(ReadWrite&& other) noexcept							= default;
 
 			/**
 			 * 	@brief Virtual destructor.
@@ -749,11 +799,11 @@ namespace StormByte::Buffer {
 			/**
 			 * 	@brief Copy assign deleted
 			 */
-			ReadWrite& operator=(const ReadWrite& other) 					= delete;
+			ReadWrite& operator=(const ReadWrite& other) 					= default;
 		
 			/**
 			 * 	@brief Move assign deleted
 			 */
-			ReadWrite& operator=(ReadWrite&& other) noexcept				= delete;
+			ReadWrite& operator=(ReadWrite&& other) noexcept				= default;
 	};
 }
