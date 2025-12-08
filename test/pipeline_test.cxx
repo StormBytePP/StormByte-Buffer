@@ -55,7 +55,7 @@ int test_pipeline_empty() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("empty pipeline has data", res.has_value());
+	ASSERT_TRUE("empty pipeline has data", res);
 	ASSERT_EQUAL("empty pipeline content", StormByte::String::FromByteVector(data), std::string("TEST"));
 	
 	RETURN_TEST("test_pipeline_empty", 0);
@@ -69,7 +69,7 @@ int test_pipeline_single_stage() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-				if (res.has_value() && !data.empty()) {
+				if (res && !data.empty()) {
 					std::string str = StormByte::String::FromByteVector(data);
 					for (auto& c : str) c = std::toupper(c);
 					(void)out.Write(str);
@@ -88,7 +88,7 @@ int test_pipeline_single_stage() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("single stage has data", res.has_value());
+	ASSERT_TRUE("single stage has data", res);
 	ASSERT_EQUAL("single stage uppercase", StormByte::String::FromByteVector(data), std::string("HELLO WORLD"));
 	
 	RETURN_TEST("test_pipeline_single_stage", 0);
@@ -102,7 +102,7 @@ int test_pipeline_two_stages() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				std::string str = StormByte::String::FromByteVector(data);
 				for (auto& c : str) c = std::toupper(c);
 				(void)out.Write(str);
@@ -116,7 +116,7 @@ int test_pipeline_two_stages() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-				if (res.has_value() && !data.empty()) {
+				if (res && !data.empty()) {
 					std::string str = StormByte::String::FromByteVector(data);
 					std::replace(str.begin(), str.end(), ' ', '_');
 					(void)out.Write(str);
@@ -135,7 +135,7 @@ int test_pipeline_two_stages() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("two stages has data", res.has_value());
+	ASSERT_TRUE("two stages has data", res);
 	ASSERT_EQUAL("two stages transformation", StormByte::String::FromByteVector(data), std::string("HELLO_WORLD_TEST"));
 	
 	RETURN_TEST("test_pipeline_two_stages", 0);
@@ -149,7 +149,7 @@ int test_pipeline_three_stages() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				std::string str = StormByte::String::FromByteVector(data);
 				for (auto& c : str) c = std::toupper(c);
 				(void)out.Write(str);
@@ -163,7 +163,7 @@ int test_pipeline_three_stages() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				std::string str = StormByte::String::FromByteVector(data);
 				std::replace(str.begin(), str.end(), ' ', '-');
 				(void)out.Write(str);
@@ -178,7 +178,7 @@ int test_pipeline_three_stages() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-				if (res.has_value() && !data.empty()) {
+				if (res && !data.empty()) {
 					std::string str = StormByte::String::FromByteVector(data);
 					(void)out.Write(str);
 				}
@@ -197,7 +197,7 @@ int test_pipeline_three_stages() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("three stages has data", res.has_value());
+	ASSERT_TRUE("three stages has data", res);
 	ASSERT_EQUAL("three stages transformation", StormByte::String::FromByteVector(data), std::string("[TEST-DATA]"));
 	
 	RETURN_TEST("test_pipeline_three_stages", 0);
@@ -211,7 +211,7 @@ int test_pipeline_incremental_processing() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 1, data); // Read one byte at a time
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				char c = static_cast<char>(data[0]);
 				c = std::toupper(c);
 				(void)out.Write(std::string(1, c));
@@ -230,7 +230,7 @@ int test_pipeline_incremental_processing() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("incremental has data", res.has_value());
+	ASSERT_TRUE("incremental has data", res);
 	ASSERT_EQUAL("incremental processing", StormByte::String::FromByteVector(data), std::string("ABC"));
 	
 	RETURN_TEST("test_pipeline_incremental_processing", 0);
@@ -244,7 +244,7 @@ int test_pipeline_filter_stage() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				std::string str = StormByte::String::FromByteVector(data);
 				std::string filtered;
 				for (char c : str) {
@@ -270,7 +270,7 @@ int test_pipeline_filter_stage() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("filter has data", res.has_value());
+	ASSERT_TRUE("filter has data", res);
 	ASSERT_EQUAL("filter stage", StormByte::String::FromByteVector(data), std::string("HelloWorld"));
 	
 	RETURN_TEST("test_pipeline_filter_stage", 0);
@@ -284,7 +284,7 @@ int test_pipeline_multiple_writes() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				(void)out.Write(data);
 				(void)out.Write(data);
 			}
@@ -302,7 +302,7 @@ int test_pipeline_multiple_writes() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("multiple writes has data", res.has_value());
+	ASSERT_TRUE("multiple writes has data", res);
 	ASSERT_EQUAL("multiple writes", StormByte::String::FromByteVector(data), std::string("ABAB"));
 	
 	RETURN_TEST("test_pipeline_multiple_writes", 0);
@@ -315,7 +315,7 @@ int test_pipeline_empty_input() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				(void)out.Write(data);
 			}
 		}
@@ -354,7 +354,7 @@ int test_pipeline_large_data() {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
-			if (res.has_value() && !data.empty()) {
+			if (res && !data.empty()) {
 				count += data.size();
 			}
 		}
@@ -374,7 +374,7 @@ int test_pipeline_large_data() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("large data has result", res.has_value());
+	ASSERT_TRUE("large data has result", res);
 	ASSERT_EQUAL("large data count", StormByte::String::FromByteVector(data), std::string("10000"));
 	
 	RETURN_TEST("test_pipeline_large_data", 0);
@@ -407,7 +407,7 @@ int test_pipeline_reuse() {
 		
 		DataType data1;
 		auto res1 = CONSUME(result1, 0, data1);
-		ASSERT_TRUE("reuse first has data", res1.has_value());
+		ASSERT_TRUE("reuse first has data", res1);
 		ASSERT_EQUAL("reuse first result", StormByte::String::FromByteVector(data1), std::string(">TEST1"));
 	}
 	
@@ -422,7 +422,7 @@ int test_pipeline_reuse() {
 		
 		DataType data2;
 		auto res2 = CONSUME(result2, 0, data2);
-		ASSERT_TRUE("reuse second has data", res2.has_value());
+		ASSERT_TRUE("reuse second has data", res2);
 		ASSERT_EQUAL("reuse second result", StormByte::String::FromByteVector(data2), std::string(">TEST2"));
 	}
 	
@@ -458,7 +458,7 @@ int test_pipeline_copy_constructor() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("copy constructor has data", res.has_value());
+	ASSERT_TRUE("copy constructor has data", res);
 	ASSERT_EQUAL("copy constructor works", StormByte::String::FromByteVector(data), std::string("TEST"));
 	
 	RETURN_TEST("test_pipeline_copy_constructor", 0);
@@ -493,7 +493,7 @@ int test_pipeline_move_constructor() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("move constructor has data", res.has_value());
+	ASSERT_TRUE("move constructor has data", res);
 	ASSERT_EQUAL("move constructor works", StormByte::String::FromByteVector(data), std::string("test"));
 	
 	RETURN_TEST("test_pipeline_move_constructor", 0);
@@ -526,7 +526,7 @@ int test_pipeline_addpipe_move() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("addpipe move has data", res.has_value());
+	ASSERT_TRUE("addpipe move has data", res);
 	ASSERT_EQUAL("addpipe move works", StormByte::String::FromByteVector(data), std::string("MOVE"));
 	
 	RETURN_TEST("test_pipeline_addpipe_move", 0);
@@ -572,7 +572,7 @@ int test_pipeline_word_count() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("word count has data", res.has_value());
+	ASSERT_TRUE("word count has data", res);
 	ASSERT_EQUAL("word count result", StormByte::String::FromByteVector(data), std::string("6"));
 	
 	RETURN_TEST("test_pipeline_word_count", 0);
@@ -608,7 +608,7 @@ int test_pipeline_reverse_string() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("reverse has data", res.has_value());
+	ASSERT_TRUE("reverse has data", res);
 	ASSERT_EQUAL("reverse result", StormByte::String::FromByteVector(data), std::string("FEDCBA"));
 	
 	RETURN_TEST("test_pipeline_reverse_string", 0);
@@ -650,7 +650,7 @@ int test_pipeline_streaming_data() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("streaming has data", res.has_value());
+	ASSERT_TRUE("streaming has data", res);
 	ASSERT_EQUAL("streaming result", StormByte::String::FromByteVector(data), std::string("Part1Part2Part3"));
 	
 	RETURN_TEST("test_pipeline_streaming_data", 0);
@@ -742,7 +742,7 @@ int test_pipeline_byte_arithmetic() {
 	
 	DataType data;
 	auto res = CONSUME(result, 0, data);
-	ASSERT_TRUE("byte arithmetic has data", res.has_value());
+	ASSERT_TRUE("byte arithmetic has data", res);
 	ASSERT_EQUAL("byte arithmetic size", data.size(), static_cast<std::size_t>(5));
 	
 	// Verify each byte: ((x+1)*2)/2-1 = x

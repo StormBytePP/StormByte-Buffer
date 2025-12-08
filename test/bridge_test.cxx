@@ -24,12 +24,12 @@ int full_passthrough_test() {
 	Bridge bridge(read_fifo, write_fifo, 4096); // Chunk size of 4 kbytes
 
 	auto res = bridge.Passthrough();
-	ASSERT_TRUE("bridge passthrough success", res.has_value());
+	ASSERT_TRUE("bridge passthrough success", res);
 
 	std::vector<std::byte> output_data;
 	output_data.reserve(write_fifo.AvailableBytes());
 	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
-	ASSERT_TRUE("write fifo read success", read_res.has_value());
+	ASSERT_TRUE("write fifo read success", read_res);
 
 	std::string result = StormByte::String::FromByteVector(output_data);
 	ASSERT_EQUAL("bridge passthrough content matches", result, test_data);
@@ -48,12 +48,12 @@ int partial_passthrough_test() {
 	Bridge bridge(read_fifo, write_fifo, 16); // Small chunk size of 16 bytes
 
 	auto res = bridge.Passthrough(32); // Only transfer 32 bytes
-	ASSERT_TRUE("bridge partial passthrough success", res.has_value());
+	ASSERT_TRUE("bridge partial passthrough success", res);
 
 	std::vector<std::byte> output_data;
 	output_data.reserve(write_fifo.AvailableBytes());
 	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
-	ASSERT_TRUE("write fifo read success", read_res.has_value());
+	ASSERT_TRUE("write fifo read success", read_res);
 
 	std::string result = StormByte::String::FromByteVector(output_data);
 	ASSERT_EQUAL("bridge partial passthrough content matches", result, test_data.substr(0, 32));
@@ -86,14 +86,14 @@ int test_bridge_sharedfifo_threaded() {
 	Bridge bridge(read_fifo, write_fifo, 8);
 
 	auto res = bridge.Passthrough();
-	ASSERT_TRUE("bridge passthrough success (threaded)", res.has_value());
+	ASSERT_TRUE("bridge passthrough success (threaded)", res);
 
 	writer.join();
 
 	std::vector<std::byte> output_data;
 	output_data.reserve(write_fifo.AvailableBytes());
 	auto read_res = write_fifo.Extract(write_fifo.AvailableBytes(), output_data);
-	ASSERT_TRUE("write fifo read success (threaded)", read_res.has_value());
+	ASSERT_TRUE("write fifo read success (threaded)", read_res);
 
 	std::string result = StormByte::String::FromByteVector(output_data);
 	ASSERT_EQUAL("bridge passthrough content matches (threaded)", result, expected);

@@ -217,10 +217,11 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Thread-safe drop operation.
+			 * @return true if the bytes were successfully dropped, false otherwise.
 			 * @details Notifies waiting readers after dropping.
 			 * @see FIFO::Drop()
 			 */
-			virtual ExpectedVoid<WriteError> 					Drop(const std::size_t& count) noexcept override;
+			virtual bool 										Drop(const std::size_t& count) noexcept override;
 			
 			/**
 			 * @brief Check if the buffer is empty.
@@ -328,12 +329,11 @@ namespace StormByte::Buffer {
 			 * @param count Number of bytes to read.
 			 * @param outBuffer Output buffer to store read bytes.
 			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return `ExpectedVoid<ReadError>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Shared logic for read operations that first checks the internal
 			 *          buffer, then calls the external read function if needed.
 			 */
-			virtual ExpectedVoid<ReadError> 					ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept override;
-
+			virtual bool 										ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept override;
 			/**
 			 * @brief Internal helper for read operations.
 			 * @param count Number of bytes to read.
@@ -343,7 +343,7 @@ namespace StormByte::Buffer {
 			 * @details Shared logic for read operations that first checks the internal
 			 *          buffer, then calls the external read function if needed.
 			 */
-			virtual ExpectedVoid<Error> 						ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept override;
+			virtual bool 										ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept override;
 
 			/**
 			 * @brief Wait until at least @p n bytes are available from the current read position
@@ -361,16 +361,16 @@ namespace StormByte::Buffer {
 			 * @brief Internal helper for write operations.
 			 * @param dst Destination buffer to write into.
 			 * @param src Source buffer to write from.
-			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 * @return `bool` indicating success or failure.
 			 */
-			virtual ExpectedVoid<WriteError> 					WriteInternal(const std::size_t& count, const DataType& src) noexcept override;
+			virtual bool 										WriteInternal(const std::size_t& count, const DataType& src) noexcept override;
 
 			/**
 			 * @brief Internal helper for write operations.
 			 * @param dst Destination buffer to write into.
 			 * @param src Source buffer to write from.
-			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 * @return `bool` indicating success or failure.
 			 */
-			virtual ExpectedVoid<WriteError> 					WriteInternal(const std::size_t& count, DataType&& src) noexcept override;
+			virtual bool 										WriteInternal(const std::size_t& count, DataType&& src) noexcept override;
 	};
 }

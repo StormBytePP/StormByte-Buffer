@@ -84,9 +84,10 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Drop bytes in the buffer
 			 * @param count Number of bytes to drop.
+			 * @return true if the bytes were successfully dropped, false otherwise.
 			 * @see Read()
 			 */
-			inline ExpectedVoid<WriteError> 								Drop(const std::size_t& count) noexcept {
+			inline bool 													Drop(const std::size_t& count) noexcept {
 				return m_readHandler.get().Drop(count);
 			}
 
@@ -142,7 +143,7 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			inline ExpectedVoid<ReadError> 									Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
+			inline bool 													Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
 				return m_readHandler.get().Peek(count, outBuffer);
 			}
 
@@ -163,7 +164,7 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			inline ExpectedVoid<Error> 										Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
+			inline bool 													Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
 				return m_readHandler.get().Peek(count, outBuffer);
 			}
 
@@ -180,7 +181,7 @@ namespace StormByte::Buffer {
 			 * @brief Passthrough all bytes until end-of-file from read handler to write handler.
 			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
-			ExpectedVoid<Error> 											Passthrough() noexcept;
+			bool 															Passthrough() noexcept;
 
 			/**
 			 * @brief Passthrough bytes from read handler to write handler.
@@ -189,8 +190,8 @@ namespace StormByte::Buffer {
 			 * But this does not guarantee EoF, to read until EoF use Passthrough()
 			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
-			ExpectedVoid<Error> 											Passthrough(const std::size_t& count) noexcept;
-
+			bool 															Passthrough(const std::size_t& count) noexcept;
+			
 		private:
 			std::reference_wrapper<ReadOnly> m_readHandler;					///< Underlying read handler
 			std::reference_wrapper<WriteOnly> m_writeHandler;				///< Underlying write handler

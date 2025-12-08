@@ -176,9 +176,10 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Drop bytes in the buffer and updates read position.
 			 * @param count Number of bytes to drop.
+			 * @return bool indicating success or failure.
 			 * @see Read(), Seek()
 			 */
-			virtual ExpectedVoid<WriteError>						Drop(const std::size_t& count) noexcept override;
+			virtual bool 												Drop(const std::size_t& count) noexcept override;
 
 			/**
 			 * @brief Check if the buffer is empty.
@@ -205,9 +206,9 @@ namespace StormByte::Buffer {
 			 * @brief Destructive read that removes data from the buffer into an existing vector.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<ReadError> 							Extract(const std::size_t& count, DataType& outBuffer) noexcept override {
+			inline bool 											Extract(const std::size_t& count, DataType& outBuffer) noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Extract);
 			}
 
@@ -215,9 +216,9 @@ namespace StormByte::Buffer {
 			 * @brief Destructive read that removes data from the buffer into a FIFO.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<Error> 								Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override {
+			inline bool 											Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Extract);
 			}
 
@@ -235,10 +236,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
 			 */
-			inline ExpectedVoid<Error>								ExtractUntilEoF(WriteOnly& outBuffer) noexcept override {
-				return ReadUntilEoFInternal(outBuffer, Operation::Extract);
+			inline void												ExtractUntilEoF(WriteOnly& outBuffer) noexcept override {
+				ReadUntilEoFInternal(outBuffer, Operation::Extract);
 			}
 
 			/**
@@ -281,7 +281,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive peek at buffer data without advancing read position.
 			 * @param count Number of bytes to peek; 0 peeks all available from read position.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @return bool indicating success or failure.
 			 * @details Similar to Read(), but does not advance the read position.
 			 *          Allows inspecting upcoming data without consuming it.
 			 *
@@ -295,14 +295,14 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			inline ExpectedVoid<ReadError> 							Peek(const std::size_t& count, DataType& outBuffer) const noexcept override {
+			inline bool 											Peek(const std::size_t& count, DataType& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 			}
 
 			/**
 			 * @brief Non-destructive peek at buffer data without advancing read position.
 			 * @param count Number of bytes to peek; 0 peeks all available from read position.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @return bool indicating success or failure.
 			 * @details Similar to Read(), but does not advance the read position.
 			 *          Allows inspecting upcoming data without consuming it.
 			 *
@@ -316,7 +316,7 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			inline ExpectedVoid<Error> 								Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
+			inline bool 											Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 			}
 
@@ -324,9 +324,9 @@ namespace StormByte::Buffer {
 			 * @brief Non destructive read that removes data from the buffer into an existing vector.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<ReadError> 							Read(const std::size_t& count, DataType& outBuffer) const noexcept override {
+			inline bool 											Read(const std::size_t& count, DataType& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 			}
 
@@ -334,9 +334,9 @@ namespace StormByte::Buffer {
 			 * @brief Destructive read that removes data from the buffer into a vector.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<Error> 								Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
+			inline bool 											Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 			}
 
@@ -354,10 +354,10 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<Error>								ReadUntilEoF(WriteOnly& outBuffer) const noexcept override {
-				return const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
+			inline void												ReadUntilEoF(WriteOnly& outBuffer) const noexcept override {
+				const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 			}
 
 			/**
@@ -384,12 +384,12 @@ namespace StormByte::Buffer {
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<WriteError> 						Write(const std::size_t& count, const DataType& data) noexcept override {
+			inline bool 											Write(const std::size_t& count, const DataType& data) noexcept override {
 				return WriteInternal(count, data);
 			}
 
@@ -397,12 +397,12 @@ namespace StormByte::Buffer {
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<WriteError> 						Write(const std::size_t& count, DataType&& data) noexcept override {
+			inline bool	 											Write(const std::size_t& count, DataType&& data) noexcept override {
 				return WriteInternal(count, std::move(data));
 			}
 
@@ -410,12 +410,12 @@ namespace StormByte::Buffer {
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<Error> 								Write(const std::size_t& count, const ReadOnly& data) noexcept override {
+			inline bool 											Write(const std::size_t& count, const ReadOnly& data) noexcept override {
 				return WriteInternal(count, data);
 			}
 
@@ -423,12 +423,12 @@ namespace StormByte::Buffer {
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<Error> 								Write(const std::size_t& count, ReadOnly&& data) noexcept override {
+			inline bool 											Write(const std::size_t& count, ReadOnly&& data) noexcept override {
 				return WriteInternal(count, std::move(data));
 			}
 
@@ -481,23 +481,22 @@ namespace StormByte::Buffer {
 			 * @param count Number of bytes to read.
 			 * @param outBuffer Output buffer to store read bytes.
 			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return `ExpectedVoid<ReadError>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Shared logic for read operations that first checks the internal
 			 *          buffer, then calls the external read function if needed.
 			 */
-			virtual ExpectedVoid<ReadError> 							ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept;
-
+			virtual bool 												ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept;
 			/**
 			 * @brief Internal helper for read operations.
 			 * @param count Number of bytes to read.
 			 * @param outBuffer Output buffer to store read bytes.
 			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return `ExpectedVoid<Error>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Shared logic for read operations that first checks the internal
 			 *          buffer, then calls the external read function if needed.
 			 */
-			virtual ExpectedVoid<Error> 								ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept;
-
+			virtual bool 												ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept;
+			
 			/**
 			 * @brief Internal helper for reading until end-of-file.
 			 * @param outBuffer Output buffer to store read bytes.
@@ -509,42 +508,42 @@ namespace StormByte::Buffer {
 			 * @brief Internal helper for reading until end-of-file.
 			 * @param outBuffer Output buffer to store read bytes.
 			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return `ExpectedVoid<Error>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error> 								ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept;
+			virtual void 												ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept;
 
 			/**
 			 * @brief Internal helper for write operations.
 			 * @param dst Destination buffer to write into.
 			 * @param count Number of bytes to write.
 			 * @param src Source buffer to write from.
-			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<WriteError> 							WriteInternal(const std::size_t& count, const DataType& src) noexcept;
-
+			virtual bool 												WriteInternal(const std::size_t& count, const DataType& src) noexcept;
+			
 			/**
 			 * @brief Internal helper for write operations.
 			 * @param dst Destination buffer to write into.
 			 * @param count Number of bytes to write.
 			 * @param src Source buffer to write from.
-			 * @return `ExpectedVoid<WriteError>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<WriteError> 							WriteInternal(const std::size_t& count, DataType&& src) noexcept;
+			virtual bool 												WriteInternal(const std::size_t& count, DataType&& src) noexcept;
 
 			/**
 			 * @brief Internal helper for write operations.
 			 * @param count Number of bytes to write.
 			 * @param src Source ReadOnly buffer to write from.
-			 * @return `ExpectedVoid<Error>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error> 								WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept;
+			virtual bool 												WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept;
 
 			/**
 			 * @brief Internal helper for write operations.
 			 * @param count Number of bytes to write.
 			 * @param src Source ReadOnly buffer to write from.
-			 * @return `ExpectedVoid<Error>` indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error> 								WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept;
+			virtual bool 												WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept;
 	};
 }

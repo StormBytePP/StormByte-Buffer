@@ -60,9 +60,9 @@ void FIFO::Clean() noexcept {
 	m_position_offset = 0;
 }
 
-ExpectedVoid<WriteError> FIFO::Drop(const std::size_t& count) noexcept {
+bool FIFO::Drop(const std::size_t& count) noexcept {
 	if (FIFO::AvailableBytes() == 0 || count > FIFO::AvailableBytes())
-		return StormByte::Unexpected(WriteError("Insufficient data to drop: Asked {} but have available {}", count, AvailableBytes()));
+		return false;
 	
 	// Call the non-virtual FIFO::Seek implementation to avoid
 	// virtual dispatch into a derived class (e.g. SharedFIFO::Seek)
@@ -74,7 +74,7 @@ ExpectedVoid<WriteError> FIFO::Drop(const std::size_t& count) noexcept {
 	// SharedFIFO::Clean which would attempt to lock the wrapper
 	// mutex while Drop() may already be holding it.
 	FIFO::Clean();
-	return {};
+	return true;
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
@@ -167,12 +167,12 @@ std::ostringstream FIFO::HexDumpHeader() const noexcept {
 	return oss;
 }
 
-ExpectedVoid<ReadError> FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
+bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
 	const std::size_t available_bytes = FIFO::AvailableBytes();
 	const std::size_t real_count = count == 0 ? available_bytes : count;
 	// If buffer is empty and count==0, return immediately with error
 	if ((available_bytes == 0 && count == 0) || real_count > available_bytes)
-		return StormByte::Unexpected(ReadError("Insufficient data: Asked {} but have available {}", real_count, available_bytes));
+		return false;
 
 	outBuffer.reserve(outBuffer.size() + real_count);
 
@@ -198,48 +198,48 @@ ExpectedVoid<ReadError> FIFO::ReadInternal(const std::size_t& count, DataType& o
 			break;
 		}
 		default:
-			return StormByte::Unexpected(ReadError("Invalid read operation"));;
+			return false;
 	}
 
-	return {};
+	return true;
 }
 
-ExpectedVoid<Error> FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
+bool FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
 	const std::size_t available_bytes = FIFO::AvailableBytes();
 	const std::size_t real_count = count == 0 ? available_bytes : count;
 	if ((count == 0 && available_bytes == 0) || real_count > available_bytes)
-		return StormByte::Unexpected(ReadError("Insufficient data: Asked {} but have available {}", real_count, available_bytes));
+		return false;
 
 	DataType temp;
 	temp.reserve(real_count);
 	switch(flag) {
 		case Operation::Extract: {
 			auto res = FIFO::ReadInternal(count, temp, Operation::Extract);
-			if (!res.has_value())
-				return res;
+			if (!res)
+				return false;
 			break;
 		}
 		case Operation::Read: {
 			auto res = FIFO::ReadInternal(count, temp, Operation::Read);
-			if (!res.has_value())
-				return res;
+			if (!res)
+				return false;
 			break;
 		}
 		case Operation::Peek: {
 			auto res = FIFO::ReadInternal(count, temp, Operation::Peek);
-			if (!res.has_value())
-				return res;
+			if (!res)
+				return false;
 			break;
 		}
 		default:
-			return StormByte::Unexpected(ReadError("Invalid read operation"));;
+			return false;
 	}
 
 	auto res = outBuffer.Write(std::move(temp));
-	if (!res.has_value()) {
-		return StormByte::Unexpected(res.error());
+	if (!res) {
+		return false;
 	}
-	return {};
+	return true;
 }
 
 void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noexcept {
@@ -257,13 +257,13 @@ void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noex
 				return;
 		}
 		DataType unused;
-		if (!Peek(1, unused).has_value()) {
+		if (!Peek(1, unused)) {
 			return;
 		}
 	}
 }
 
-ExpectedVoid<Error> FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept {
+void FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept {
 	while (true) {
 		switch(flag) {
 			case Operation::Read: {
@@ -275,18 +275,18 @@ ExpectedVoid<Error> FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Opera
 				break;
 			}
 			default:
-				return {};
+				return;
 		}
 		DataType unused;
-		if (!Peek(1, unused).has_value()) {
-			return {};
+		if (!Peek(1, unused)) {
+			return;
 		}
 	}
 }
 
-ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
+bool FIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
 	if (count > 0 && src.size() < count)
-		return StormByte::Unexpected(WriteError("Insufficient data to write: Asked {} but have {}", count, src.size()));
+		return false;
 
 	const std::size_t real_count = (count == 0) ? src.size() : count;
 
@@ -301,12 +301,12 @@ ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, const Dat
 		m_buffer.insert(m_buffer.end(), src.begin(), src.begin() + real_count);
 	}
 
-	return {};
+	return true;
 }
 
-ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
+bool FIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
 	if (count > 0 && src.size() < count)
-		return StormByte::Unexpected(WriteError("Insufficient data to write: Asked {} but have {}", count, src.size()));
+		return false;
 
 	const std::size_t real_count = (count == 0) ? src.size() : count;
 
@@ -323,13 +323,13 @@ ExpectedVoid<WriteError> FIFO::WriteInternal(const std::size_t& count, DataType&
 		src.erase(src.begin(), src.begin() + real_count);
 	}
 
-	return {};
+	return true;
 }
 
-ExpectedVoid<Error> FIFO::WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept {
+bool FIFO::WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept {
 	return src.Read(count, m_buffer);
 }
 
-ExpectedVoid<Error> FIFO::WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept {
+bool FIFO::WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept {
 	return src.Extract(count, m_buffer);
 }

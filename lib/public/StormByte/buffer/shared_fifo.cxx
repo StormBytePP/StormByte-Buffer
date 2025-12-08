@@ -64,8 +64,8 @@ void SharedFIFO::Close() noexcept {
 	m_cv.notify_all();
 }
 
-ExpectedVoid<WriteError> SharedFIFO::Drop(const std::size_t& count) noexcept {
-	ExpectedVoid<WriteError> result;
+bool SharedFIFO::Drop(const std::size_t& count) noexcept {
+	bool result;
 	{
 		std::unique_lock<std::mutex> lock(m_mutex);
 		if (count != 0 && count > FIFO::AvailableBytes())
@@ -123,12 +123,12 @@ std::ostringstream SharedFIFO::HexDumpHeader() const noexcept {
 	return oss;
 }
 
-ExpectedVoid<ReadError> SharedFIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
+bool SharedFIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	// Check EOF / error under the lock to avoid re-locking inside EoF().
 	std::size_t avail = FIFO::AvailableBytes();
 	if (m_error || (m_closed && avail == 0))
-		return StormByte::Unexpected(ReadError("End of file reached"));
+		return false;
 
 	std::size_t real_count = count == 0 ? avail : count;
 	if (real_count > avail && !m_closed) {
@@ -139,12 +139,12 @@ ExpectedVoid<ReadError> SharedFIFO::ReadInternal(const std::size_t& count, DataT
 	return result;
 }
 
-ExpectedVoid<Error> SharedFIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
+bool SharedFIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
 	std::unique_lock<std::mutex> lock(m_mutex);
 	// Check EOF / error under the lock to avoid re-locking inside EoF().
 	std::size_t avail = FIFO::AvailableBytes();
 	if (m_error || (m_closed && avail == 0))
-		return StormByte::Unexpected(ReadError("End of file reached"));
+		return false;
 
 	std::size_t real_count = count == 0 ? avail : count;
 	if (real_count > avail && !m_closed) {
@@ -167,15 +167,12 @@ void SharedFIFO::Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) 
 	});
 }
 
-ExpectedVoid<WriteError> SharedFIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
-	ExpectedVoid<WriteError> result;
+bool SharedFIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
+	bool result;
 	{
 		std::scoped_lock lock(m_mutex);
-		if (m_closed) {
-		return StormByte::Unexpected(WriteError("Buffer is closed"));
-		}
-		if (m_error) {
-		return StormByte::Unexpected(WriteError("Buffer in error state"));
+		if (m_closed || m_error) {
+			return false;
 		}
 		result = FIFO::WriteInternal(count, src);
 	}
@@ -183,15 +180,12 @@ ExpectedVoid<WriteError> SharedFIFO::WriteInternal(const std::size_t& count, con
 	return result;
 }
 
-ExpectedVoid<WriteError> SharedFIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
-	ExpectedVoid<WriteError> result;
+bool SharedFIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
+	bool result;
 	{
 		std::scoped_lock lock(m_mutex);
-		if (m_closed) {
-		return StormByte::Unexpected(WriteError("Buffer is closed"));
-		}
-		if (m_error) {
-		return StormByte::Unexpected(WriteError("Buffer in error state"));
+		if (m_closed || m_error) {
+			return false;
 		}
 		result = FIFO::WriteInternal(count, std::move(src));
 	}

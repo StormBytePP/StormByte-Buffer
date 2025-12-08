@@ -46,10 +46,14 @@ namespace StormByte::Buffer {
 		Relative
 	};
 
+	/**
+	 * @brief Type alias for the primary data storage type used in buffers.
+	 *
+	 * @details DataType is defined as a vector of bytes (std::byte) and
+	 *          serves as the fundamental container for byte-oriented
+	 *          buffer implementations within the StormByte Buffer namespace.
+	 */
 	using DataType = std::vector<std::byte>;
-
-	template<class Exception>
-	using ExpectedVoid = Expected<void, Exception>;
 
 	/**
 	 * @brief Type alias for pipeline transformation functions.

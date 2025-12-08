@@ -126,7 +126,7 @@ namespace StormByte::Buffer {
 			 * @param count Number of bytes to drop.
 			 * @see Read()
 			 */
-			virtual ExpectedVoid<WriteError> 								Drop(const std::size_t& count) noexcept = 0;
+			virtual bool 													Drop(const std::size_t& count) noexcept = 0;
 
 			/**
 			 * @brief Check if the buffer is empty.
@@ -147,18 +147,18 @@ namespace StormByte::Buffer {
 			 * @brief Destructive read that removes data from the buffer into an existing vector.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @note For base class is the same than Read
 			 */
-			inline virtual ExpectedVoid<ReadError> 							Extract(const std::size_t& count, DataType& outBuffer) noexcept = 0;
+			inline virtual bool 											Extract(const std::size_t& count, DataType& outBuffer) noexcept = 0;
 
 			/**
 			 * @brief Destructive read that removes all data from the buffer into an existing vector.
 			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @note For base class is the same than Read
 			 */
-			inline ExpectedVoid<ReadError> 									Extract(DataType& outBuffer) noexcept {
+			inline bool 													Extract(DataType& outBuffer) noexcept {
 				return Extract(0, outBuffer);
 			}
 
@@ -166,16 +166,16 @@ namespace StormByte::Buffer {
 			 * @brief Destructive read that removes data from the buffer into a FIFO.
 			 * @param count Number of bytes to extract; 0 extracts all available.
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline virtual ExpectedVoid<Error> 								Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept = 0;
+			inline virtual bool 											Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept = 0;
 
 			/**
 			 * @brief Destructive read that removes all data from the buffer into a FIFO.
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<Error> 										Extract(WriteOnly& outBuffer) noexcept {
+			inline bool 													Extract(WriteOnly& outBuffer) noexcept {
 				return Extract(0, outBuffer);
 			}
 
@@ -188,9 +188,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error>										ExtractUntilEoF(WriteOnly& outBuffer) noexcept = 0;
+			virtual void													ExtractUntilEoF(WriteOnly& outBuffer) noexcept = 0;
 
 			/**
 			 * @brief Check if the buffer is readable.
@@ -215,12 +215,12 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			virtual ExpectedVoid<ReadError> 								Peek(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
+			virtual bool 													Peek(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
 
 			/**
 			 * @brief Non-destructive peek at buffer data without advancing read position.
 			 * @param count Number of bytes to peek; 0 peeks all available from read position.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
+			 * @return bool indicating success or failure.
 			 * @details Similar to Read(), but does not advance the read position.
 			 *          Allows inspecting upcoming data without consuming it.
 			 *
@@ -234,22 +234,22 @@ namespace StormByte::Buffer {
 			 *
 			 * @see Read(), Seek()
 			 */
-			virtual ExpectedVoid<Error> 									Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
+			virtual bool 													Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
 
 			/**
 			 * @brief Read bytes into an existing buffer.
 			 * @param count Number of bytes to read; 0 reads all available from read position.
 			 * @param outBuffer Vector to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<ReadError> 								Read(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
+			virtual bool 													Read(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
 
 			/**
 			 * @brief Read bytes into an existing buffer.
 			 * @param outBuffer Vector to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<ReadError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<ReadError> 									Read(DataType& outBuffer) const noexcept {
+			inline bool 													Read(DataType& outBuffer) const noexcept {
 				return Read(0, outBuffer);
 			}
 
@@ -257,16 +257,16 @@ namespace StormByte::Buffer {
 			 * @brief Read bytes into a WriteOnly buffer.
 			 * @param count Number of bytes to read; 0 reads all available from read position.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error> 									Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
+			virtual bool 													Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
 
 			/**
 			 * @brief Read bytes into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			inline ExpectedVoid<Error> 										Read(WriteOnly& outBuffer) const noexcept {
+			inline bool 													Read(WriteOnly& outBuffer) const noexcept {
 				return Read(0, outBuffer);
 			}
 
@@ -279,9 +279,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return ExpectedVoid<Error> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
-			virtual ExpectedVoid<Error>										ReadUntilEoF(WriteOnly& outBuffer) const noexcept = 0;
+			virtual void 													ReadUntilEoF(WriteOnly& outBuffer) const noexcept = 0;
 
 			/**
 			 * @brief Move the read position for non-destructive reads.
@@ -413,12 +413,12 @@ namespace StormByte::Buffer {
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			virtual ExpectedVoid<WriteError> 								Write(const std::size_t& count, const DataType& data) noexcept = 0;
+			virtual bool 													Write(const std::size_t& count, const DataType& data) noexcept = 0;
 
 			/**
 			 * @note String convenience overloads
@@ -436,7 +436,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write from a string view (does not include terminating NUL).
 			 */
-			ExpectedVoid<WriteError> 										Write(std::string_view sv) noexcept {
+			bool 															Write(std::string_view sv) noexcept {
 				DataType tmp;
 				if (!sv.empty()) tmp.reserve(static_cast<typename DataType::size_type>(sv.size()));
 				std::transform(sv.begin(), sv.end(), std::back_inserter(tmp), [] (char e) noexcept { return static_cast<std::byte>(e); });
@@ -446,7 +446,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write from a C string pointer (null-terminated). Uses `std::string_view`.
 			 */
-			ExpectedVoid<WriteError> 										Write(const char* s) noexcept {
+			bool 															Write(const char* s) noexcept {
 				if (!s) return Write(DataType{});
 				return Write(std::string_view(s));
 			}
@@ -454,7 +454,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up-to `count` bytes from a string view (0 => all available).
 			 */
-			ExpectedVoid<WriteError> 										Write(const std::size_t& count, std::string_view sv) noexcept {
+			bool 															Write(const std::size_t& count, std::string_view sv) noexcept {
 				size_t to_write = (count == 0) ? static_cast<size_t>(sv.size()) : std::min(count, static_cast<std::size_t>(sv.size()));
 				DataType tmp;
 				if (to_write > 0) tmp.reserve(static_cast<typename DataType::size_type>(to_write));
@@ -465,7 +465,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up-to `count` bytes from a C string pointer (null-terminated).
 			 */
-			ExpectedVoid<WriteError> 										Write(const std::size_t& count, const char* s) noexcept {
+			bool 															Write(const std::size_t& count, const char* s) noexcept {
 				if (!s) return Write(count, DataType{});
 				return Write(count, std::string_view(s));
 			}
@@ -474,7 +474,7 @@ namespace StormByte::Buffer {
 			 * @brief Write from a string literal (array) and avoid copying the trailing NUL.
 			 */
 			template<std::size_t N>
-			ExpectedVoid<WriteError> 										Write(const char (&s)[N]) noexcept {
+			bool 															Write(const char (&s)[N]) noexcept {
 				// N includes the terminating NUL for string literals, so exclude it
 				if (N == 0) return Write(DataType{});
 				return Write(std::string_view(s, (N > 0) ? (N - 1) : 0));
@@ -485,7 +485,7 @@ namespace StormByte::Buffer {
 			 * @tparam R An input range whose element type is convertible to `std::byte`.
 			 * @param r The input range to write from. Elements are converted
 			 *          element-wise using `static_cast<std::byte>`.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details The entire range is converted into a `DataType` (the
 			 *          library's `std::vector<std::byte>`) and then forwarded to the
 			 *          canonical `Write(count, DataType)` entry point.
@@ -493,7 +493,7 @@ namespace StormByte::Buffer {
 			template<std::ranges::input_range R>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
 				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(const R& r) noexcept {
+			bool 															Write(const R& r) noexcept {
 				DataType tmp;
 				if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
 					auto dist = std::ranges::distance(r);
@@ -510,7 +510,7 @@ namespace StormByte::Buffer {
 			 * @param count Maximum number of elements to write; pass `0` to write
 			 *              the entire range.
 			 * @param r The input range to read from.
-			 * @return ExpectedVoid<WriteError> with the number of bytes actually written
+			 * @return bool with the number of bytes actually written
 			 *         (may be less than `count` if the range is shorter).
 			 * @details Elements are copied and converted into an internal `DataType`
 			 *          buffer before invoking the canonical `Write(count, DataType)`.
@@ -518,7 +518,7 @@ namespace StormByte::Buffer {
 			template<std::ranges::input_range Rw>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rw>>>) &&
 				requires(std::ranges::range_value_t<Rw> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(const std::size_t& count, const Rw& r) noexcept {
+			bool 															Write(const std::size_t& count, const Rw& r) noexcept {
 				if (count == 0) return Write(r);
 				DataType tmp;
 				if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
@@ -543,12 +543,12 @@ namespace StormByte::Buffer {
 			 *          implementation will move it into the write fast-path and trim
 			 *          it to `count` if necessary. Otherwise elements are converted
 			 *          and copied into a temporary `DataType`.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
 			template<std::ranges::input_range Rrw>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rrw>>>) &&
 				requires(std::ranges::range_value_t<Rrw> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(const std::size_t& count, Rrw&& r) noexcept {
+			bool 															Write(const std::size_t& count, Rrw&& r) noexcept {
 				using Dec = std::remove_cvref_t<Rrw>;
 				if (count == 0) return Write(std::forward<Rrw>(r));
 				if constexpr (std::same_as<Dec, DataType>) {
@@ -579,12 +579,12 @@ namespace StormByte::Buffer {
 			 * @param r The rvalue range to write from. If `r` is a `DataType` rvalue
 			 *          it will be forwarded into the move-write fast-path; otherwise
 			 *          elements are converted and copied into a temporary `DataType`.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 */
 			template<std::ranges::input_range Rr>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
 				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(Rr&& r) noexcept {
+			bool 															Write(Rr&& r) noexcept {
 				using Dec = std::remove_cvref_t<Rr>;
 				if constexpr (std::same_as<Dec, DataType>) {
 					// r is already the library DataType (std::vector<std::byte>), forward to move overload
@@ -610,7 +610,7 @@ namespace StormByte::Buffer {
 			 * @tparam S Corresponding sentinel type for `I`.
 			 * @param first Iterator to the beginning of the sequence.
 			 * @param last  Sentinel/iterator marking the end of the sequence.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Elements are converted via `static_cast<std::byte>` into an
 			 *          internal `DataType` buffer which is then forwarded to the
 			 *          canonical `Write(count, DataType)`.
@@ -618,7 +618,7 @@ namespace StormByte::Buffer {
 			template<std::input_iterator I, std::sentinel_for<I> S>
 				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I>>>) &&
 				requires(std::iter_value_t<I> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(I first, S last) noexcept {
+			bool 															Write(I first, S last) noexcept {
 				DataType tmp;
 				std::transform(first, last, std::back_inserter(tmp), [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
 				return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
@@ -634,13 +634,13 @@ namespace StormByte::Buffer {
 			 * @param count Maximum number of elements to write; pass `0` to write all.
 			 * @param first Iterator to the beginning of the sequence.
 			 * @param last  Sentinel/iterator marking the end of the sequence.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Iterates until `count` elements are consumed or `first == last`.
 			 */
 			template<std::input_iterator I2, std::sentinel_for<I2> S2>
 				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I2>>>) &&
 				requires(std::iter_value_t<I2> v) { static_cast<std::byte>(v); }
-			ExpectedVoid<WriteError> 								Write(const std::size_t& count, I2 first, S2 last) noexcept {
+			bool 															Write(const std::size_t& count, I2 first, S2 last) noexcept {
 				if (count == 0) return Write(first, last);
 				DataType tmp;
 				std::size_t written = 0;
@@ -654,33 +654,33 @@ namespace StormByte::Buffer {
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			virtual ExpectedVoid<WriteError> 								Write(const std::size_t& count, DataType&& data) noexcept = 0;
+			virtual bool 													Write(const std::size_t& count, DataType&& data) noexcept = 0;
 
 			/**
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			virtual ExpectedVoid<Error> 									Write(const std::size_t& count, const ReadOnly& data) noexcept = 0;
+			virtual bool 													Write(const std::size_t& count, const ReadOnly& data) noexcept = 0;
 
 			/**
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<Error> 										Write(const ReadOnly& data) noexcept {
+			inline bool	 													Write(const ReadOnly& data) noexcept {
 				return Write(data.AvailableBytes(), data);
 			}
 
@@ -688,22 +688,22 @@ namespace StormByte::Buffer {
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			virtual ExpectedVoid<Error> 									Write(const std::size_t& count, ReadOnly&& data) noexcept = 0;
+			virtual bool 													Write(const std::size_t& count, ReadOnly&& data) noexcept = 0;
 
 			/**
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param data Byte vector to append to the WriteOnly.
-			 * @return ExpectedVoid<WriteError> indicating success or failure.
+			 * @return bool indicating success or failure.
 			 * @details Appends data to the buffer, growing capacity automatically if needed.
 			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
 			 * @see IsClosed()
 			 */
-			inline ExpectedVoid<Error> 										Write(ReadOnly&& data) noexcept {
+			inline bool 													Write(ReadOnly&& data) noexcept {
 				return Write(data.AvailableBytes(), std::move(data));
 			}
 	};

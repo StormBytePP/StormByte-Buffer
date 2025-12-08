@@ -107,7 +107,7 @@ int test_fifo_write_partial_count() {
 	FIFO fifo;
 	auto data = StormByte::String::ToByteVector("PARTIAL");
 	auto res = fifo.Write(static_cast<std::size_t>(3), data);
-	ASSERT_TRUE("partial write ok", res.has_value());
+	ASSERT_TRUE("partial write ok", res);
 	ASSERT_EQUAL("partial write size", static_cast<std::size_t>(3), fifo.Size());
 	DataType out;
 	(void)fifo.Extract(0, out);
@@ -270,7 +270,7 @@ int test_fifo_read_all_nondestructive() {
 	// Read again should return error (no more data)
 	DataType tmp;
 	auto out2 = fifo.Read(0, tmp);
-	ASSERT_FALSE("second read all empty", out2.has_value());
+	ASSERT_FALSE("second read all empty", out2);
 	
 	RETURN_TEST("test_fifo_read_all_nondestructive", 0);
 }
@@ -340,7 +340,7 @@ int test_fifo_seek_absolute() {
 	fifo.Seek(100, Position::Absolute);
 	DataType tmp;
 	auto r4 = fifo.Read(0, tmp);
-	ASSERT_FALSE("seek beyond size", r4.has_value());
+	ASSERT_FALSE("seek beyond size", r4);
 	
 	RETURN_TEST("test_fifo_seek_absolute", 0);
 }
@@ -370,7 +370,7 @@ int test_fifo_seek_relative() {
 	fifo.Seek(100, Position::Relative);
 	DataType tmp;
 	auto r4 = fifo.Read(0, tmp);
-	ASSERT_FALSE("seek relative beyond", r4.has_value());
+	ASSERT_FALSE("seek relative beyond", r4);
 	
 	RETURN_TEST("test_fifo_seek_relative", 0);
 }
@@ -440,21 +440,21 @@ int test_fifo_seek_relative_from_current() {
 	// Read 2 bytes
 	DataType r1;
 	auto res1 = fifo.Read(2, r1);
-	ASSERT_TRUE("initial read", res1.has_value());
+	ASSERT_TRUE("initial read", res1);
 	ASSERT_EQUAL("initial read", StormByte::String::FromByteVector(r1), std::string("AB"));
 
 	// Current position is at 2, seek relative 0 (stay at current)
 	fifo.Seek(0, Position::Relative);
 	DataType r2;
 	auto res2 = fifo.Read(2, r2);
-	ASSERT_TRUE("seek relative 0", res2.has_value());
+	ASSERT_TRUE("seek relative 0", res2);
 	ASSERT_EQUAL("seek relative 0", StormByte::String::FromByteVector(r2), std::string("CD"));
 
 	// Seek backwards by going to absolute 1
 	fifo.Seek(1, Position::Absolute);
 	DataType r3;
 	auto res3 = fifo.Read(3, r3);
-	ASSERT_TRUE("seek back to 1", res3.has_value());
+	ASSERT_TRUE("seek back to 1", res3);
 	ASSERT_EQUAL("seek back to 1", StormByte::String::FromByteVector(r3), std::string("BCD"));
 
 	RETURN_TEST("test_fifo_seek_relative_from_current", 0);
@@ -467,12 +467,12 @@ int test_fifo_read_insufficient_data_error() {
 	// Request more data than available - should return error
 	DataType result;
 	auto res = fifo.Read(10, result);
-	ASSERT_FALSE("read insufficient returns error", res.has_value());
+	ASSERT_FALSE("read insufficient returns error", res);
 
 	// Read with count=0 should succeed and return available data
 	DataType result2;
 	auto res2 = fifo.Read(0, result2);
-	ASSERT_TRUE("read with 0 succeeds", res2.has_value());
+	ASSERT_TRUE("read with 0 succeeds", res2);
 	ASSERT_EQUAL("read returns available", result2.size(), static_cast<std::size_t>(3));
 
 	RETURN_TEST("test_fifo_read_insufficient_data_error", 0);
@@ -485,12 +485,12 @@ int test_fifo_extract_insufficient_data_error() {
 	// Request more data than available - should return error
 	DataType result;
 	auto res = fifo.Extract(20, result);
-	ASSERT_FALSE("extract insufficient returns error", res.has_value());
+	ASSERT_FALSE("extract insufficient returns error", res);
 
 	// Extract with count=0 should succeed and return available data
 	DataType result2;
 	auto res2 = fifo.Extract(0, result2);
-	ASSERT_TRUE("extract with 0 succeeds", res2.has_value());
+	ASSERT_TRUE("extract with 0 succeeds", res2);
 	ASSERT_EQUAL("extract returns available", result2.size(), static_cast<std::size_t>(5));
 	ASSERT_TRUE("buffer empty after extract all", fifo.Empty());
 
@@ -504,18 +504,18 @@ int test_fifo_read_after_position_beyond_size() {
 	// Read all data
 	DataType r1;
 	auto res1 = fifo.Read(4, r1);
-	ASSERT_TRUE("read all data", res1.has_value());
+	ASSERT_TRUE("read all data", res1);
 	ASSERT_EQUAL("read all data", StormByte::String::FromByteVector(r1), std::string("1234"));
 
 	// Now read position is at end, requesting more should fail
 	DataType result;
 	auto res = fifo.Read(1, result);
-	ASSERT_FALSE("read beyond position returns error", res.has_value());
+	ASSERT_FALSE("read beyond position returns error", res);
 
 	// Reading with count=0 should return error as well
 	DataType result2;
 	auto res2 = fifo.Read(0, result2);
-	ASSERT_FALSE("read 0 at end returns error", res2.has_value());
+	ASSERT_FALSE("read 0 at end returns error", res2);
 
 	RETURN_TEST("test_fifo_read_after_position_beyond_size", 0);
 }
@@ -638,7 +638,7 @@ int test_fifo_write_remaining_fifo() {
 
 	// Append remaining unread portion of source FIFO (const reference)
 	auto ok = dst.Write(src);
-	ASSERT_TRUE("fifo write whole returned", ok.has_value());
+	ASSERT_TRUE("fifo write whole returned", ok);
 	ASSERT_EQUAL("fifo write remaining size", dst.Size(), before + src_remaining);
 
 	// Extract full destination content and validate
@@ -651,7 +651,7 @@ int test_fifo_write_remaining_fifo() {
 	FIFO src2;
 	(void)src2.Write(std::string("WORLD"));
 	auto ok2 = dst.Write(std::move(src2));
-	ASSERT_TRUE("fifo write whole rvalue returned", ok2.has_value());
+	ASSERT_TRUE("fifo write whole rvalue returned", ok2);
 	// After move-append, dst should end with WORLD
 	DataType tail;
 	(void)dst.Extract(0, tail);
@@ -667,17 +667,17 @@ int test_fifo_move_steal_preserves_read_position() {
 	// Non-destructive read advances read position to 2 (reads "AB")
 	DataType r;
 	auto res = src.Read(2, r);
-	ASSERT_TRUE("advance read returned", res.has_value());
+	ASSERT_TRUE("advance read returned", res);
 
 	// Destination empty: move-append should steal internal storage and preserve read position
 	FIFO dst;
 	auto ok = dst.Write(std::move(src));
-	ASSERT_TRUE("move write returned true", ok.has_value());
+	ASSERT_TRUE("move write returned true", ok);
 
 	// Now reading all available from destination should return "CDE"
 	DataType out;
 	auto res2 = dst.Read(0, out);
-	ASSERT_TRUE("dst read returned", res2.has_value());
+	ASSERT_TRUE("dst read returned", res2);
 	ASSERT_EQUAL("dst remaining after move preserves position", StormByte::String::FromByteVector(out), std::string("CDE"));
 
 	RETURN_TEST("test_fifo_move_steal_preserves_read_position", 0);
@@ -778,7 +778,7 @@ int test_fifo_skip_with_readpos() {
 	// Move read position forward
 	DataType r;
 	auto res = fifo.Read(3, r);
-	ASSERT_TRUE("read before skip", res.has_value());
+	ASSERT_TRUE("read before skip", res);
 
 	// Skip 4 bytes from head
 	(void)fifo.Drop(4);
@@ -798,25 +798,25 @@ int test_fifo_peek_basic() {
 	// Peek 3 bytes - should not advance read position
 	DataType peek1;
 	auto res1 = fifo.Peek(3, peek1);
-	ASSERT_TRUE("peek returned", res1.has_value());
+	ASSERT_TRUE("peek returned", res1);
 	ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(peek1), std::string("HEL"));
 	
 	// Peek again - should return same data
 	DataType peek2;
 	auto res2 = fifo.Peek(3, peek2);
-	ASSERT_TRUE("peek2 returned", res2.has_value());
+	ASSERT_TRUE("peek2 returned", res2);
 	ASSERT_EQUAL("peek2 content", StormByte::String::FromByteVector(peek2), std::string("HEL"));
 	
 	// Now read - should return same data as peek
 	DataType read1;
 	auto res3 = fifo.Read(3, read1);
-	ASSERT_TRUE("read returned", res3.has_value());
+	ASSERT_TRUE("read returned", res3);
 	ASSERT_EQUAL("read content matches peek", StormByte::String::FromByteVector(read1), std::string("HEL"));
 	
 	// Peek remaining
 	DataType peek3;
 	auto res4 = fifo.Peek(2, peek3);
-	ASSERT_TRUE("peek3 returned", res4.has_value());
+	ASSERT_TRUE("peek3 returned", res4);
 	ASSERT_EQUAL("peek3 content", StormByte::String::FromByteVector(peek3), std::string("LO"));
 	
 	RETURN_TEST("test_fifo_peek_basic", 0);
@@ -829,18 +829,18 @@ int test_fifo_peek_all_available() {
 	// Peek all available (count = 0)
 	DataType peek_all;
 	auto res1 = fifo.Peek(0, peek_all);
-	ASSERT_TRUE("peek all returned", res1.has_value());
+	ASSERT_TRUE("peek all returned", res1);
 	ASSERT_EQUAL("peek all content", StormByte::String::FromByteVector(peek_all), std::string("WORLD"));
 	
 	// Read 2 bytes
 	DataType read1;
 	auto res2 = fifo.Read(2, read1);
-	ASSERT_TRUE("read returned", res2.has_value());
+	ASSERT_TRUE("read returned", res2);
 	
 	// Peek all remaining
 	DataType peek_remaining;
 	auto res3 = fifo.Peek(0, peek_remaining);
-	ASSERT_TRUE("peek remaining returned", res3.has_value());
+	ASSERT_TRUE("peek remaining returned", res3);
 	ASSERT_EQUAL("peek remaining content", StormByte::String::FromByteVector(peek_remaining), std::string("RLD"));
 	
 	RETURN_TEST("test_fifo_peek_all_available", 0);
@@ -853,7 +853,7 @@ int test_fifo_peek_insufficient_data() {
 	// Try to peek more than available
 	DataType peek;
 	auto res = fifo.Peek(10, peek);
-	ASSERT_FALSE("peek insufficient returned error", res.has_value());
+	ASSERT_FALSE("peek insufficient returned error", res);
 	
 	RETURN_TEST("test_fifo_peek_insufficient_data", 0);
 }
@@ -868,13 +868,13 @@ int test_fifo_peek_after_seek() {
 	// Peek from new position
 	DataType peek;
 	auto res1 = fifo.Peek(3, peek);
-	ASSERT_TRUE("peek after seek returned", res1.has_value());
+	ASSERT_TRUE("peek after seek returned", res1);
 	ASSERT_EQUAL("peek after seek content", StormByte::String::FromByteVector(peek), std::string("567"));
 	
 	// Verify position didn't change
 	DataType read;
 	auto res2 = fifo.Read(3, read);
-	ASSERT_TRUE("read after peek returned", res2.has_value());
+	ASSERT_TRUE("read after peek returned", res2);
 	ASSERT_EQUAL("read after peek content", StormByte::String::FromByteVector(read), std::string("567"));
 	
 	RETURN_TEST("test_fifo_peek_after_seek", 0);
@@ -886,7 +886,7 @@ int test_fifo_read_span_basic() {
 	
 	DataType out;
 	auto res = fifo.Read(3, out);
-	ASSERT_TRUE("read_span returned", res.has_value());
+	ASSERT_TRUE("read_span returned", res);
 	ASSERT_EQUAL("read_span size", out.size(), static_cast<std::size_t>(3));
 	ASSERT_EQUAL("read_span first byte", static_cast<char>(out[0]), 'A');
 	ASSERT_EQUAL("read_span second byte", static_cast<char>(out[1]), 'B');
@@ -895,7 +895,7 @@ int test_fifo_read_span_basic() {
 	// Verify position advanced
 	DataType read;
 	auto res2 = fifo.Read(3, read);
-	ASSERT_TRUE("read after span returned", res2.has_value());
+	ASSERT_TRUE("read after span returned", res2);
 	ASSERT_EQUAL("read after span content", StormByte::String::FromByteVector(read), std::string("DEF"));
 	
 	RETURN_TEST("test_fifo_read_span_basic", 0);
@@ -908,7 +908,7 @@ int test_fifo_read_span_all_available() {
 	// Read with count=0 should read all available
 	DataType out;
 	auto res = fifo.Read(0, out);
-	ASSERT_TRUE("read_span_all returned", res.has_value());
+	ASSERT_TRUE("read_span_all returned", res);
 	ASSERT_EQUAL("read_span_all size", out.size(), static_cast<std::size_t>(10));
 	ASSERT_EQUAL("read_span_all content", StormByte::String::FromByteVector(out), std::string("HelloWorld"));
 	
@@ -925,12 +925,12 @@ int test_fifo_read_span_insufficient_data() {
 	// Try to read more than available
 	DataType span;
 	auto res = fifo.Read(10, span);
-	ASSERT_FALSE("read_span_insufficient error", res.has_value());
+	ASSERT_FALSE("read_span_insufficient error", res);
 	
 	// Verify position didn't advance
 	DataType read;
 	auto res2 = fifo.Read(3, read);
-	ASSERT_TRUE("read after failed span returned", res2.has_value());
+	ASSERT_TRUE("read after failed span returned", res2);
 	ASSERT_EQUAL("read after failed span", StormByte::String::FromByteVector(read), std::string("ABC"));
 	
 	RETURN_TEST("test_fifo_read_span_insufficient_data", 0);
@@ -948,8 +948,8 @@ int test_fifo_read_span_vs_read() {
 	DataType r2;
 	auto res1 = fifo1.Read(4, r1);
 	auto res2 = fifo2.Read(4, r2);
-	ASSERT_TRUE("span_vs_read first read ok", res1.has_value());
-	ASSERT_TRUE("span_vs_read second read ok", res2.has_value());
+	ASSERT_TRUE("span_vs_read first read ok", res1);
+	ASSERT_TRUE("span_vs_read second read ok", res2);
 	std::string s1 = StormByte::String::FromByteVector(r1);
 	std::string s2 = StormByte::String::FromByteVector(r2);
 	ASSERT_EQUAL("span_vs_read content", s1, s2);
@@ -966,7 +966,7 @@ int test_fifo_write_full_telling_zero() {
 	DataType data(10, std::byte{0xFF}); // 10 bytes of data
 	// Write zero bytes
 	auto res = fifo.Write(0, data);
-	ASSERT_TRUE("write zero bytes returned", res.has_value());
+	ASSERT_TRUE("write zero bytes returned", res);
 	ASSERT_EQUAL("size after write zero", fifo.Size(), static_cast<std::size_t>(10));
 	RETURN_TEST("test_fifo_write_full_telling_zero", 0);
 }

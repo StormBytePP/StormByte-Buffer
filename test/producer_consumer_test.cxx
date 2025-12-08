@@ -64,7 +64,7 @@ int test_producer_consumer_basic_write_read() {
 
 	std::vector<std::byte> data;
 	auto res = consumer.Read(message.size(), data);
-	ASSERT_TRUE("read ok", res.has_value());
+	ASSERT_TRUE("read ok", res);
 	ASSERT_EQUAL("content matches", StormByte::String::FromByteVector(data), message);
 
 	RETURN_TEST("test_producer_consumer_basic_write_read", 0);
@@ -75,10 +75,10 @@ int test_producer_write_span_consumer_read() {
 	auto consumer = producer.Consumer();
 	const std::string msg = "PCSPAN";
 	auto w = producer.Write(msg);
-	ASSERT_TRUE("producer_write_span ok", w.has_value());
+	ASSERT_TRUE("producer_write_span ok", w);
 	std::vector<std::byte> r;
 	auto res = consumer.Read(6, r);
-	ASSERT_TRUE("consumer_read_span ok", res.has_value());
+	ASSERT_TRUE("consumer_read_span ok", res);
 	ASSERT_EQUAL("producer_consumer_span content", StormByte::String::FromByteVector(r), std::string("PCSPAN"));
 	RETURN_TEST("test_producer_write_span_consumer_read", 0);
 }
@@ -88,16 +88,16 @@ int test_producer_consumer_span_until_eof() {
 	auto consumer = producer.Consumer();
 	const std::string msg = "ABCDEFGH";
 	auto w = producer.Write(msg);
-	ASSERT_TRUE("pc span write ok", w.has_value());
+	ASSERT_TRUE("pc span write ok", w);
 	std::vector<std::byte> s1, s2, s3;
 	auto r1 = consumer.Read(3, s1);
-	ASSERT_TRUE("pc span1 ok", r1.has_value());
+	ASSERT_TRUE("pc span1 ok", r1);
 	ASSERT_EQUAL("pc span1 size", s1.size(), static_cast<std::size_t>(3));
 	auto r2 = consumer.Read(3, s2);
-	ASSERT_TRUE("pc span2 ok", r2.has_value());
+	ASSERT_TRUE("pc span2 ok", r2);
 	ASSERT_EQUAL("pc span2 size", s2.size(), static_cast<std::size_t>(3));
 	auto r3 = consumer.Read(2, s3);
-	ASSERT_TRUE("pc span3 ok", r3.has_value());
+	ASSERT_TRUE("pc span3 ok", r3);
 	ASSERT_EQUAL("pc span3 size", s3.size(), static_cast<std::size_t>(2));
 	ASSERT_EQUAL("pc available after spans", consumer.AvailableBytes(), static_cast<std::size_t>(0));
 	ASSERT_TRUE("pc not eof until closed", !consumer.EoF());
@@ -116,7 +116,7 @@ int test_producer_consumer_multiple_writes() {
 
 	std::vector<std::byte> all;
 	auto res = consumer.Read(0, all);
-	ASSERT_TRUE("concatenated content read ok", res.has_value());
+	ASSERT_TRUE("concatenated content read ok", res);
 	ASSERT_EQUAL("concatenated content", StormByte::String::FromByteVector(all), std::string("FirstSecondThird"));
 
 	RETURN_TEST("test_producer_consumer_multiple_writes", 0);
@@ -131,11 +131,11 @@ int test_producer_consumer_extract() {
 
 	std::vector<std::byte> first, rest;
 	auto res1 = consumer.Extract(3, first);
-	ASSERT_TRUE("extracted ABC ok", res1.has_value());
+	ASSERT_TRUE("extracted ABC ok", res1);
 	ASSERT_EQUAL("extracted ABC", StormByte::String::FromByteVector(first), std::string("ABC"));
 	ASSERT_EQUAL("size after extract", consumer.Size(), static_cast<std::size_t>(5));
 	auto res2 = consumer.Extract(0, rest);
-	ASSERT_TRUE("rest extract ok", res2.has_value());
+	ASSERT_TRUE("rest extract ok", res2);
 	ASSERT_EQUAL("rest is DEFGH", StormByte::String::FromByteVector(rest), std::string("DEFGH"));
 	ASSERT_TRUE("empty after extract all", consumer.Empty());
 
@@ -148,7 +148,7 @@ int test_producer_consumer_close_mechanism() {
 
 	(void)producer.Write("Data");
 	producer.Close();
-	ASSERT_FALSE("write after close should fail", producer.Write("MoreData").has_value());
+	ASSERT_FALSE("write after close should fail", producer.Write("MoreData"));
 	ASSERT_EQUAL("size unchanged after close write", consumer.Size(), static_cast<std::size_t>(4));
 	// No IsReadable/IsWritable in new API
 
@@ -164,15 +164,15 @@ int test_producer_consumer_seek_operations() {
 
 	std::vector<std::byte> from5, fromStart, from7;
 	auto res1 = consumer.Read(5, from5);
-	ASSERT_TRUE("read from pos 5 ok", res1.has_value());
+	ASSERT_TRUE("read from pos 5 ok", res1);
 	ASSERT_EQUAL("read from pos 5", StormByte::String::FromByteVector(from5), std::string("01234"));
 	consumer.Seek(-5, Position::Relative); // Seek to start
 	auto res2 = consumer.Read(0, fromStart);
-	ASSERT_TRUE("read from start ok", res2.has_value());
+	ASSERT_TRUE("read from start ok", res2);
 	ASSERT_EQUAL("read from start", StormByte::String::FromByteVector(fromStart), std::string("0123456789"));
 	consumer.Seek(7, Position::Absolute); // Seek to position 7
 	auto res3 = consumer.Read(3, from7);
-	ASSERT_TRUE("read from pos 7 ok", res3.has_value());
+	ASSERT_TRUE("read from pos 7 ok", res3);
 	ASSERT_EQUAL("read from pos 7", StormByte::String::FromByteVector(from7), std::string("789"));
 	RETURN_TEST("test_producer_consumer_seek_operations", 0);
 }
@@ -188,7 +188,7 @@ int test_producer_consumer_copy_semantics() {
 	auto consumer = producer1.Consumer();
 	std::vector<std::byte> all;
 	auto res = consumer.Read(0, all);
-	ASSERT_TRUE("copy semantics read ok", res.has_value());
+	ASSERT_TRUE("copy semantics read ok", res);
 	ASSERT_EQUAL("both producers share buffer", StormByte::String::FromByteVector(all), std::string("OriginalAdded"));
 
 	// Copy consumer - should share buffer
@@ -211,7 +211,7 @@ int test_producer_consumer_move_semantics() {
 	auto consumer2 = std::move(consumer);
 	std::vector<std::byte> data;
 	auto res = consumer2.Read(0, data);
-	ASSERT_TRUE("move semantics read ok", res.has_value());
+	ASSERT_TRUE("move semantics read ok", res);
 	ASSERT_EQUAL("moved consumer works", StormByte::String::FromByteVector(data), std::string("DataMore"));
 
 	RETURN_TEST("test_producer_consumer_move_semantics", 0);
@@ -237,11 +237,11 @@ int test_single_producer_single_consumer_threaded() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(10, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value() && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
+					if (remres && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
 				}
 				break;
 			}
@@ -288,11 +288,11 @@ int test_multiple_producers_single_consumer() {
 		while (completed_producers.load() < 3) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(10, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value() && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
+					if (remres && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
 				}
 				break;
 			}
@@ -352,11 +352,11 @@ int test_single_producer_multiple_consumers() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = cons.Extract(5, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (cons.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = cons.Extract(0, rem);
-					if (remres.has_value()) counter.fetch_add(rem.size());
+					if (remres) counter.fetch_add(rem.size());
 				}
 				break;
 			}
@@ -418,11 +418,11 @@ int test_multiple_producers_multiple_consumers() {
 			while (true) {
 				std::vector<std::byte> part;
 				auto res = cons_copy.Extract(10, part);
-				if (!res.has_value()) {
+				if (!res) {
 					if (cons_copy.AvailableBytes() > 0) {
 						std::vector<std::byte> rem;
 						auto remres = cons_copy.Extract(0, rem);
-						if (remres.has_value()) local_consumed += rem.size();
+						if (remres) local_consumed += rem.size();
 					}
 					break;
 				}
@@ -458,7 +458,7 @@ int test_producer_consumer_with_reserve() {
 
 	std::vector<std::byte> data;
 	auto res = consumer.Extract(0, data);
-	ASSERT_TRUE("with reserve extract ok", res.has_value());
+	ASSERT_TRUE("with reserve extract ok", res);
 	ASSERT_EQUAL("extracted size", data.size(), static_cast<std::size_t>(1000));
 
 	RETURN_TEST("test_producer_consumer_with_reserve", 0);
@@ -488,10 +488,10 @@ int test_producer_consumer_byte_vector_write() {
 
 	std::string bytes = "Binary data";
 	auto w = producer.Write(bytes);
-	ASSERT_TRUE("byte vector write ok", w.has_value());
+	ASSERT_TRUE("byte vector write ok", w);
 	std::vector<std::byte> read_data;
 	auto res = consumer.Read(0, read_data);
-	ASSERT_TRUE("byte vector read ok", res.has_value());
+	ASSERT_TRUE("byte vector read ok", res);
 	ASSERT_EQUAL("byte vector write size", read_data.size(), bytes.size());
 	ASSERT_EQUAL("byte vector write content", StormByte::String::FromByteVector(read_data), std::string("Binary data"));
 
@@ -506,10 +506,10 @@ int test_producer_consumer_interleaved_operations() {
 	producer.Close();
 	std::vector<std::byte> r1, r2, r3;
 	auto res1 = consumer.Extract(3, r1);
-	ASSERT_TRUE("extract Par ok", res1.has_value());
+	ASSERT_TRUE("extract Par ok", res1);
 	ASSERT_EQUAL("extract Par", StormByte::String::FromByteVector(r1), std::string("Par"));
 	auto res2 = consumer.Read(0, r2);
-	ASSERT_TRUE("remaining t1 read ok", res2.has_value());
+	ASSERT_TRUE("remaining t1 read ok", res2);
 	ASSERT_EQUAL("remaining t1", StormByte::String::FromByteVector(r2), std::string("t1"));
 	// No Seek, so skip r3
 
@@ -535,11 +535,11 @@ int test_producer_consumer_stress_rapid_operations() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(10, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value()) read_count.fetch_add(rem.size());
+					if (remres) read_count.fetch_add(rem.size());
 				}
 				break;
 			}
@@ -586,11 +586,11 @@ int test_producer_consumer_pipeline_pattern() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = stage1_consumer.Extract(10, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (stage1_consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = stage1_consumer.Extract(0, rem);
-					if (remres.has_value() && !rem.empty()) {
+					if (remres && !rem.empty()) {
 						std::string remstr = StormByte::String::FromByteVector(rem);
 						std::transform(remstr.begin(), remstr.end(), remstr.begin(), ::toupper);
 						(void)stage2_producer.Write(remstr);
@@ -613,11 +613,11 @@ int test_producer_consumer_pipeline_pattern() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = stage2_consumer.Extract(10, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (stage2_consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = stage2_consumer.Extract(0, rem);
-					if (remres.has_value() && !rem.empty()) final_result.append(StormByte::String::FromByteVector(rem));
+					if (remres && !rem.empty()) final_result.append(StormByte::String::FromByteVector(rem));
 				}
 				break;
 			}
@@ -650,7 +650,7 @@ int test_out_of_sync_partial_writes() {
 	std::thread consumer_thread([&]() -> int {
 		std::vector<std::byte> data;
 		auto res = consumer.Read(10, data); // Blocks until 10 bytes available or closed
-		if (!res.has_value()) return 1;
+		if (!res) return 1;
 		result = StormByte::String::FromByteVector(data);
 		consumer_done.store(true);
 		return 0;
@@ -687,11 +687,11 @@ int test_consumer_waits_for_insufficient_data() {
 		read_started.store(true);
 		std::vector<std::byte> data;
 		auto res = consumer.Read(20, data); // Request 20 bytes
-		if (!res.has_value()) {
+		if (!res) {
 			if (consumer.AvailableBytes() > 0) {
 				std::vector<std::byte> rem;
 				auto remres = consumer.Read(0, rem);
-				if (remres.has_value()) result = StormByte::String::FromByteVector(rem);
+				if (remres) result = StormByte::String::FromByteVector(rem);
 			} else {
 				result = "";
 			}
@@ -732,7 +732,7 @@ int test_multiple_consumers_with_partial_data() {
 		Consumer cons = consumer;
 		std::vector<std::byte> data;
 		auto res = cons.Read(5, data); // Each wants 5 bytes
-		if (res.has_value()) {
+		if (res) {
 			results[id] = StormByte::String::FromByteVector(data);
 		} else {
 			results[id] = ""; // No data available (closed before this consumer could read)
@@ -793,10 +793,10 @@ int test_interleaved_read_extract_with_blocking() {
 	// Non-blocking operations since data is already available
 	std::vector<std::byte> r1, e1;
 	auto res1 = consumer.Read(5, r1);
-	ASSERT_TRUE("read ok", res1.has_value());
+	ASSERT_TRUE("read ok", res1);
 	read_result = StormByte::String::FromByteVector(r1);
 	auto res2 = consumer.Extract(3, e1);
-	ASSERT_TRUE("extract ok", res2.has_value());
+	ASSERT_TRUE("extract ok", res2);
 	extract_result = StormByte::String::FromByteVector(e1);
 	
 	ASSERT_EQUAL("reader got 5 bytes", read_result.size(), static_cast<size_t>(5));
@@ -816,11 +816,11 @@ int test_producer_close_during_consumer_wait() {
 		// This will block until closed since we request more than available
 		std::vector<std::byte> data;
 		auto res = consumer.Read(100, data);
-		if (!res.has_value()) {
+		if (!res) {
 			if (consumer.AvailableBytes() > 0) {
 				std::vector<std::byte> rem;
 				auto remres = consumer.Read(0, rem);
-				if (remres.has_value()) result = StormByte::String::FromByteVector(rem);
+				if (remres) result = StormByte::String::FromByteVector(rem);
 			} else {
 				result = "";
 			}
@@ -867,11 +867,11 @@ int test_rapid_write_close_with_slow_consumer() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(5, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value()) total_consumed.fetch_add(rem.size());
+					if (remres) total_consumed.fetch_add(rem.size());
 				}
 				break;
 			}
@@ -900,7 +900,7 @@ int test_extract_zero_bytes_behavior() {
 	// Extract(0) should return all available data immediately without blocking
 	std::vector<std::byte> data;
 	auto res = consumer.Extract(0, data);
-	ASSERT_TRUE("extract zero bytes ok", res.has_value());
+	ASSERT_TRUE("extract zero bytes ok", res);
 	size_t extracted_size = data.size();
 	
 	ASSERT_EQUAL("extracted all available", extracted_size, static_cast<size_t>(8));
@@ -919,7 +919,7 @@ int test_seek_during_blocked_read() {
 	// Seek not supported in new API, so just read first 10 bytes
 	std::vector<std::byte> data;
 	auto res = consumer.Read(10, data);
-	ASSERT_TRUE("read ok", res.has_value());
+	ASSERT_TRUE("read ok", res);
 	std::string result = StormByte::String::FromByteVector(data);
 	ASSERT_EQUAL("got 10 bytes", result.size(), static_cast<size_t>(10));
 	ASSERT_EQUAL("correct data from position 0", result, std::string("0123456789"));
@@ -949,11 +949,11 @@ int test_very_large_data_transfer() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(4096, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value()) received_size += rem.size();
+					if (remres) received_size += rem.size();
 				}
 				break;
 			}
@@ -995,11 +995,11 @@ int test_alternating_small_large_writes() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(100, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value()) total_received.fetch_add(rem.size());
+					if (remres) total_received.fetch_add(rem.size());
 				}
 				break;
 			}
@@ -1038,7 +1038,7 @@ int test_consumer_clear_during_production() {
 	// Read new data
 	std::vector<std::byte> data;
 	auto res = consumer.Extract(0, data);
-	ASSERT_TRUE("extract after clear ok", res.has_value());
+	ASSERT_TRUE("extract after clear ok", res);
 	ASSERT_EQUAL("got data after clear", StormByte::String::FromByteVector(data), std::string("AfterClear"));
 	
 	RETURN_TEST("test_consumer_clear_during_production", 0);
@@ -1060,7 +1060,7 @@ int test_multiple_sequential_read_blocks() {
 	for (int i = 0; i < 5; ++i) {
 		std::vector<std::byte> data;
 		auto res = consumer.Read(4, data);
-		ASSERT_TRUE("sequential read ok", res.has_value());
+		ASSERT_TRUE("sequential read ok", res);
 		results.push_back(StormByte::String::FromByteVector(data));
 		// No Seek in new API
 	}
@@ -1086,11 +1086,11 @@ int test_burst_writes_with_reserve() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = consumer.Extract(100, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (consumer.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = consumer.Extract(0, rem);
-					if (remres.has_value()) total.fetch_add(rem.size());
+					if (remres) total.fetch_add(rem.size());
 				}
 				break;
 			}
@@ -1121,12 +1121,12 @@ int test_producer_consumer_available_bytes() {
 	// Read moves position
 	std::vector<std::byte> r1;
 	auto res1 = consumer.Read(4, r1);
-	ASSERT_TRUE("read after write ok", res1.has_value());
+	ASSERT_TRUE("read after write ok", res1);
 	consumer.Seek(0, Position::Absolute); // Reset cursor to start after extract
 	ASSERT_EQUAL("after extract 3", static_cast<std::size_t>(9), consumer.AvailableBytes());
 	std::vector<std::byte> e1;
 	auto res2 = consumer.Extract(3, e1);
-	ASSERT_TRUE("extract ok", res2.has_value());
+	ASSERT_TRUE("extract ok", res2);
 	ASSERT_EQUAL("after extract 3", static_cast<std::size_t>(6), consumer.AvailableBytes());
 	(void)producer.Write("MORE"); // 4 bytes
 	ASSERT_EQUAL("after more writes", static_cast<std::size_t>(10), consumer.AvailableBytes());
@@ -1134,13 +1134,13 @@ int test_producer_consumer_available_bytes() {
 	consumer.Seek(0, Position::Absolute);
 	std::vector<std::byte> r2;
 	auto res3 = consumer.Read(0, r2);
-	ASSERT_TRUE("read all ok", res3.has_value());
+	ASSERT_TRUE("read all ok", res3);
 	ASSERT_EQUAL("after read all", static_cast<std::size_t>(0), consumer.AvailableBytes());
 	// Seek to start before extracting all
 	consumer.Seek(0, Position::Absolute);
 	std::vector<std::byte> e2;
 	auto res4 = consumer.Extract(0, e2);
-	ASSERT_TRUE("extract all ok", res4.has_value());
+	ASSERT_TRUE("extract all ok", res4);
 	ASSERT_EQUAL("after extract all", static_cast<std::size_t>(0), consumer.AvailableBytes());
 	ASSERT_TRUE("consumer empty", consumer.Empty());
 	
@@ -1206,10 +1206,10 @@ int test_producer_consumer_partial_read_eof() {
 	// Read(0) to obtain the remaining available bytes.
 	std::vector<std::byte> data;
 	auto res = consumer.Read(50, data);
-	ASSERT_FALSE("Read(50) should be Unexpected when closed and insufficient", res.has_value());
+	ASSERT_FALSE("Read(50) should be Unexpected when closed and insufficient", res);
 	std::vector<std::byte> rem;
 	auto remres = consumer.Read(0, rem);
-	ASSERT_TRUE("Read(0) returns remaining data", remres.has_value());
+	ASSERT_TRUE("Read(0) returns remaining data", remres);
 	ASSERT_EQUAL("partial read size", rem.size(), static_cast<std::size_t>(30));
 	ASSERT_EQUAL("partial read content", StormByte::String::FromByteVector(rem), message);
 	ASSERT_TRUE("consumer is at EoF after partial read", consumer.EoF());
@@ -1228,7 +1228,7 @@ int test_consumer_read_until_eof() {
 	// Not supported in new API. Use Read(0, buffer) to get all data.
 	std::vector<std::byte> data;
 	auto res = consumer.Read(0, data);
-	ASSERT_TRUE("ReadUntilEoF returned data", res.has_value());
+	ASSERT_TRUE("ReadUntilEoF returned data", res);
 	ASSERT_EQUAL("ReadUntilEoF content", StormByte::String::FromByteVector(data), message);
 	ASSERT_EQUAL("consumer Size unchanged after ReadUntilEoF", consumer.Size(), static_cast<std::size_t>(message.size()));
 
@@ -1246,7 +1246,7 @@ int test_consumer_extract_until_eof() {
 	// Not supported in new API. Use Extract(0, buffer) to get all data destructively.
 	std::vector<std::byte> data;
 	auto res = consumer.Extract(0, data);
-	ASSERT_TRUE("ExtractUntilEoF returned data", res.has_value());
+	ASSERT_TRUE("ExtractUntilEoF returned data", res);
 	ASSERT_EQUAL("ExtractUntilEoF content", StormByte::String::FromByteVector(data), message);
 	ASSERT_EQUAL("consumer Size is zero after ExtractUntilEoF", consumer.Size(), static_cast<std::size_t>(0));
 
@@ -1263,20 +1263,20 @@ int test_consumer_peek_basic() {
 	// Peek is supported in the API. Verify peek does not advance read position.
 	std::vector<std::byte> peek1, peek2, read1, read2;
 	auto peek1res = consumer.Peek(4, peek1);
-	ASSERT_TRUE("peek returned", peek1res.has_value());
+	ASSERT_TRUE("peek returned", peek1res);
 	ASSERT_EQUAL("peek content", StormByte::String::FromByteVector(peek1), std::string("ABCD"));
 
 	// Peek again - should return same data
 	auto peek2res = consumer.Peek(4, peek2);
-	ASSERT_TRUE("peek2 returned", peek2res.has_value());
+	ASSERT_TRUE("peek2 returned", peek2res);
 	ASSERT_EQUAL("peek2 content", StormByte::String::FromByteVector(peek2), std::string("ABCD"));
 
 	// Now read - should return same data as peek and advance position
 	auto read1res = consumer.Read(4, read1);
-	ASSERT_TRUE("read returned", read1res.has_value());
+	ASSERT_TRUE("read returned", read1res);
 	ASSERT_EQUAL("read content matches peek", StormByte::String::FromByteVector(read1), std::string("ABCD"));
 	auto read2res = consumer.Read(4, read2);
-	ASSERT_TRUE("second read returned", read2res.has_value());
+	ASSERT_TRUE("second read returned", read2res);
 	ASSERT_EQUAL("second read content", StormByte::String::FromByteVector(read2), std::string("EFGH"));
 	RETURN_TEST("test_consumer_peek_basic", 0);
 }
@@ -1294,7 +1294,7 @@ int test_consumer_peek_blocking() {
 
 	std::vector<std::byte> data;
 	auto res = consumer.Peek(10, data);
-	ASSERT_TRUE("peek blocking ok", res.has_value());
+	ASSERT_TRUE("peek blocking ok", res);
 	ASSERT_EQUAL("peek blocking content", StormByte::String::FromByteVector(data), std::string("0123456789"));
 	writer.join();
 	RETURN_TEST("test_consumer_peek_blocking", 0);
@@ -1308,7 +1308,7 @@ int test_empty_read_failure() {
 	// Attempt to read 0 bytes when no data is available should return error
 	std::vector<std::byte> data;
 	auto res = consumer.Read(0, data);
-	ASSERT_FALSE("Read(0) on empty returns error", res.has_value());
+	ASSERT_FALSE("Read(0) on empty returns error", res);
 
 	RETURN_TEST("test_empty_read_failure", 0);
 }

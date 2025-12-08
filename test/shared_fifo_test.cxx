@@ -22,10 +22,10 @@ int test_shared_fifo_write_span_basic() {
 	const char* msg = "SFPAN";
 	std::vector<std::byte> vec(reinterpret_cast<const std::byte*>(msg), reinterpret_cast<const std::byte*>(msg) + 5);
 	auto w = fifo.Write(vec);
-	ASSERT_TRUE("shared_write_span ok", w.has_value());
+	ASSERT_TRUE("shared_write_span ok", w);
 	std::vector<std::byte> read;
 	auto res = fifo.Read(5, read);
-	ASSERT_TRUE("shared_write_span read ok", res.has_value());
+	ASSERT_TRUE("shared_write_span read ok", res);
 	ASSERT_EQUAL("shared_write_span content", StormByte::String::FromByteVector(read), std::string("SFPAN"));
 	RETURN_TEST("test_shared_fifo_write_span_basic", 0);
 }
@@ -37,13 +37,13 @@ int test_shared_fifo_multiple_spans_eof() {
 	// Consume in chunks using Read (non-destructive)
 	std::vector<std::byte> s1, s2, s3;
 	auto r1 = fifo.Read(4, s1);
-	ASSERT_TRUE("sf read1 ok", r1.has_value());
+	ASSERT_TRUE("sf read1 ok", r1);
 	ASSERT_EQUAL("sf read1 size", s1.size(), static_cast<std::size_t>(4));
 	auto r2 = fifo.Read(3, s2);
-	ASSERT_TRUE("sf read2 ok", r2.has_value());
+	ASSERT_TRUE("sf read2 ok", r2);
 	ASSERT_EQUAL("sf read2 size", s2.size(), static_cast<std::size_t>(3));
 	auto r3 = fifo.Read(3, s3);
-	ASSERT_TRUE("sf read3 ok", r3.has_value());
+	ASSERT_TRUE("sf read3 ok", r3);
 	ASSERT_EQUAL("sf read3 size", s3.size(), static_cast<std::size_t>(3));
 
 	ASSERT_EQUAL("sf available after reads", fifo.AvailableBytes(), static_cast<std::size_t>(0));
@@ -71,12 +71,12 @@ int test_shared_fifo_producer_consumer_blocking() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = fifo.Read(3, part); // read small chunks, blocks until 3 available or closed
-			if (!res.has_value()) {
+			if (!res) {
 				// On error (closed & insufficient), try to consume any remaining bytes and exit.
 				if (fifo.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = fifo.Read(0, rem);
-					if (remres.has_value() && !rem.empty()) collected.append(toString(rem));
+					if (remres && !rem.empty()) collected.append(toString(rem));
 				}
 				break;
 			}
@@ -107,7 +107,7 @@ int test_shared_fifo_extract_blocking_and_close() {
 		// With no writer, Close() will wake us; out should be error or empty
 		woke.store(true);
 		saw_writable.store(fifo.IsWritable());
-		extracted_size = res.has_value() ? out.size() : 0;
+		extracted_size = res ? out.size() : 0;
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -144,11 +144,11 @@ int test_shared_fifo_concurrent_seek_and_read() {
 		// Perform two reads interleaved with seeks
 		std::vector<std::byte> r1, r2;
 		auto res1 = fifo.Read(2, r1); // reads from current (race-free due to mutex)
-		if (!res1.has_value()) { reader_failed.store(true); return; }
+		if (!res1) { reader_failed.store(true); return; }
 		read_a = toString(r1);
 		std::this_thread::sleep_for(std::chrono::milliseconds(3));
 		auto res2 = fifo.Read(3, r2);
-		if (!res2.has_value()) { reader_failed.store(true); return; }
+		if (!res2) { reader_failed.store(true); return; }
 		read_b = toString(r2);
 	});
 
@@ -184,12 +184,12 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 		std::thread reader([&]() -> void {
 			std::vector<std::byte> _r_before, _r_after;
 			auto res_before = fifo.Read(3, _r_before);
-			if (!res_before.has_value()) { reader_failed2.store(true); return; }
+			if (!res_before) { reader_failed2.store(true); return; }
 			r_before = toString(_r_before); // ABC, position now at 3
 			first_read_done.store(true);
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			auto res_after = fifo.Read(2, _r_after);
-			if (!res_after.has_value()) { reader_failed2.store(true); return; }
+			if (!res_after) { reader_failed2.store(true); return; }
 			r_after = toString(_r_after);
 		});
 		// ...existing code...
@@ -246,7 +246,7 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = fifo.Extract(1, part); // block for each byte
-			if (!res.has_value() || (part.empty() && fifo.EoF())) break;
+			if (!res || (part.empty() && fifo.EoF())) break;
 			collected.append(toString(part));
 		}
 	});
@@ -281,7 +281,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = fifo.Extract(1, part);
-			if (!res.has_value() || (part.empty() && fifo.EoF())) break;
+			if (!res || (part.empty() && fifo.EoF())) break;
 			local += part.size();
 		}
 		c1.store(local);
@@ -291,7 +291,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = fifo.Extract(1, part);
-			if (!res.has_value() || (part.empty() && fifo.EoF())) break;
+			if (!res || (part.empty() && fifo.EoF())) break;
 			local += part.size();
 		}
 		c2.store(local);
@@ -314,7 +314,7 @@ int test_shared_fifo_close_suppresses_writes() {
 	ASSERT_EQUAL("size unchanged after close", fifo.Size(), static_cast<std::size_t>(3));
 	std::vector<std::byte> out;
 	auto res = fifo.Extract(0, out);
-	ASSERT_TRUE("extract returned", res.has_value());
+	ASSERT_TRUE("extract returned", res);
 	ASSERT_EQUAL("content after close write blocked", toString(out), std::string("ABC"));
 	RETURN_TEST("test_shared_fifo_close_suppresses_writes", 0);
 }
@@ -324,11 +324,11 @@ int test_shared_fifo_wrap_boundary_blocking() {
 	(void)fifo.Write("ABCDE");
 	std::vector<std::byte> r1;
 	auto res1 = fifo.Read(3, r1); // reads ABC, position now at 3
-	ASSERT_TRUE("r1 returned", res1.has_value());
+	ASSERT_TRUE("r1 returned", res1);
 	ASSERT_EQUAL("read ABC", toString(r1), std::string("ABC"));
 	std::vector<std::byte> e1;
 	auto eres1 = fifo.Extract(2, e1); // extract from position 3, gets "DE"
-	ASSERT_TRUE("e1 returned", eres1.has_value());
+	ASSERT_TRUE("e1 returned", eres1);
 	ASSERT_EQUAL("extract DE", toString(e1), std::string("DE"));
 	(void)fifo.Write("12"); // wrap at capacity
 	// Seek to beginning and read remaining 4 bytes Follows non-destructive read position semantics
@@ -339,7 +339,7 @@ int test_shared_fifo_wrap_boundary_blocking() {
 	fifo.Seek(0, Position::Absolute);
 	std::vector<std::byte> all;
 	auto resall = fifo.Read(0, all);
-	ASSERT_TRUE("all returned", resall.has_value());
+	ASSERT_TRUE("all returned", resall);
 	ASSERT_EQUAL("wrap combined", toString(all).size(), static_cast<std::size_t>(5));
 	RETURN_TEST("test_shared_fifo_wrap_boundary_blocking", 0);
 }
@@ -361,11 +361,11 @@ int test_shared_fifo_growth_under_contention() {
 		while (true) {
 			std::vector<std::byte> part;
 			auto res = fifo.Extract(128, part);
-			if (!res.has_value()) {
+			if (!res) {
 				if (fifo.AvailableBytes() > 0) {
 					std::vector<std::byte> rem;
 					auto remres = fifo.Extract(0, rem);
-					if (remres.has_value() && !rem.empty()) consumed += rem.size();
+					if (remres && !rem.empty()) consumed += rem.size();
 				}
 				break;
 			}
@@ -393,7 +393,7 @@ int test_shared_fifo_read_insufficient_closed_returns_available() {
 	// Requesting more than available when closed is an error.
 	std::vector<std::byte> out;
 	auto result = fifo.Read(10, out);
-	ASSERT_FALSE("read with closed returns error", result.has_value());
+	ASSERT_FALSE("read with closed returns error", result);
 	// Data should remain available unchanged
 	ASSERT_EQUAL("available unchanged", fifo.AvailableBytes(), static_cast<std::size_t>(3));
 	
@@ -408,12 +408,12 @@ int test_shared_fifo_extract_insufficient_closed_returns_available() {
 	// Extract more than available when closed should return available data
 	std::vector<std::byte> out;
 	auto result = fifo.Extract(100, out);
-	ASSERT_FALSE("extract with closed returns error", result.has_value());
+	ASSERT_FALSE("extract with closed returns error", result);
 	// Data must remain unchanged when extract fails
 	ASSERT_EQUAL("size unchanged after failed extract", fifo.Size(), static_cast<std::size_t>(5));
 	std::vector<std::byte> all;
 	auto allres = fifo.Read(0, all);
-	ASSERT_TRUE("read remaining data", allres.has_value());
+	ASSERT_TRUE("read remaining data", allres);
 	ASSERT_EQUAL("content is HELLO", toString(all), std::string("HELLO"));
 	
 	RETURN_TEST("test_shared_fifo_extract_insufficient_closed_returns_available", 0);
@@ -434,7 +434,7 @@ int test_shared_fifo_blocking_read_insufficient_not_closed() {
 		auto result = fifo.Read(10, out);
 		read_finished.store(true);
 		// When we close below, it will wake up and return the 2 available bytes
-		read_got_error.store(!result.has_value());
+		read_got_error.store(!result);
 	});
 	
 	// Wait for read to start and block
@@ -528,7 +528,7 @@ int test_shared_fifo_read_closed_no_data_nonblocking() {
 	// Read(10) with count>0 should wait, wake up immediately because closed, and return empty
 	std::vector<std::byte> out;
 	auto result = fifo.Read(10, out);
-	ASSERT_FALSE("Read returns error when requesting > available on closed", result.has_value());
+	ASSERT_FALSE("Read returns error when requesting > available on closed", result);
 	
 	RETURN_TEST("test_shared_fifo_read_closed_no_data_nonblocking", 0);
 }
@@ -541,7 +541,7 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
 	
 	std::vector<std::byte> out;
 	auto result = fifo.Extract(10, out);
-	ASSERT_FALSE("Extract returns error when requesting > available on closed", result.has_value());
+	ASSERT_FALSE("Extract returns error when requesting > available on closed", result);
 	
 	RETURN_TEST("test_shared_fifo_extract_closed_no_data_nonblocking", 0);
 }
@@ -574,22 +574,22 @@ int test_shared_fifo_write_whole_fifo() {
 
 	// Write the whole FIFO into shared
 	auto ok = shared.Write(src);
-	ASSERT_TRUE("shared fifo write whole returned true", ok.has_value());
+	ASSERT_TRUE("shared fifo write whole returned true", ok);
 
 	// Extract and validate
 	std::vector<std::byte> all;
 	auto allres = shared.Extract(0, all);
-	ASSERT_TRUE("shared extract returned", allres.has_value());
+	ASSERT_TRUE("shared extract returned", allres);
 	ASSERT_EQUAL("shared fifo write whole content", toString(all), std::string("ONE"));
 
 	// rvalue move-append: source should be empty afterward
 	FIFO src2;
 	(void)src2.Write(std::string("TWO"));
 	ok = shared.Write(std::move(src2));
-	ASSERT_TRUE("shared fifo write whole rvalue returned true", ok.has_value());
+	ASSERT_TRUE("shared fifo write whole rvalue returned true", ok);
 	std::vector<std::byte> all2;
 	auto all2res = shared.Extract(0, all2);
-	ASSERT_TRUE("shared extract2 returned", all2res.has_value());
+	ASSERT_TRUE("shared extract2 returned", all2res);
 	ASSERT_EQUAL("shared fifo write whole rvalue content", toString(all2), std::string("TWO"));
 
 	RETURN_TEST("test_shared_fifo_write_whole_fifo", 0);
@@ -602,7 +602,7 @@ int test_shared_fifo_skip_basic() {
 	ASSERT_EQUAL("shared skip basic size", sf.Size(), static_cast<std::size_t>(4));
 	std::vector<std::byte> out;
 	auto outres = sf.Extract(0, out);
-	ASSERT_TRUE("shared extract after skip returned", outres.has_value());
+	ASSERT_TRUE("shared extract after skip returned", outres);
 	ASSERT_EQUAL("shared extract after skip content", toString(out), std::string("DEFG"));
 	RETURN_TEST("test_shared_fifo_skip_basic", 0);
 }
@@ -614,7 +614,7 @@ int test_shared_fifo_skip_with_readpos() {
 	// Non-destructive read to move read position
 	std::vector<std::byte> r;
 	auto rres = sf.Read(3, r);
-	ASSERT_TRUE("shared read before skip", rres.has_value());
+	ASSERT_TRUE("shared read before skip", rres);
 
 	// Drop removes four bytes from head (adjusting for read position)
 	(void)sf.Drop(4);
@@ -622,7 +622,7 @@ int test_shared_fifo_skip_with_readpos() {
 	ASSERT_EQUAL("shared size after skip with readpos", sf.Size(), static_cast<std::size_t>(3));
 	std::vector<std::byte> out;
 	auto outres = sf.Extract(0, out);
-	ASSERT_TRUE("shared extract after skip with readpos returned", outres.has_value());
+	ASSERT_TRUE("shared extract after skip with readpos returned", outres);
 	ASSERT_EQUAL("shared content after skip with readpos", toString(out), std::string("789"));
 	RETURN_TEST("test_shared_fifo_skip_with_readpos", 0);
 }
@@ -634,19 +634,19 @@ int test_shared_fifo_peek_basic() {
 	// Peek 3 bytes - should not advance read position
 	std::vector<std::byte> peek1;
 	auto peek1res = fifo.Peek(3, peek1);
-	ASSERT_TRUE("peek returned", peek1res.has_value());
+	ASSERT_TRUE("peek returned", peek1res);
 	ASSERT_EQUAL("peek content", toString(peek1), std::string("HEL"));
 	
 	// Peek again - should return same data
 	std::vector<std::byte> peek2;
 	auto peek2res = fifo.Peek(3, peek2);
-	ASSERT_TRUE("peek2 returned", peek2res.has_value());
+	ASSERT_TRUE("peek2 returned", peek2res);
 	ASSERT_EQUAL("peek2 content", toString(peek2), std::string("HEL"));
 	
 	// Now read - should return same data as peek
 	std::vector<std::byte> read1;
 	auto read1res = fifo.Read(3, read1);
-	ASSERT_TRUE("read returned", read1res.has_value());
+	ASSERT_TRUE("read returned", read1res);
 	ASSERT_EQUAL("read content matches peek", toString(read1), std::string("HEL"));
 	
 	RETURN_TEST("test_shared_fifo_peek_basic", 0);
@@ -661,13 +661,13 @@ int test_shared_fifo_peek_concurrent() {
 	// Peek should return the data
 	std::vector<std::byte> peek;
 	auto peekres = fifo.Peek(4, peek);
-	ASSERT_TRUE("concurrent peek returned", peekres.has_value());
+	ASSERT_TRUE("concurrent peek returned", peekres);
 	ASSERT_EQUAL("concurrent peek content", toString(peek), std::string("DATA"));
 	
 	// Read should return same data
 	std::vector<std::byte> read;
 	auto readres = fifo.Read(4, read);
-	ASSERT_TRUE("concurrent read returned", readres.has_value());
+	ASSERT_TRUE("concurrent read returned", readres);
 	ASSERT_EQUAL("concurrent read content", toString(read), std::string("DATA"));
 	
 	RETURN_TEST("test_shared_fifo_peek_concurrent", 0);
@@ -680,13 +680,13 @@ int test_shared_fifo_peek_all_available() {
 	// Peek all available (count = 0)
 	std::vector<std::byte> peek_all;
 	auto peekallres = fifo.Peek(0, peek_all);
-	ASSERT_TRUE("peek all returned", peekallres.has_value());
+	ASSERT_TRUE("peek all returned", peekallres);
 	ASSERT_EQUAL("peek all content", toString(peek_all), std::string("WORLD"));
 	
 	// Data should still be there
 	std::vector<std::byte> read_all;
 	auto readallres = fifo.Read(0, read_all);
-	ASSERT_TRUE("read all returned", readallres.has_value());
+	ASSERT_TRUE("read all returned", readallres);
 	ASSERT_EQUAL("read all content", toString(read_all), std::string("WORLD"));
 	
 	RETURN_TEST("test_shared_fifo_peek_all_available", 0);
