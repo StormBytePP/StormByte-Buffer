@@ -174,12 +174,20 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Access the internal data buffer.
+			 * @return Constant reference to the internal DataType buffer.
+			 */
+			inline virtual const DataType& 							Data() const noexcept override {
+				return m_buffer;
+			}
+
+			/**
 			 * @brief Drop bytes in the buffer and updates read position.
 			 * @param count Number of bytes to drop.
 			 * @return bool indicating success or failure.
 			 * @see Read(), Seek()
 			 */
-			virtual bool 												Drop(const std::size_t& count) noexcept override;
+			virtual bool 											Drop(const std::size_t& count) noexcept override;
 
 			/**
 			 * @brief Check if the buffer is empty.

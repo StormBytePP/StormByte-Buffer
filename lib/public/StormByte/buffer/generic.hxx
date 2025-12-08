@@ -122,6 +122,14 @@ namespace StormByte::Buffer {
 			virtual void 													Clear() noexcept = 0;
 
 			/**
+			 * @brief Access the internal data buffer.
+			 * @return Constant reference to the internal DataType buffer.
+			 */
+			virtual const DataType& 										Data() const noexcept {
+				// Default is a noop
+			}
+
+			/**
 			 * @brief Drop bytes in the buffer
 			 * @param count Number of bytes to drop.
 			 * @see Read()

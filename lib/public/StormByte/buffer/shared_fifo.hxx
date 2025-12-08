@@ -208,6 +208,15 @@ namespace StormByte::Buffer {
 			virtual void 										Clear() noexcept override;
 
 			/**
+			 * @brief Access the internal data buffer.
+			 * @note Warning: Not thread-safe. Caller must ensure exclusive access.
+			 * @return Constant reference to the internal DataType buffer.
+			 */
+			inline virtual const DataType& 						Data() const noexcept override {
+				return m_buffer;
+			}
+
+			/**
 			 * @brief Thread-safe close for further writes.
 			 * @details Marks buffer as closed, notifies all waiting threads. Subsequent writes
 			 *          are ignored. The buffer remains readable until all data is consumed.
