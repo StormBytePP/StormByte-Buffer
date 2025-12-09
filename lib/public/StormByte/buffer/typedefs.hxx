@@ -20,6 +20,8 @@
 namespace StormByte::Buffer {
 	class Consumer;					///< Forward declaration of Consumer class.
 	class Producer;					///< Forward declaration of Producer class.
+	class ReadOnly;					///< Forward declaration of ReadOnly class.
+	class WriteOnly;				///< Forward declaration of WriteOnly class.
 
 	/**
 	 * @enum Position

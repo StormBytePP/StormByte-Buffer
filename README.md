@@ -204,59 +204,92 @@ int main() {
 }
 ```
 
-> Note: The older `Forwarder` adapter has been removed from the public API.
-> Use the provided `ReadOnly`/`WriteOnly` implementations (for example
-> `SharedFIFO`/`FIFO`) together with `Bridge` for passthrough scenarios.
-
 #### Bridge
 
-`Bridge` is a lightweight adapter that forwards bytes from a `ReadOnly` source to a
-`WriteOnly` sink in user-space. It does not require (or reference) the old `Forwarder`
-adapter; instead, construct a `Bridge` with any objects implementing the `ReadOnly`
-and `WriteOnly` interfaces (for example `SharedFIFO` for reading and `FIFO` for
-writing).
+The `Bridge` adapter provides a small pass-through utility that reads bytes from an
+`ExternalReader` and forwards them to an `ExternalWriter` in fixed-size chunks. It's
+useful for connecting two buffer-like endpoints (for example, a source `FIFO` and a
+destination `FIFO`) without the caller needing to manually manage chunked reads/writes.
 
-- **Purpose**: Move bytes from a source to a sink without custom buffering logic.
-- **Behaviour**:
-    - `Passthrough()` (no arguments) reads until end-of-file (EoF) from the read
-        handler and writes everything to the write handler.
-    - `Passthrough(count)` reads up to `count` bytes and writes them to the sink.
-        If `count == 0`, the call will process all currently available bytes but will
-        not block until EoF; to process until EoF use the parameterless `Passthrough()`.
-    - On failure, `Passthrough()` returns an `ExpectedVoid<Error>` describing the
-        underlying read or write error.
+- Purpose: Move bytes from an external read source into an external write target in
+    configurable chunk sizes.
+- Key Features:
+    - Accepts user-provided `ExternalReader` and `ExternalWriter` implementations.
+    - Accumulates bytes into an internal `FIFO` and flushes when a chunk is complete or
+        when `Flush()` is called.
+    - Automatically flushes pending bytes in the destructor.
+- API: `Bridge(const ExternalReader&, const ExternalWriter&, std::size_t chunk_size = 4096)`,
+    `Passthrough(std::size_t bytes)`, `Flush()`, `PendingBytes()`
 
-**Usage example (recommended):**
+Usage notes:
+- `ExternalReader` and `ExternalWriter` are abstract interfaces you must implement.
+    `ExternalReader::Read(size_t, WriteOnly&)` should fill the provided `WriteOnly` with
+    up to the requested number of bytes. `ExternalWriter::Write(ReadOnly&)` should consume
+    the provided data (for example writing it into a `FIFO`).
+- The bridge accumulates reads in an internal buffer and issues writes in multiples of
+    `chunk_size`. If you request fewer bytes than `chunk_size` the bridge will hold data
+    until enough bytes are available or until `Flush()`/destruction occurs.
+
+Example (adapted from `test/bridge_test.cxx`):
 
 ```cpp
 #include <StormByte/buffer/bridge.hxx>
-#include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/buffer/fifo.hxx>
-#include <StormByte/string.hxx>
 
 using StormByte::Buffer::Bridge;
-using StormByte::Buffer::SharedFIFO;
+using StormByte::Buffer::ExternalReader;
+using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
 
-int main() {
-        SharedFIFO read_fifo;   // ReadOnly implementation
-        FIFO write_fifo;        // WriteOnly implementation
-
-        const std::string test_data = "ABCD";
-        (void)read_fifo.Write(test_data);
-        read_fifo.Close();
-
-        Bridge bridge(read_fifo, write_fifo, 4096); // chunk size
-        auto res = bridge.Passthrough(); // forwards all bytes until EoF
-        if (!res.has_value()) {
-                // handle error
+// Simple ExternalReader that extracts data from a FIFO
+class SimpleReader final: public ExternalReader {
+public:
+        SimpleReader(FIFO& from) noexcept: m_source(from) {}
+        bool Read(std::size_t bytes, WriteOnly& outBuffer) const noexcept override {
+                return m_source.Extract(bytes, outBuffer);
         }
+        PointerType Clone() const override { return SimpleReader::MakePointer<SimpleReader>(m_source); }
+        PointerType Move() override { return SimpleReader::MakePointer<SimpleReader>(m_source); }
+private:
+        FIFO& m_source;
+};
 
-        std::vector<std::byte> output;
-        output.reserve(write_fifo.AvailableBytes());
-        (void)write_fifo.Extract(write_fifo.AvailableBytes(), output);
-        std::string result = StormByte::String::FromByteVector(output);
-        // result == "ABCD"
+// Simple ExternalWriter that writes into a FIFO
+class SimpleWriter final: public ExternalWriter {
+public:
+        SimpleWriter(FIFO& to) noexcept: m_target(to) {}
+        bool Write(ReadOnly& inBuffer) noexcept override {
+                return m_target.Write(std::move(inBuffer));
+        }
+        PointerType Clone() const override { return SimpleWriter::MakePointer<SimpleWriter>(m_target); }
+        PointerType Move() override { return SimpleWriter::MakePointer<SimpleWriter>(m_target); }
+private:
+        FIFO& m_target;
+};
+
+// Using the bridge:
+int example_bridge() {
+        FIFO source;
+        FIFO target;
+        source.Write("Hello Bridge!");
+
+        SimpleReader reader(source);
+        SimpleWriter writer(target);
+
+        // Create a bridge that flushes every 16 bytes
+        Bridge bridge(reader, writer, 16);
+
+        // Move all bytes from source to target
+        std::size_t total = source.Size();
+        if (!bridge.Passthrough(total)) return -1;
+
+        // Explicit flush (also happens on destructor)
+        if (!bridge.Flush()) return -1;
+
+        // Verify target received the data
+        auto got = StormByte::String::FromByteVector(target.Data());
+        // got == "Hello Bridge!"
+        return 0;
 }
 ```
 
