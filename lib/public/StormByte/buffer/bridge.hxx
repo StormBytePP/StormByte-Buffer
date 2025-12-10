@@ -49,7 +49,7 @@ namespace StormByte::Buffer {
 	 * - The `ExternalReader` and `ExternalWriter` objects are stored behind `std::shared_ptr`; callers
 	 *   remain responsible for ensuring those handlers are not concurrently accessed in an unsafe manner.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC Bridge final {
+	class STORMBYTE_BUFFER_PUBLIC Bridge {
 		public:
 			/**
 			 * @brief Construct a Bridge with both read and write handlers (copying handlers).
