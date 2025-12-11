@@ -32,7 +32,7 @@ using StormByte::Buffer::Consumer;
 // header formatting during hot loops. Tests are verbose during development
 // so pick a reasonable emission level.
 static std::ostringstream logging_stream;
-StormByte::Logger::Log logging = StormByte::Logger::Log(logging_stream, StormByte::Logger::Level::Info);
+std::shared_ptr<StormByte::Logger::Log> logging = std::make_shared<StormByte::Logger::Log>(logging_stream, StormByte::Logger::Level::Info);
 
 // Helper to wait for pipeline completion without arbitrary sleeps
 void wait_for_pipeline_completion(Consumer& consumer) {
@@ -65,7 +65,7 @@ int test_pipeline_single_stage() {
 	Pipeline pipeline;
 	
 	// Single stage: uppercase transformation
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -98,7 +98,7 @@ int test_pipeline_two_stages() {
 	Pipeline pipeline;
 	
 	// Stage 1: uppercase
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& logging) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> logging) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -112,7 +112,7 @@ int test_pipeline_two_stages() {
 	});
 	
 	// Stage 2: replace spaces with underscores
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& logging) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> logging) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -145,7 +145,7 @@ int test_pipeline_three_stages() {
 	Pipeline pipeline;
 	
 	// Stage 1: uppercase
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -159,7 +159,7 @@ int test_pipeline_three_stages() {
 	});
 	
 	// Stage 2: replace spaces
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -173,7 +173,7 @@ int test_pipeline_three_stages() {
 	});
 	
 	// Stage 3: add prefix and suffix
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		(void)out.Write("[");
 		while (!in.EoF()) {
 			DataType data;
@@ -207,7 +207,7 @@ int test_pipeline_incremental_processing() {
 	Pipeline pipeline;
 	
 	// Stage that processes data incrementally
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 1, data); // Read one byte at a time
@@ -240,7 +240,7 @@ int test_pipeline_filter_stage() {
 	Pipeline pipeline;
 	
 	// Stage that filters out non-alphabetic characters
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -280,7 +280,7 @@ int test_pipeline_multiple_writes() {
 	Pipeline pipeline;
 	
 	// Stage that duplicates each piece of data
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -311,7 +311,7 @@ int test_pipeline_multiple_writes() {
 int test_pipeline_empty_input() {
 	Pipeline pipeline;
 	
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -349,7 +349,7 @@ int test_pipeline_large_data() {
 	Pipeline pipeline;
 	
 	// Stage that counts characters
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		std::size_t count = 0;
 		while (!in.EoF()) {
 			DataType data;
@@ -384,7 +384,7 @@ int test_pipeline_reuse() {
 	Pipeline pipeline;
 	
 	// Stage that adds prefix
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		(void)out.Write(">");
 		while (!in.EoF()) {
 			DataType data;
@@ -432,7 +432,7 @@ int test_pipeline_reuse() {
 int test_pipeline_copy_constructor() {
 	Pipeline pipeline1;
 	
-	pipeline1.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline1.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -467,7 +467,7 @@ int test_pipeline_copy_constructor() {
 int test_pipeline_move_constructor() {
 	Pipeline pipeline1;
 	
-	pipeline1.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline1.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -502,7 +502,7 @@ int test_pipeline_move_constructor() {
 int test_pipeline_addpipe_move() {
 	Pipeline pipeline;
 	
-	auto func = [](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	auto func = [](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -536,7 +536,7 @@ int test_pipeline_word_count() {
 	Pipeline pipeline;
 	
 	// Count words (space-separated)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		std::size_t word_count = 0;
 		std::string buffer;
 		
@@ -582,7 +582,7 @@ int test_pipeline_reverse_string() {
 	Pipeline pipeline;
 	
 	// Reverse the string
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		std::string buffer;
 		
 		while (!in.EoF()) {
@@ -618,7 +618,7 @@ int test_pipeline_streaming_data() {
 	Pipeline pipeline;
 	
 	// Pass through with small delay to simulate processing
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -660,7 +660,7 @@ int test_pipeline_byte_arithmetic() {
 	Pipeline pipeline;
 	
 	// Stage 1: Add 1 to each byte
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -677,7 +677,7 @@ int test_pipeline_byte_arithmetic() {
 	});
 	
 	// Stage 2: Multiply by 2
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -694,7 +694,7 @@ int test_pipeline_byte_arithmetic() {
 	});
 	
 	// Stage 3: Divide by 2
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -711,7 +711,7 @@ int test_pipeline_byte_arithmetic() {
 	});
 	
 	// Stage 4: Subtract 1
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -759,7 +759,7 @@ int test_pipeline_large_concurrent_stress() {
 	Pipeline pipeline;
 	
 	// Stage 1: XOR with 0x55
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -776,7 +776,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 2: Add 17 to each byte
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -793,7 +793,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 3: NOT (bitwise complement)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -810,7 +810,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 4: XOR with 0xAA
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -827,7 +827,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 5: Multiply by 3 (mod 256)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -844,7 +844,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 6: Rotate left by 3 bits
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -862,7 +862,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 7: Subtract 42
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -879,7 +879,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 8: XOR with 0x33
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -896,7 +896,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 9: UNDO - XOR with 0x33 (XOR is self-inverse)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -913,7 +913,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 10: UNDO - Add 42 (reverse of subtract 42)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -930,7 +930,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 11: UNDO - Rotate right by 3 bits (reverse of rotate left)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -948,7 +948,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 12: UNDO - Multiply by 171 (modular inverse of 3 mod 256)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -965,7 +965,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 13: UNDO - XOR with 0xAA (XOR is self-inverse)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -982,7 +982,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 14: UNDO - NOT (bitwise complement is self-inverse)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -999,7 +999,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 15: UNDO - Subtract 17 (reverse of add 17)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -1016,7 +1016,7 @@ int test_pipeline_large_concurrent_stress() {
 	});
 	
 	// Stage 16: UNDO - XOR with 0x55 (XOR is self-inverse)
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -1110,7 +1110,7 @@ int test_pipeline_sync_execution() {
 	Pipeline pipeline;
 
 	// Stage 1: uppercase
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -1124,7 +1124,7 @@ int test_pipeline_sync_execution() {
 	});
 
 	// Stage 2: replace spaces
-	pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 		while (!in.EoF()) {
 			DataType data;
 			auto res = CONSUME(in, 0, data);
@@ -1159,7 +1159,7 @@ int test_pipeline_interrupted_by_seterror() {
 
 	// Construct a long pipeline with stages that check writability and bail fast on error
 	for (int i = 0; i < 8; ++i) {
-		pipeline.AddPipe([](Consumer in, Producer out, StormByte::Logger::Log& log) {
+		pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log> log) {
 			while (!in.EoF()) {
 				DataType data;
 				auto res = CONSUME(in, 0, data);

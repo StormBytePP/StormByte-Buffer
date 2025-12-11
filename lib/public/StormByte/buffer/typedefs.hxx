@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -66,7 +67,7 @@ namespace StormByte::Buffer {
 	 * 
 	 * @see Consumer, Producer, Pipeline
 	 */
-	using PipeFunction = std::function<void(Consumer, Producer, Logger::Log&)>;
+	using PipeFunction = std::function<void(Consumer, Producer, std::shared_ptr<Logger::Log>)>;
 
 	/**
 	 * @brief Execution mode selector for pipeline processing.

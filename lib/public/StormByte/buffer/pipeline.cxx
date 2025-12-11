@@ -38,7 +38,7 @@ void Pipeline::SetError() const noexcept {
 	}
 }
 
-Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::Log log) const noexcept {
+Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, std::shared_ptr<Logger::Log> log) const noexcept {
 	// This guards double calls and do not harm in the first call
 	WaitForCompletion();
 
@@ -67,16 +67,16 @@ Consumer Pipeline::Process(Consumer buffer, const ExecutionMode& mode, Logger::L
 		Producer stage_out = m_producers[i];
 
 		// First N-1 stages: create a background thread and store it.
-		if (i < m_pipes.size() - 1) {
-			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, &log]() mutable {
-				pipe(in, out, log);
-			});
+            if (i < m_pipes.size() - 1) {
+            	m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, log]() mutable {
+            		pipe(in, out, log);
+            	});
 			continue;
 		}
 
 		// Last stage: detached/threaded only for Async; for Sync run inline.
 		if (mode == ExecutionMode::Async) {
-			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, &log]() mutable {
+			m_threads.emplace_back([pipe = m_pipes[i], in = stage_in, out = stage_out, log]() mutable {
 				pipe(in, out, log);
 			});
 		} else {
