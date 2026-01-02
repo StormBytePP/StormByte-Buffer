@@ -10,6 +10,7 @@ project("StormByte C++ Library: Buffer module"
 	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
 )
 
+include(cmake/optimizations.cmake)
 include(cmake/asan.cmake)
 
 add_subdirectory(doc)
