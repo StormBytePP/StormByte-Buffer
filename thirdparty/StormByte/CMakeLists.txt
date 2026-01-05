@@ -8,3 +8,6 @@ if(WITH_STORMBYTE STREQUAL "SYSTEM")
 else()
 	add_subdirectory(logger)
 endif()
+
+cmake_policy(SET CMP0079 NEW)
+target_link_libraries(StormByte-Buffer StormByte::Logger)
