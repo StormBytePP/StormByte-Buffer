@@ -27,7 +27,7 @@ LockFreeRing::LockFreeRing(std::size_t initial_capacity) {
 }
 
 LockFreeRing::LockFreeRing(LockFreeRing&& other) noexcept {
-	// SPSC move is only safe when no concurrent access exists
+	// Only safe when no concurrent access exists
 	m_storage   = std::move(other.m_storage);
 	m_capacity  = other.m_capacity;
 	m_mask      = other.m_mask;
@@ -104,17 +104,17 @@ std::size_t LockFreeRing::Size() const noexcept {
 }
 
 const DataType& LockFreeRing::Data() const noexcept {
-	// Snapshot (rare operation)
-	const std::size_t h = m_head.load(std::memory_order_acquire);
-	const std::size_t t = m_tail.load(std::memory_order_acquire);
+	std::lock_guard lock(m_wait_mtx);
+
+	const std::size_t h = m_head.load(std::memory_order_relaxed);
+	const std::size_t t = m_tail.load(std::memory_order_relaxed);
 	const std::size_t sz = t - h;
+	const std::size_t mask = m_mask;
 
 	m_data_cache.clear();
 	m_data_cache.reserve(sz);
-
-	for (std::size_t i = 0; i < sz; ++i) {
-		m_data_cache.push_back(m_storage[(h + i) & m_mask]);
-	}
+	for (std::size_t i = 0; i < sz; ++i)
+		m_data_cache.push_back(m_storage[(h + i) & mask]);
 	return m_data_cache;
 }
 
@@ -123,13 +123,13 @@ const DataType& LockFreeRing::Data() const noexcept {
 // ---------------------------------------------------------------------------
 
 void LockFreeRing::Clean() noexcept {
-	// Discard everything already consumed (logical → head)
 	const std::size_t l = m_logical.load(std::memory_order_relaxed);
 	m_head.store(l, std::memory_order_release);
 	m_cv.notify_all();
 }
 
 void LockFreeRing::Clear() noexcept {
+	std::lock_guard lock(m_wait_mtx);
 	m_head.store(0, std::memory_order_relaxed);
 	m_tail.store(0, std::memory_order_relaxed);
 	m_logical.store(0, std::memory_order_relaxed);
@@ -152,7 +152,6 @@ bool LockFreeRing::Drop(const std::size_t& count) noexcept {
 	if (count > avail) return false;
 
 	m_logical.fetch_add(count, std::memory_order_relaxed);
-	// Optionally reclaim
 	m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
 	m_cv.notify_all();
 	return true;
@@ -175,10 +174,11 @@ void LockFreeRing::Seek(const std::ptrdiff_t& offset, const Position& mode) cons
 }
 
 // ---------------------------------------------------------------------------
-// Grow (producer side only)
+// Grow — MUST be called with m_wait_mtx held
 // ---------------------------------------------------------------------------
 
 void LockFreeRing::Grow() noexcept {
+	// Caller holds m_wait_mtx so no concurrent ReadInternal/WriteInternal touches storage.
 	const std::size_t old_cap = m_capacity;
 	const std::size_t new_cap = old_cap * 2;
 	std::vector<std::byte> new_storage(new_cap);
@@ -186,16 +186,20 @@ void LockFreeRing::Grow() noexcept {
 	const std::size_t h = m_head.load(std::memory_order_relaxed);
 	const std::size_t t = m_tail.load(std::memory_order_relaxed);
 	const std::size_t sz = t - h;
+	const std::size_t old_mask = m_mask;
 
 	for (std::size_t i = 0; i < sz; ++i)
-		new_storage[i] = m_storage[(h + i) & m_mask];
+		new_storage[i] = m_storage[(h + i) & old_mask];
+
+	const std::size_t logical = m_logical.load(std::memory_order_relaxed);
+	const std::size_t logical_off = logical - h; // still unread relative to new head
 
 	m_storage  = std::move(new_storage);
 	m_capacity = new_cap;
 	m_mask     = new_cap - 1;
 
 	m_head.store(0, std::memory_order_relaxed);
-	m_logical.store(m_logical.load(std::memory_order_relaxed) - h, std::memory_order_relaxed);
+	m_logical.store(logical_off, std::memory_order_relaxed);
 	m_tail.store(sz, std::memory_order_relaxed);
 }
 
@@ -214,7 +218,6 @@ bool LockFreeRing::WaitFor(std::size_t n) const {
 		return AvailableBytes() >= n;
 	});
 
-	// Después del wait, comprobamos el estado real
 	if (m_error.load(std::memory_order_acquire))
 		return false;
 
@@ -226,10 +229,10 @@ bool LockFreeRing::WaitFor(std::size_t n) const {
 // ---------------------------------------------------------------------------
 
 bool LockFreeRing::ReadInternal(std::size_t count, DataType& out, Operation op) noexcept {
-	std::size_t avail = AvailableBytes();
-
 	if (m_error.load(std::memory_order_acquire))
 		return false;
+
+	std::size_t avail = AvailableBytes();
 
 	if (avail == 0 && m_closed.load(std::memory_order_acquire))
 		return false;
@@ -244,21 +247,33 @@ bool LockFreeRing::ReadInternal(std::size_t count, DataType& out, Operation op) 
 			return false;
 	}
 
-	const std::size_t logical = m_logical.load(std::memory_order_relaxed);
-	out.reserve(out.size() + want);
+	// Serialize with Grow()/WriteInternal storage updates
+	std::lock_guard lock(m_wait_mtx);
 
+	// Re-check under lock (producer may have grown / advanced)
+	avail = AvailableBytes();
+	if (m_error.load(std::memory_order_acquire))
+		return false;
+	if (want > avail)
+		return false;
+
+	const std::size_t logical = m_logical.load(std::memory_order_relaxed);
+	const std::size_t mask    = m_mask;
+
+	out.reserve(out.size() + want);
 	for (std::size_t i = 0; i < want; ++i)
-		out.push_back(m_storage[(logical + i) & m_mask]);
+		out.push_back(m_storage[(logical + i) & mask]);
 
 	if (op == Operation::Read || op == Operation::Extract) {
-		m_logical.fetch_add(want, std::memory_order_relaxed);
-	}
-
-	if (op == Operation::Extract) {
-		// Reclaim space
-		m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
+		const std::size_t new_logical = logical + want;
+		m_logical.store(new_logical, std::memory_order_relaxed);
+		// Reclaim slot space so the producer does not Grow forever.
+		// Safe for pipeline intermediates: once Read/Extract advanced past data,
+		// the producer may overwrite those slots.
+		m_head.store(new_logical, std::memory_order_release);
 		m_cv.notify_all();
 	}
+	// Peek: no advance
 
 	return true;
 }
@@ -329,22 +344,28 @@ bool LockFreeRing::WriteInternal(std::size_t count, const std::byte* src) noexce
 
 	if (count == 0) return true;
 
-	// Make sure there is space (grow if necessary)
+	std::lock_guard lock(m_wait_mtx);
+
+	if (m_closed.load(std::memory_order_acquire) ||
+		m_error.load(std::memory_order_acquire))
+		return false;
+
 	while (true) {
-		const std::size_t h = m_head.load(std::memory_order_acquire);
+		const std::size_t h = m_head.load(std::memory_order_relaxed);
 		const std::size_t t = m_tail.load(std::memory_order_relaxed);
 		const std::size_t used = t - h;
 
 		if (used + count <= m_capacity)
-			break;					// enough space
+			break;
 
-		Grow();						// doubles capacity
+		Grow(); // holds m_wait_mtx already
 	}
 
-	const std::size_t t = m_tail.load(std::memory_order_relaxed);
+	const std::size_t t    = m_tail.load(std::memory_order_relaxed);
+	const std::size_t mask = m_mask;
 
 	for (std::size_t i = 0; i < count; ++i)
-		m_storage[(t + i) & m_mask] = src[i];
+		m_storage[(t + i) & mask] = src[i];
 
 	m_tail.store(t + count, std::memory_order_release);
 	m_cv.notify_all();
@@ -360,7 +381,7 @@ bool LockFreeRing::Write(const std::size_t& count, DataType&& data) noexcept {
 	const std::size_t n = (count == 0) ? data.size() : std::min(count, data.size());
 	bool ok = WriteInternal(n, data.data());
 	if (ok && n == data.size())
-		data.clear();				// full move semantics
+		data.clear();
 	return ok;
 }
 

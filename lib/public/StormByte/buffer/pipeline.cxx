@@ -1,3 +1,6 @@
+// ============================================================================
+// lib/public/StormByte/buffer/pipeline.cxx
+// ============================================================================
 #include <StormByte/buffer/pipeline.hxx>
 #include <StormByte/buffer/lockfree_ring.hxx>   // private header
 #include <StormByte/buffer/producer.hxx>
@@ -16,16 +19,17 @@ using namespace StormByte::Buffer;
  * @brief Private implementation of Pipeline.
  *
  * Holds the list of stages, intermediate LockFreeRings, the final public
- * Producer and the (at most one) background thread used in Async mode.
+ * Producer and the background thread(s) used when @ref ExecutionMode::Async
+ * and/or @ref ExecutionMode::Parallel are set.
  */
 struct Pipeline::Impl {
 	std::vector<PipeFunction>                          pipes;          ///< Ordered list of stages.
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;  ///< Buffers between stages.
 	mutable Producer                                   final_producer; ///< Final public output.
-	mutable std::vector<std::thread>                   threads;        ///< Background thread (size ≤ 1).
+	mutable std::vector<std::thread>                   threads;        ///< Background workers.
 
 	/**
-	 * @brief Join any running background thread and clear the container.
+	 * @brief Join any running background threads and clear the container.
 	 */
 	void WaitForCompletion() const noexcept {
 		for (auto& t : threads) {
@@ -33,7 +37,6 @@ struct Pipeline::Impl {
 				t.join();
 		}
 		threads.clear();
-		threads.reserve(1);
 	}
 };
 
@@ -44,14 +47,12 @@ struct Pipeline::Impl {
 Pipeline::Pipeline() noexcept
 	: m_impl(std::make_unique<Impl>())
 {
-	m_impl->threads.reserve(1);
 }
 
 Pipeline::Pipeline(const Pipeline& other)
 	: m_impl(std::make_unique<Impl>())
 {
 	m_impl->pipes = other.m_impl->pipes;
-	m_impl->threads.reserve(1);
 }
 
 Pipeline::Pipeline(Pipeline&& other) noexcept
@@ -70,7 +71,6 @@ Pipeline& Pipeline::operator=(const Pipeline& other) {
 			m_impl->WaitForCompletion();
 		m_impl = std::make_unique<Impl>();
 		m_impl->pipes = other.m_impl->pipes;
-		m_impl->threads.reserve(1);
 	}
 	return *this;
 }
@@ -126,7 +126,7 @@ Consumer Pipeline::Process(Consumer buffer,
 
 	const std::size_t num_stages = m_impl->pipes.size();
 
-	// Create one LockFreeRing between each pair of stages
+	// One LockFreeRing between each pair of consecutive stages (SPSC)
 	m_impl->intermediates.clear();
 	m_impl->intermediates.reserve(num_stages > 1 ? num_stages - 1 : 0);
 	for (std::size_t i = 0; i + 1 < num_stages; ++i)
@@ -134,47 +134,69 @@ Consumer Pipeline::Process(Consumer buffer,
 
 	// Final public output (Ring-backed Producer)
 	m_impl->final_producer = Producer();
-
 	m_impl->threads.clear();
 
-	/**
-	 * Lambda that runs all stages sequentially.
-	 * Captures the input Consumer by move and the shared logger.
-	 */
-	auto run_stages = [this, buffer = std::move(buffer), log, num_stages]() mutable {
-		for (std::size_t i = 0; i < num_stages; ++i) {
-			// ---- Input side ----
-			// First stage reads from the original Consumer;
-			// subsequent stages read from the previous LockFreeRing.
-			ExternalBufferReader in_adapter =
-				(i == 0)
-					? ExternalBufferReader(static_cast<ReadOnly&>(buffer))
-					: ExternalBufferReader(*m_impl->intermediates[i - 1]);
+	const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
+	const bool async    = HasExecutionFlag(mode, ExecutionMode::Async);
 
-			// ---- Output side ----
-			if (i + 1 == num_stages) {
-				// Last stage writes into the public final Producer
-				ExternalBufferWriter out_adapter(m_impl->final_producer);
-				m_impl->pipes[i](in_adapter, out_adapter, log);
-				// Stage is expected to call out.Close()
-			} else {
-				// Intermediate stage writes into the next LockFreeRing
-				ExternalBufferWriter out_adapter(*m_impl->intermediates[i]);
-				m_impl->pipes[i](in_adapter, out_adapter, log);
-				// Stage is expected to call out.Close()
-			}
+	/**
+	 * @brief Run a single stage @p i.
+	 * @param i     Stage index in @c pipes.
+	 * @param input Original input Consumer (used only when @p i == 0).
+	 */
+	auto run_one_stage = [this, log, num_stages](std::size_t i, Consumer& input) {
+		// Input: first stage ← original Consumer; others ← previous LockFreeRing
+		ExternalBufferReader in_adapter =
+			(i == 0)
+				? ExternalBufferReader(static_cast<ReadOnly&>(input))
+				: ExternalBufferReader(*m_impl->intermediates[i - 1]);
+
+		if (i + 1 == num_stages) {
+			// Last stage writes into the public final Producer
+			ExternalBufferWriter out_adapter(m_impl->final_producer);
+			m_impl->pipes[i](in_adapter, out_adapter, log);
+			// Stage is expected to call out.Close() or out.SetError()
+		} else {
+			// Intermediate stage writes into the next LockFreeRing
+			ExternalBufferWriter out_adapter(*m_impl->intermediates[i]);
+			m_impl->pipes[i](in_adapter, out_adapter, log);
 		}
 	};
 
-	if (mode == ExecutionMode::Async) {
-		// Fire-and-forget single background thread
-		m_impl->threads.emplace_back(std::move(run_stages));
+	/**
+	 * @brief Run all stages sequentially on the current thread.
+	 */
+	auto run_stages_sequential =
+		[run_one_stage, buffer = buffer, num_stages]() mutable {
+			for (std::size_t i = 0; i < num_stages; ++i)
+				run_one_stage(i, buffer);
+		};
+
+	if (parallel) {
+		// One thread per stage (pipeline parallelism).
+		// Each intermediate remains SPSC: stage i is the sole writer of
+		// intermediates[i], stage i+1 the sole reader.
+		Consumer input = buffer; // shared handle to the same Ring
+		m_impl->threads.reserve(num_stages);
+		for (std::size_t i = 0; i < num_stages; ++i) {
+			m_impl->threads.emplace_back(
+				[run_one_stage, i, input]() mutable {
+					run_one_stage(i, input);
+				});
+		}
+		if (!async) {
+			// Parallel without Async → block until all stages complete
+			m_impl->WaitForCompletion();
+		}
+	} else if (async) {
+		// Single background worker; stages run in order; non-blocking return
+		m_impl->threads.emplace_back(std::move(run_stages_sequential));
 	} else {
-		// Synchronous execution in the caller thread
-		run_stages();
+		// Sync (0): sequential on the caller’s thread
+		run_stages_sequential();
 	}
 
-	// The final Consumer is available immediately (Async) or after the
-	// last stage has finished (Sync).
+	// Final Consumer is available immediately when Async is set, or after
+	// completion when Process blocks (Sync / Parallel-only).
 	return m_impl->final_producer.Consumer();
 }

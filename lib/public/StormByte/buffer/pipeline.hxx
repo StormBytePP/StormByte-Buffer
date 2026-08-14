@@ -42,14 +42,13 @@ namespace StormByte::Buffer {
 	 *   so the @ref Consumer returned to the caller keeps the full public API
 	 *   and can be shared safely.
 	 *
-	 * @par Execution modes
-	 * - @ref ExecutionMode::Async (recommended for production):
-	 *   A **single background thread** runs all stages **sequentially**.
-	 *   @ref Process() returns immediately with the final @ref Consumer.
-	 *   Low overhead even with dozens of stages.
-	 * - @ref ExecutionMode::Sync:
-	 *   All stages run sequentially on the caller’s thread.
-	 *   Useful for deterministic debugging.
+	 * @par Execution modes (@ref ExecutionMode bitmask)
+	 * Flags are orthogonal and combinable with @c operator|:
+	 * - @c Sync (0): stages sequential on the caller’s thread; @ref Process blocks.
+	 * - @c Async: work runs in background; @ref Process returns immediately.
+	 * - @c Parallel: one thread per stage (SPSC intermediates); without @c Async,
+	 *   @ref Process still joins workers before returning.
+	 * - @c Async | Parallel: concurrent stages and non-blocking @ref Process.
 	 *
 	 * @par Stage signature
 	 * @code{.cpp}
@@ -59,7 +58,8 @@ namespace StormByte::Buffer {
 	 *
 	 * @par Best practices
 	 * - Always call @c out.Close() (or @c out.SetError()) at the end of every stage.
-	 * - Prefer Async mode for real workloads.
+	 * - Prefer @c Async | Parallel for multi-stage streaming production workloads.
+	 * - Use @c Sync for deterministic debugging.
 	 * - The returned @ref Consumer is the only synchronization point the caller needs
 	 *   (wait on @ref Consumer::EoF() / @ref Consumer::IsWritable() as appropriate).
 	 *
@@ -97,7 +97,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Copy construct.
 			 * @param other Source pipeline (only the list of stages is copied;
-			 *              no running Async work is shared).
+			 *              no running background work is shared).
 			 */
 			Pipeline(const Pipeline& other);
 
@@ -109,7 +109,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Destructor.
-			 * @details Joins any running Async execution before destroying state.
+			 * @details Joins any running background execution before destroying state.
 			 */
 			~Pipeline() noexcept;
 
@@ -164,14 +164,16 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Execute the pipeline.
 			 * @param buffer Input @ref Consumer for the first stage.
-			 * @param mode   @ref ExecutionMode::Async or @ref ExecutionMode::Sync.
+			 * @param mode   Bitmask of @ref ExecutionMode flags
+			 *              (@c Sync, @c Async, @c Parallel, or combinations).
 			 * @param log    Optional logger passed to every stage (may be null).
 			 * @return @ref Consumer of the final stage.
-			 *         In Async mode the Consumer is available immediately while
-			 *         the background thread continues processing.
+			 *         When @c Async is set, the Consumer is available immediately
+			 *         while background work continues; otherwise @ref Process
+			 *         returns only after all stages have finished.
 			 *
-			 * @note Any previous Async run is joined before starting a new one.
-			 * @see ExecutionMode, Consumer, Producer
+			 * @note Any previous background run is joined before starting a new one.
+			 * @see ExecutionMode, HasExecutionFlag(), Consumer, Producer
 			 */
 			Consumer Process(Consumer buffer,
 							const ExecutionMode& mode,

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -31,6 +32,10 @@ using StormByte::Buffer::Producer;
 #else
 	#define CONSUME(reader, count, buff) (reader).Extract(count, buff)
 #endif
+
+// Non-blocking multi-stage production default for long pipelines
+static constexpr ExecutionMode kAsyncParallel =
+	ExecutionMode::Async | ExecutionMode::Parallel;
 
 // Use an in-memory stream for tests to avoid slow console I/O.
 static std::ostringstream logging_stream;
@@ -139,7 +144,7 @@ int test_pipeline_two_stages() {
 	(void)input.Write("hello world test");
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	wait_for_pipeline_completion(result);
 
 	DataType data;
@@ -201,7 +206,7 @@ int test_pipeline_three_stages() {
 	(void)input.Write("test data");
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	wait_for_pipeline_completion(result);
 
 	DataType data;
@@ -736,7 +741,8 @@ int test_pipeline_byte_arithmetic() {
 	(void)input.Write(input_data);
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	// 4 stages: Parallel can overlap without changing the transform chain
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	wait_for_pipeline_completion(result);
 
 	DataType data;
@@ -912,7 +918,7 @@ int test_pipeline_large_concurrent_stress() {
 		out.Close();
 	};
 
-	// 8 transforms + 8 inverses
+	// 8 transforms + 8 inverses — ideal for Parallel pipeline overlap
 	pipeline.AddPipe(xor55);
 	pipeline.AddPipe(add17);
 	pipeline.AddPipe(bnot);
@@ -952,7 +958,7 @@ int test_pipeline_large_concurrent_stress() {
 		input.Close();
 	});
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	writer.join();
 	wait_for_pipeline_completion(result);
 
@@ -1062,7 +1068,7 @@ int test_pipeline_interrupted_by_seterror() {
 	(void)input.Write(payload);
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	pipeline.SetError();
 	wait_for_pipeline_completion(result);
 
@@ -1097,11 +1103,7 @@ int test_pipeline_large_async_many_stages() {
 	(void)input.Write(payload);
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
-
-	// Async: al volver de Process el resultado aún no tiene por qué estar cerrado.
-	// (Si Sync hubiera bloqueado hasta el final, IsWritable sería false ya.)
-	// No usamos wall-clock: en CI es inestable.
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 
 	wait_for_pipeline_completion(result);
 
@@ -1165,7 +1167,7 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 	(void)input.Write(std::string(100000, 'X'));
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	pipeline.SetError();
@@ -1182,9 +1184,6 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 // ---------------------------------------------------------------------------
 
 int test_pipeline_stage_must_close() {
-	// If a stage forgets Close(), the next stage / final consumer must still
-	// eventually see completion via SetError or process finish.
-	// Here we verify the happy path always closes.
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 						std::shared_ptr<StormByte::Logger::Log>) {
@@ -1229,7 +1228,7 @@ int test_pipeline_identity_many_stages() {
 	(void)input.Write(msg);
 	input.Close();
 
-	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Async, logging);
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
 	wait_for_pipeline_completion(result);
 
 	DataType data;
@@ -1243,7 +1242,6 @@ int test_pipeline_null_logger() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 						std::shared_ptr<StormByte::Logger::Log> /*log*/) {
-		// No usar ASSERT_* aquí: el lambda debe ser void.
 		while (!in.EoF()) {
 			DataType d;
 			if (CONSUME(in, 0, d) && !d.empty())
@@ -1296,6 +1294,184 @@ int test_pipeline_available_bytes_during_process() {
 	RETURN_TEST("test_pipeline_available_bytes_during_process", 0);
 }
 
+int test_pipeline_parallel_blocking() {
+	// Parallel without Async: Process must block until all stages finish.
+	Pipeline pipeline;
+	for (int i = 0; i < 4; ++i) {
+		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
+							std::shared_ptr<StormByte::Logger::Log>) {
+			while (!in.EoF()) {
+				DataType d;
+				if (CONSUME(in, 0, d) && !d.empty()) {
+					for (auto& b : d)
+						b = static_cast<std::byte>(static_cast<std::uint8_t>(b) + 1);
+					(void)out.Write(std::move(d));
+				}
+			}
+			out.Close();
+		});
+	}
+
+	Producer input;
+	DataType payload;
+	for (int i = 0; i < 32; ++i)
+		payload.push_back(static_cast<std::byte>(i));
+	(void)input.Write(payload);
+	input.Close();
+
+	Consumer result = pipeline.Process(input.Consumer(), ExecutionMode::Parallel, logging);
+
+	// Blocking Parallel ⇒ already finished when Process returns
+	ASSERT_FALSE("parallel blocking not writable", result.IsWritable());
+
+	DataType data;
+	ASSERT_TRUE("parallel blocking has data", CONSUME(result, 0, data));
+	ASSERT_EQUAL("parallel blocking size", data.size(), static_cast<std::size_t>(32));
+	for (int i = 0; i < 32; ++i)
+		ASSERT_EQUAL("parallel blocking value", static_cast<int>(data[static_cast<std::size_t>(i)]), i + 4);
+
+	RETURN_TEST("test_pipeline_parallel_blocking", 0);
+}
+
+int test_pipeline_parallel_async_correctness() {
+	// Same transform under Async|Parallel (non-blocking Process).
+	Pipeline pipeline;
+	for (int i = 0; i < 6; ++i) {
+		pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
+							std::shared_ptr<StormByte::Logger::Log>) {
+			while (!in.EoF()) {
+				DataType d;
+				if (CONSUME(in, 0, d) && !d.empty()) {
+					std::string s = StormByte::String::FromByteVector(d);
+					for (char& c : s)
+						c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+					(void)out.Write(s);
+				}
+			}
+			out.Close();
+		});
+	}
+
+	Producer input;
+	(void)input.Write("parallel-async-ok");
+	input.Close();
+
+	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
+	wait_for_pipeline_completion(result);
+
+	DataType data;
+	ASSERT_TRUE("parallel async has data", CONSUME(result, 0, data));
+	ASSERT_EQUAL("parallel async content",
+				StormByte::String::FromByteVector(data),
+				std::string("PARALLEL-ASYNC-OK"));
+
+	RETURN_TEST("test_pipeline_parallel_async_correctness", 0);
+}
+
+int test_pipeline_sync_vs_parallel_cpu_bound() {
+	// Workload where pipeline parallelism should win:
+	// - several stages
+	// - multi-MiB stream
+	// - non-trivial per-byte CPU work
+	// - bounded CONSUME chunks so stages can overlap
+	//
+	// Sync (0):            stages run one after another on the caller thread.
+	// Parallel (no Async): one thread per stage; Process blocks until done.
+	//
+	// End-to-end time for Parallel should be lower than pure Sync.
+
+	constexpr int         kStages    = 8;
+	constexpr std::size_t kSize      = 4 * 1024 * 1024; // 4 MiB
+	constexpr std::size_t kChunk     = 4096;
+	constexpr int         kInnerWork = 24; // extra ALU work per byte per stage
+
+	auto cpu_stage = [](ExternalReader& in, ExternalWriter& out,
+						std::shared_ptr<StormByte::Logger::Log>) {
+		while (!in.EoF()) {
+			DataType data;
+			// Bound chunk size so the next stage can start before we finish the stream
+			if (CONSUME(in, kChunk, data) && !data.empty()) {
+				for (auto& b : data) {
+					std::uint8_t v = static_cast<std::uint8_t>(b);
+					for (int w = 0; w < kInnerWork; ++w) {
+						v = static_cast<std::uint8_t>(v * 131u + 17u);
+						v ^= static_cast<std::uint8_t>(w * 3);
+					}
+					b = static_cast<std::byte>(v);
+				}
+				(void)out.Write(std::move(data));
+			}
+		}
+		out.Close();
+	};
+
+	auto build_pipeline = [&]() {
+		Pipeline pipeline;
+		for (int i = 0; i < kStages; ++i)
+			pipeline.AddPipe(cpu_stage);
+		return pipeline;
+	};
+
+	DataType input_data(kSize);
+	for (std::size_t i = 0; i < kSize; ++i)
+		input_data[i] = static_cast<std::byte>((i * 31u + 17u) & 0xFFu);
+
+	// Reference: run the same transform sequentially in-process (single-threaded oracle)
+	DataType expected = input_data;
+	for (int s = 0; s < kStages; ++s) {
+		for (auto& b : expected) {
+			std::uint8_t v = static_cast<std::uint8_t>(b);
+			for (int w = 0; w < kInnerWork; ++w) {
+				v = static_cast<std::uint8_t>(v * 131u + 17u);
+				v ^= static_cast<std::uint8_t>(w * 3);
+			}
+			b = static_cast<std::byte>(v);
+		}
+	}
+
+	auto run_mode = [&](ExecutionMode mode, const char* label,
+						long long& total_ms) -> int {
+		Pipeline pipe = build_pipeline();
+		Producer input;
+		(void)input.Write(input_data);
+		input.Close();
+
+		const auto t0 = std::chrono::steady_clock::now();
+		Consumer result = pipe.Process(input.Consumer(), mode, logging);
+		// Sync and Parallel (without Async) both block until completion
+		const auto t1 = std::chrono::steady_clock::now();
+
+		total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+		ASSERT_FALSE(label, result.IsWritable());
+
+		DataType out;
+		ASSERT_TRUE(label, CONSUME(result, 0, out));
+		ASSERT_EQUAL("size", out.size(), kSize);
+		ASSERT_TRUE("content matches oracle", out == expected);
+		return 0;
+	};
+
+	long long sync_ms = 0;
+	long long parallel_ms = 0;
+
+	if (run_mode(ExecutionMode::Sync, "sync cpu-bound", sync_ms) != 0)
+		return 1;
+	if (run_mode(ExecutionMode::Parallel, "parallel cpu-bound", parallel_ms) != 0)
+		return 1;
+
+	// std::cout << "Sync     total: " << sync_ms << " ms\n"
+	// 		<< "Parallel total: " << parallel_ms << " ms\n";
+
+	// Parallel should finish sooner. Allow mild CI noise but require a clear win.
+	// If the machine has a single core or heavy load, this can flake — then
+	// relax to parallel_ms <= sync_ms.
+	ASSERT_TRUE("parallel faster than sync (cpu-bound pipeline)",
+				parallel_ms < sync_ms);
+
+	RETURN_TEST("test_pipeline_sync_vs_parallel_cpu_bound", 0);
+}
+
 int main() {
 	int result = 0;
 	result += test_pipeline_empty();
@@ -1322,11 +1498,15 @@ int main() {
 	result += test_pipeline_async_reuse_many_times();
 	result += test_pipeline_async_seterror_interrupts_quickly();
 
-	// New coverage
 	result += test_pipeline_stage_must_close();
 	result += test_pipeline_identity_many_stages();
 	result += test_pipeline_null_logger();
 	result += test_pipeline_available_bytes_during_process();
+
+	result += test_pipeline_parallel_blocking();
+	result += test_pipeline_parallel_async_correctness();
+
+	result += test_pipeline_sync_vs_parallel_cpu_bound();
 
 	if (result == 0) {
 		std::cout << "Pipeline tests passed!" << std::endl;
