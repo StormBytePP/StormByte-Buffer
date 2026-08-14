@@ -18,6 +18,10 @@ if(ENABLE_TEST)
 	target_link_libraries(ProducerConsumerTests StormByte-Buffer)
 	add_test(NAME ProducerConsumerTests COMMAND ProducerConsumerTests)
 
+	add_executable(RingTests ring_test.cxx)
+	target_link_libraries(RingTests StormByte-Buffer)
+	add_test(NAME RingTests COMMAND RingTests)
+
 	add_executable(SharedFIFOTests shared_fifo_test.cxx)
 	target_link_libraries(SharedFIFOTests StormByte-Buffer)
 	add_test(NAME SharedFIFOTests COMMAND SharedFIFOTests)
