@@ -1202,6 +1202,113 @@ int test_pipeline_interrupted_by_seterror() {
 	RETURN_TEST("test_pipeline_interrupted_by_seterror", 0);
 }
 
+// ---------------------------------------------------------------------------
+// Large Async pipeline efficiency & correctness tests
+// ---------------------------------------------------------------------------
+
+int test_pipeline_large_async_many_stages() {
+	Pipeline pipeline;
+
+	// 25 simple stages (uppercase → identity → uppercase …)
+	for (int i = 0; i < 25; ++i) {
+		pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log>) {
+			while (!in.EoF()) {
+				DataType data;
+				if (CONSUME(in, 0, data) && !data.empty()) {
+					std::string s = StormByte::String::FromByteVector(data);
+					for (char& c : s) c = std::toupper(c);
+					(void)out.Write(s);
+				}
+			}
+			out.Close();
+		});
+	}
+
+	Producer input;
+	const std::string payload(8192, 'a');
+	(void)input.Write(payload);
+	input.Close();
+
+	auto start = std::chrono::steady_clock::now();
+	Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logging);
+	auto launched = std::chrono::steady_clock::now();
+
+	wait_for_pipeline_completion(result);
+
+	DataType data;
+	ASSERT_TRUE("large async has data", CONSUME(result, 0, data));
+	ASSERT_EQUAL("content", StormByte::String::FromByteVector(data), std::string(8192, 'A'));
+
+	auto elapsed_launch = std::chrono::duration_cast<std::chrono::microseconds>(launched - start).count();
+	// Process() must return almost instantly (single thread spawn)
+	ASSERT_TRUE("Process returns quickly", elapsed_launch < 5000); // < 5 ms
+
+	RETURN_TEST("test_pipeline_large_async_many_stages", 0);
+}
+
+int test_pipeline_async_reuse_many_times() {
+	Pipeline pipeline;
+	pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log>) {
+		while (!in.EoF()) {
+			DataType d;
+			if (CONSUME(in, 0, d) && !d.empty()) (void)out.Write(d);
+		}
+		out.Close();
+	});
+
+	for (int i = 0; i < 50; ++i) {
+		Producer input;
+		std::string msg = "RUN-" + std::to_string(i);
+		(void)input.Write(msg);
+		input.Close();
+
+		Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logging);
+		wait_for_pipeline_completion(result);
+
+		DataType data;
+		ASSERT_TRUE("reuse has data", CONSUME(result, 0, data));
+		ASSERT_EQUAL("reuse content", StormByte::String::FromByteVector(data), msg);
+	}
+	RETURN_TEST("test_pipeline_async_reuse_many_times", 0);
+}
+
+int test_pipeline_async_seterror_interrupts_quickly() {
+	Pipeline pipeline;
+
+	// Many stages that do a bit of work
+	for (int i = 0; i < 12; ++i) {
+		pipeline.AddPipe([](Consumer in, Producer out, std::shared_ptr<StormByte::Logger::Log>) {
+			while (!in.EoF()) {
+				if (!out.IsWritable()) return; // honour cancellation
+				DataType d;
+				if (CONSUME(in, 0, d) && !d.empty()) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(2));
+					if (!out.IsWritable()) return;
+					(void)out.Write(d);
+				}
+			}
+			if (out.IsWritable()) out.Close();
+		});
+	}
+
+	Producer input;
+	(void)input.Write(std::string(100000, 'X'));
+	input.Close();
+
+	Consumer result = pipeline.Process(input.Consumer(), StormByte::Buffer::ExecutionMode::Async, logging);
+
+	// Cancel almost immediately
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	pipeline.SetError();
+
+	wait_for_pipeline_completion(result);
+
+	ASSERT_FALSE("interrupted not writable", result.IsWritable());
+	ASSERT_TRUE("interrupted reaches EoF", result.EoF());
+
+	RETURN_TEST("test_pipeline_async_seterror_interrupts_quickly", 0);
+}
+
 int main() {
 	int result = 0;
 	result += test_pipeline_empty();
@@ -1224,6 +1331,9 @@ int main() {
 	result += test_pipeline_large_concurrent_stress();
 	result += test_pipeline_sync_execution();
 	result += test_pipeline_interrupted_by_seterror();
+	result += test_pipeline_large_async_many_stages();
+	result += test_pipeline_async_reuse_many_times();
+	result += test_pipeline_async_seterror_interrupts_quickly();
 
 	if (result == 0) {
 		std::cout << "Pipeline tests passed!" << std::endl;
