@@ -20,7 +20,7 @@
 namespace StormByte::Buffer {
 	/**
 	* @class FIFO
-	* @brief Byte-oriented FIFO buffer with grow-on-demand.
+	* @brief Byte-oriented FIFO buffer with grow-on-demand and close/error support.
 	*
 	* @par Overview
 	*  A contiguous growable buffer implemented atop @c DataType that tracks
@@ -28,14 +28,16 @@ namespace StormByte::Buffer {
 	*  efficient non-destructive reads and destructive extracts.
 	*
 	* @par Thread safety
-	*  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO.
+	*  This class is **not thread-safe**. For concurrent access, use @ref SharedFIFO
+	*  or @ref Ring.
 	*
 	* @par Buffer behavior
 	*  The buffer supports clearing and cleaning operations, a movable read position
-	*  for non-destructive reads, and a closed state to signal end-of-writes.
+	*  for non-destructive reads, and a closed/error state to signal end-of-writes
+	*  or permanent failure. Once closed, further writes fail; readers can still
+	*  drain remaining data until EoF.
 	*
-	* @see SharedFIFO for thread-safe version
-	* @see Producer and Consumer for higher-level producer-consumer pattern
+	* @see SharedFIFO, Ring, Producer, Consumer
 	*/
 	class STORMBYTE_BUFFER_PUBLIC FIFO: public ReadWrite {
 		public:
@@ -124,12 +126,14 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Equality comparison.
 			 *
-			 * Compares this `FIFO` with `other` by comparing their internal buffers.
-			 * Equality is defined as having identical byte contents in the buffer
-			 * and same read position.
+			 * Compares this `FIFO` with `other` by comparing their internal buffers,
+			 * read position and closed/error state.
 			 */
 			inline bool operator==(const FIFO& other) const noexcept {
-				return m_buffer == other.m_buffer && m_position_offset == other.m_position_offset;
+				return m_buffer == other.m_buffer &&
+					m_position_offset == other.m_position_offset &&
+					m_closed == other.m_closed &&
+					m_error == other.m_error;
 			}
 
 			/**
@@ -152,19 +156,28 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Clean buffer data (from start to readposition)
+			 * @brief Clean buffer data (from start to read position)
 			 */
 			virtual void 											Clean() noexcept override;
 
 			/**
 			 * @brief Clear all buffer contents.
-			 * @details Removes all data from the buffer, resets head/tail/read positions,
-			 *          and restores capacity to the initial value requested in the constructor.
+			 * @details Removes all data from the buffer, resets head/tail/read positions.
+			 *          Does **not** clear the closed/error flags.
 			 * @see Size(), Empty()
 			 */
 			inline virtual void 									Clear() noexcept override {
 				m_buffer.clear();
 				m_position_offset = 0;
+			}
+
+			/**
+			 * @brief Mark the buffer closed for further writes.
+			 * @details Subsequent Write() calls will fail. Readers can still
+			 *          consume remaining data until AvailableBytes() becomes zero.
+			 */
+			inline void 											Close() noexcept override {
+				m_closed = true;
 			}
 
 			/**
@@ -200,8 +213,12 @@ namespace StormByte::Buffer {
 			 * @details Returns true when the buffer has been closed or set to error
 			 *          and there are no available bytes remaining.
 			 */
-			inline virtual bool 									EoF() const noexcept override {
-				return AvailableBytes() == 0;
+			inline virtual bool EoF() const noexcept override {
+				const std::size_t avail =
+					(m_position_offset <= m_buffer.size())
+						? (m_buffer.size() - m_position_offset)
+						: 0;
+				return m_error || (m_closed && avail == 0);
 			}
 
 			/**
@@ -247,55 +264,32 @@ namespace StormByte::Buffer {
 			 * @brief Produce a hexdump of the unread contents starting at the current read position.
 			 * @param collumns Number of bytes per line (0 -> default 16).
 			 * @param byte_limit Maximum number of bytes to include (0 -> no limit).
-			 * @return A formatted string that begins with `Read Position: <offset>` followed by
+			 * @return A formatted string that begins with size / position / status followed by
 			 *         the hex/ASCII lines. The returned string does not include a trailing
 			 *         newline.
-			 * @details The hexdump is produced from a snapshot of the unread bytes and does not
-			 *          modify the FIFO's read position. Offsets printed on each line are
-			 *          absolute offsets (from the start of the underlying buffer). Formatting
-			 *          of the hex/ASCII lines is performed by `FormatHexLines()` to ensure
-			 *          consistent output between `FIFO` and `SharedFIFO`.
-			 * Example output:
-			 * @code{.text}
-			 * Size: 13 bytes
-			 * Read Position: 0
-			 * 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
-			 * @endcode
 			 */
 			virtual std::string										HexDump(const std::size_t& collumns = 16, const std::size_t& byte_limit = 0) const noexcept;
 
 			/**
 			 * @brief Check if the buffer is readable.
-			 * @return true if the buffer can be read from, false otherwise.
+			 * @return false when the buffer is in a permanent error state.
 			 */
 			inline virtual bool 									IsReadable() const noexcept override {
-				return true;
+				return !m_error;
 			}
 
 			/**
 			 * @brief Check if the buffer is writable.
-			 * @return true if the buffer can accept write operations, false otherwise.
+			 * @return false when the buffer has been closed or is in error state.
 			 */
 			inline virtual bool										IsWritable() const noexcept override {
-				return true;
+				return !m_closed && !m_error;
 			}
 
 			/**
 			 * @brief Non-destructive peek at buffer data without advancing read position.
 			 * @param count Number of bytes to peek; 0 peeks all available from read position.
 			 * @return bool indicating success or failure.
-			 * @details Similar to Read(), but does not advance the read position.
-			 *          Allows inspecting upcoming data without consuming it.
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call returns all available bytes. If no
-			 *            bytes are available, a `ReadError` is returned.
-			 *          - If `count > 0`: the call returns exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, a
-			 *            `ReadError` is returned.
-			 *
-			 * @see Read(), Seek()
 			 */
 			inline bool 											Peek(const std::size_t& count, DataType& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
@@ -305,27 +299,15 @@ namespace StormByte::Buffer {
 			 * @brief Non-destructive peek at buffer data without advancing read position.
 			 * @param count Number of bytes to peek; 0 peeks all available from read position.
 			 * @return bool indicating success or failure.
-			 * @details Similar to Read(), but does not advance the read position.
-			 *          Allows inspecting upcoming data without consuming it.
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call returns all available bytes. If no
-			 *            bytes are available, a `ReadError` is returned.
-			 *          - If `count > 0`: the call returns exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, a
-			 *            `ReadError` is returned.
-			 *
-			 * @see Read(), Seek()
 			 */
 			inline bool 											Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
 				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 			}
 
 			/**
-			 * @brief Non destructive read that removes data from the buffer into an existing vector.
-			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
+			 * @brief Non destructive read that advances the read position.
+			 * @param count Number of bytes to read; 0 reads all available.
+			 * @param outBuffer Vector to fill with read bytes; resized as needed.
 			 * @return bool indicating success or failure.
 			 */
 			inline bool 											Read(const std::size_t& count, DataType& outBuffer) const noexcept override {
@@ -333,9 +315,9 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Destructive read that removes data from the buffer into a vector.
-			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
+			 * @brief Non destructive read that advances the read position.
+			 * @param count Number of bytes to read; 0 reads all available.
+			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
 			 * @return bool indicating success or failure.
 			 */
 			inline bool 											Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
@@ -356,7 +338,6 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
 			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
 			 */
 			inline void												ReadUntilEoF(WriteOnly& outBuffer) const noexcept override {
 				const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
@@ -364,14 +345,20 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Move the read position for non-destructive reads.
-			 * @param position The offset value to apply.
-			 * @param mode Unused for base class; included for API consistency.
+			 * @param offset The offset value to apply.
+			 * @param mode Absolute or Relative.
 			 * @details Changes where subsequent Read() operations will start reading from.
 			 *          Position is clamped to [0, Size()]. Does not affect stored data.
-			 * @see Read(), Position
-			 * If Position is set to Absolute and offset is negative the operation is noop
 			 */
 			virtual void 											Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
+
+			/**
+			 * @brief Put the buffer into the permanent error state.
+			 * @details Makes the buffer both unreadable and unwritable.
+			 */
+			inline void 											SetError() noexcept override {
+				m_error = true;
+			}
 
 			/**
 			 * @brief Get the current number of bytes stored in the buffer.
@@ -385,11 +372,8 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
+			 * @param data Byte vector to append.
+			 * @return bool indicating success or failure (fails if closed/error).
 			 */
 			inline bool 											Write(const std::size_t& count, const DataType& data) noexcept override {
 				return WriteInternal(count, data);
@@ -398,37 +382,28 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
+			 * @param data Byte vector to append.
+			 * @return bool indicating success or failure (fails if closed/error).
 			 */
 			inline bool	 											Write(const std::size_t& count, DataType&& data) noexcept override {
 				return WriteInternal(count, std::move(data));
 			}
 
 			/**
-			 * @brief Write bytes from a vector to the buffer.
+			 * @brief Write bytes from a ReadOnly source.
 			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
+			 * @param data Source buffer.
+			 * @return bool indicating success or failure (fails if closed/error).
 			 */
 			inline bool 											Write(const std::size_t& count, const ReadOnly& data) noexcept override {
 				return WriteInternal(count, data);
 			}
 
 			/**
-			 * @brief Move bytes from a vector to the buffer.
+			 * @brief Move bytes from a ReadOnly source.
 			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
+			 * @param data Source buffer.
+			 * @return bool indicating success or failure (fails if closed/error).
 			 */
 			inline bool 											Write(const std::size_t& count, ReadOnly&& data) noexcept override {
 				return WriteInternal(count, std::move(data));
@@ -451,6 +426,16 @@ namespace StormByte::Buffer {
 			mutable std::size_t m_position_offset {0};
 
 			/**
+			 * @brief Closed flag – once true, further writes fail.
+			 */
+			bool m_closed {false};
+
+			/**
+			 * @brief Permanent error flag – makes the buffer unreadable and unwritable.
+			 */
+			bool m_error {false};
+
+			/**
 			 * @brief Enumeration of read operation types.
 			 */
 			enum class Operation {
@@ -461,90 +446,51 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Produce a hexdump of the given data span.
-			 * @param data Span of bytes to format.
-			 * @param start_offset Starting offset for line addresses.
-			 * @param collumns Number of bytes per line.
-			 * @return Formatted hexdump string.
-			 * @details Formats the provided byte span into a hexdump string with
-			 *          specified number of columns per line. Each line begins with
-			 *          the absolute offset (from `start_offset`), followed by
-			 *          hexadecimal byte values and ASCII representation.
 			 */
 			static std::string 											FormatHexLines(std::span<const std::byte>& data, std::size_t start_offset, std::size_t collumns) noexcept;
 
 			/**
-			 * @brief Produce a hexdump header with size and read position.
-			 * @return ostringstream containing the hexdump header.
+			 * @brief Produce a hexdump header with size, read position and status.
 			 */
 			virtual std::ostringstream 									HexDumpHeader() const noexcept;
 
 			/**
 			 * @brief Internal helper for read operations.
-			 * @param count Number of bytes to read.
-			 * @param outBuffer Output buffer to store read bytes.
-			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return bool indicating success or failure.
-			 * @details Shared logic for read operations that first checks the internal
-			 *          buffer, then calls the external read function if needed.
 			 */
 			virtual bool 												ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept;
+
 			/**
-			 * @brief Internal helper for read operations.
-			 * @param count Number of bytes to read.
-			 * @param outBuffer Output buffer to store read bytes.
-			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return bool indicating success or failure.
-			 * @details Shared logic for read operations that first checks the internal
-			 *          buffer, then calls the external read function if needed.
+			 * @brief Internal helper for read operations into a WriteOnly.
 			 */
 			virtual bool 												ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept;
 			
 			/**
 			 * @brief Internal helper for reading until end-of-file.
-			 * @param outBuffer Output buffer to store read bytes.
-			 * @param flag Additional flag for read operation (1: copy, 2: move)
 			 */
 			virtual void 												ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noexcept;
 
 			/**
-			 * @brief Internal helper for reading until end-of-file.
-			 * @param outBuffer Output buffer to store read bytes.
-			 * @param flag Additional flag for read operation (1: copy, 2: move)
-			 * @return bool indicating success or failure.
+			 * @brief Internal helper for reading until end-of-file into a WriteOnly.
 			 */
 			virtual void 												ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept;
 
 			/**
-			 * @brief Internal helper for write operations.
-			 * @param dst Destination buffer to write into.
-			 * @param count Number of bytes to write.
-			 * @param src Source buffer to write from.
-			 * @return bool indicating success or failure.
+			 * @brief Internal helper for write operations (copy).
 			 */
 			virtual bool 												WriteInternal(const std::size_t& count, const DataType& src) noexcept;
 			
 			/**
-			 * @brief Internal helper for write operations.
-			 * @param dst Destination buffer to write into.
-			 * @param count Number of bytes to write.
-			 * @param src Source buffer to write from.
-			 * @return bool indicating success or failure.
+			 * @brief Internal helper for write operations (move).
 			 */
 			virtual bool 												WriteInternal(const std::size_t& count, DataType&& src) noexcept;
 
 			/**
-			 * @brief Internal helper for write operations.
-			 * @param count Number of bytes to write.
-			 * @param src Source ReadOnly buffer to write from.
-			 * @return bool indicating success or failure.
+			 * @brief Internal helper for write operations from ReadOnly.
 			 */
 			virtual bool 												WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept;
 
 			/**
-			 * @brief Internal helper for write operations.
-			 * @param count Number of bytes to write.
-			 * @param src Source ReadOnly buffer to write from.
-			 * @return bool indicating success or failure.
+			 * @brief Internal helper for write operations from ReadOnly (move/extract).
 			 */
 			virtual bool 												WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept;
 	};

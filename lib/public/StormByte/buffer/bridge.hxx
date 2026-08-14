@@ -9,158 +9,197 @@
  *
  * The Buffer namespace provides classes and utilities for byte buffers,
  * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, and multi-stage processing pipelines.
+ * interfaces, external I/O adapters and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
+
 	/**
 	 * @class Bridge
-	 * @brief Pass-through adapter that forwards bytes from an `ExternalReader` to an `ExternalWriter` in chunks.
+	 * @brief Pass-through adapter that forwards bytes from an @ref ExternalReader
+	 *        to an @ref ExternalWriter in fixed-size chunks.
 	 *
-	 * @details
-	 * The `Bridge` connects an `ExternalReader` (source) and an `ExternalWriter` (sink). It reads data
-	 * from the reader and forwards it to the writer in fixed-size chunks specified by `chunk_size`.
-	 * The class keeps a small internal `SharedFIFO` buffer (`m_buffer`) that accumulates data between calls.
+	 * @par Overview
+	 * The Bridge connects an ExternalReader (source) and an ExternalWriter (sink).
+	 * It reads data from the reader and forwards it to the writer in blocks of
+	 * @c chunk_size bytes. A small internal @ref FIFO accumulates leftovers
+	 * between calls.
 	 *
-	 * Key behaviour and guarantees:
-	 * - Reads are requested from the configured `ExternalReader` (const or non-const overload is selected
-	 *   depending on whether the `Bridge` instance itself is const). The const overload is expected to
-	 *   perform non-destructive/peek-style reads while the non-const overload may destructively consume
-	 *   data from the reader.
-	 * - When enough bytes are available (>= `chunk_size`) the bridge forwards whole chunks to the
-	 *   `ExternalWriter` via `ExternalWriter::Write()`.
-	 * - If `chunk_size` is zero then chunking is disabled: the bridge will attempt to forward all
-	 *   bytes read from the `ExternalReader` to the `ExternalWriter` immediately (no accumulation
-	 *   into fixed-size chunks). In this mode the internal buffer is not used for normal accumulation
-	 *   of leftovers; callers should still handle writer failures appropriately.
-	 * - To avoid losing data on writer failure the implementation copies the head (the bytes given to the
-	 *   writer) and only moves the remaining tail into the internal buffer. This preserves the original
-	 *   data in case the writer rejects the chunk.
-	 * - After passthrough operations the internal buffer will contain at most `chunk_size - 1` bytes (the
-	 *   leftover tail). `Flush()` will write any remaining bytes in a single call.
-	 * - The destructor calls `Flush()` to attempt sending pending bytes.
+	 * @par Key behaviour
+	 * - When enough bytes are available (≥ @c chunk_size) the bridge forwards
+	 *   whole chunks via @ref ExternalWriter::Write().
+	 * - If @c chunk_size is zero, chunking is disabled: every read is written
+	 *   immediately (no accumulation of leftovers).
+	 * - After a successful passthrough the internal buffer contains at most
+	 *   @c chunk_size - 1 bytes. @ref Flush() writes any remaining bytes in a
+	 *   single call.
+	 * - The destructor automatically calls @ref Flush().
 	 *
-	 * Thread-safety and constness:
-	 * - The `Bridge` is NOT thread-safe and is intended for single-thread usage only. It must not be
-	 *   shared concurrently across threads without external synchronization. The class does not provide
-	 *   internal locking or other synchronization primitives.
-	 * - The internal `mutable` buffer permits logically-const operations to update internal state (for
-	 *   example, const passthrough overloads may internally accumulate data). This facility is provided
-	 *   solely for convenience in single-threaded scenarios and does not imply safety for concurrent use.
-	 * - The `ExternalReader` and `ExternalWriter` objects are stored behind `std::shared_ptr`; callers
-	 *   remain responsible for ensuring those handlers are not concurrently accessed in an unsafe manner.
+	 * @par End-of-stream and error handling
+	 * - @ref FlushAndClose() flushes pending data and then calls
+	 *   @c out.Close() on the writer.
+	 * - @ref SetError() propagates the error state to the writer.
+	 * - @ref EoF() and @ref IsReadable() / @ref IsWritable() delegate to the
+	 *   underlying reader/writer.
+	 *
+	 * @par Thread safety
+	 * The Bridge is **not thread-safe**. It is intended for single-threaded use
+	 * only. Concurrent access requires external synchronization.
+	 *
+	 * @note The internal buffer is marked @c mutable so that logically-const
+	 *       operations (const overloads of Passthrough/Flush) may update it.
+	 *       This does **not** imply thread safety.
+	 *
+	 * @see ExternalReader, ExternalWriter, FIFO, Pipeline
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Bridge {
-		public:
-			/**
-			 * @brief Construct a Bridge with both read and write handlers (copying handlers).
-			 * @param in External reader used for reads.
-			 * @param out External writer used for writes.
-			 * @param chunk_size Size of each write chunk. If `chunk_size` is zero, chunking is
-			 *        disabled and the bridge will attempt to passthrough all read bytes immediately.
-			 */
-			inline Bridge(const ExternalReader& in, const ExternalWriter& out, std::size_t chunk_size = 4096) noexcept:
-				m_buffer(),
-				m_read_handler(in.Clone()),
-				m_write_handler(out.Clone()),
-				m_chunk_size(chunk_size) {}
+	public:
+		/**
+		 * @brief Construct a Bridge by cloning the supplied handlers.
+		 * @param in         External reader used as source.
+		 * @param out        External writer used as sink.
+		 * @param chunk_size Size of each write chunk.  
+		 *                   If zero, chunking is disabled and every read is
+		 *                   forwarded immediately.
+		 */
+		inline Bridge(const ExternalReader& in,
+					const ExternalWriter& out,
+					std::size_t chunk_size = 4096) noexcept
+			: m_buffer()
+			, m_read_handler(in.Clone())
+			, m_write_handler(out.Clone())
+			, m_chunk_size(chunk_size)
+		{}
 
-			/**
-			 * @brief Construct a Bridge with both read and write handlers (moving handlers).
-			 * @param in External reader used for reads (will be moved).
-			 * @param out External writer used for writes (will be moved).
-			 * @param chunk_size Size of each write chunk.
-			 */
-			inline Bridge(ExternalReader&& in, ExternalWriter&& out, std::size_t chunk_size = 4096) noexcept:
-				m_buffer(),
-				m_read_handler(in.Move()),
-				m_write_handler(out.Move()),
-				m_chunk_size(chunk_size) {}
+		/**
+		 * @brief Construct a Bridge by moving the supplied handlers.
+		 * @param in         External reader (will be moved).
+		 * @param out        External writer (will be moved).
+		 * @param chunk_size Size of each write chunk (0 = no chunking).
+		 */
+		inline Bridge(ExternalReader&& in,
+					ExternalWriter&& out,
+					std::size_t chunk_size = 4096) noexcept
+			: m_buffer()
+			, m_read_handler(in.Move())
+			, m_write_handler(out.Move())
+			, m_chunk_size(chunk_size)
+		{}
 
-			/**
-			 * @name Special member functions
-			 *
-			 * The Bridge is non-copyable but movable. The destructor attempts to
-			 * flush any pending bytes by calling `Flush()`.
-			 * @{
-			 */
-			/** @brief Copy constructor (deleted) — Bridge is non-copyable. */
-			Bridge(const Bridge& other) 								= delete;
+		/** @brief Copy constructor (deleted – Bridge is non-copyable). */
+		Bridge(const Bridge&) = delete;
 
-			/** @brief Move constructor (defaulted) — transfers handlers. */
-			inline Bridge(Bridge&& other) noexcept						= default;
+		/** @brief Move constructor. */
+		Bridge(Bridge&&) noexcept = default;
 
-			/** @brief Destructor — attempts to flush pending bytes. */
-			inline ~Bridge() noexcept {
-				Flush();
-			}
+		/**
+		 * @brief Destructor.
+		 * @details Automatically attempts to flush any pending bytes.
+		 */
+		inline ~Bridge() noexcept {
+			Flush();
+		}
 
-			/** @brief Copy assignment (deleted). */
-			Bridge& operator=(const Bridge& other) 						= delete;
+		/** @brief Copy assignment (deleted). */
+		Bridge& operator=(const Bridge&) = delete;
 
-			/** @brief Move assignment (defaulted). */
-			Bridge& operator=(Bridge&& other) noexcept					= default;
+		/** @brief Move assignment. */
+		Bridge& operator=(Bridge&&) noexcept = default;
 
-			/** @} */
+		/**
+		 * @brief Configured chunk size.
+		 * @return Chunk size in bytes (0 means “no chunking”).
+		 */
+		inline std::size_t ChunkSize() const noexcept {
+			return m_chunk_size;
+		}
 
-			/**
-			 * @brief Gets the configured chunk size for passthrough operations.
-			 * @return Configured chunk size in bytes.
-			 */
-			inline std::size_t 											ChunkSize() const noexcept {
-				return m_chunk_size;
-			}
+		/**
+		 * @brief Number of bytes currently waiting in the internal buffer.
+		 * @return Pending bytes (always < chunk_size when chunking is enabled).
+		 */
+		inline std::size_t PendingBytes() const noexcept {
+			return m_buffer.Size();
+		}
 
-			/**
-			 * @brief Flushes any pending bytes in the internal buffer to the write handler.
-			 * @return true if write succeeded, false otherwise.
-			 */
-			bool 														Flush() const noexcept;
+		/**
+		 * @brief Check whether the source has reached end-of-stream.
+		 * @return true when the underlying reader reports EoF.
+		 */
+		inline bool EoF() const noexcept {
+			return m_read_handler->EoF();
+		}
 
-			/**
-			 * @brief Passthrough bytes from read handler to write handler (const overload).
-			 * @param bytes Number of bytes to read. If `bytes` is zero, no bytes are requested.
-			 * @return true if the operation succeeded, false on failure.
-			 *
-			 * @details The method requests up to `bytes` from the configured `ExternalReader` and
-			 * forwards data to the `ExternalWriter` in fixed-size blocks of `chunk_size` bytes.
-			 * Full chunks are written immediately; any remaining bytes that are fewer than
-			 * `chunk_size` are retained in the bridge's internal `m_buffer` as leftovers. These
-			 * leftovers will be combined with data from subsequent `Passthrough()` calls or flushed
-			 * via `Flush()` which will attempt to write any remaining bytes in a single call.
-			 */
-			bool 														Passthrough(std::size_t bytes) const noexcept;
+		/**
+		 * @brief Check whether the source is still readable.
+		 */
+		inline bool IsReadable() const noexcept {
+			return m_read_handler->IsReadable();
+		}
 
-			/**
-			 * @brief Passthrough bytes from read handler to write handler (non-const overload).
-			 * @param bytes Number of bytes to read. If `bytes` is zero, no bytes are requested.
-			 * @return true if the operation succeeded, false on failure.
-			 *
-			 * @details Behaviour mirrors the const overload: data is forwarded in `chunk_size`
-			 * increments. Any tail shorter than `chunk_size` is left in `m_buffer` and will be
-			 * sent on the next passthrough or when `Flush()` is invoked. This design keeps the
-			 * bridge invariant that `m_buffer` holds at most `chunk_size - 1` bytes of pending data.
-			 */
-			bool														Passthrough(std::size_t bytes) noexcept;
+		/**
+		 * @brief Check whether the sink still accepts writes.
+		 */
+		inline bool IsWritable() const noexcept {
+			return m_write_handler->IsWritable();
+		}
 
-			/**
-			 * @brief Gets the number of pending bytes in the internal buffer.
-			 * @return Number of bytes currently stored in the internal FIFO buffer.
-			 */
-			inline std::size_t 											PendingBytes() const noexcept {
-				return m_buffer.Size();
-			}
+		/**
+		 * @brief Flush any pending bytes to the writer.
+		 * @return true on success (or if there was nothing to flush), false on write error.
+		 */
+		bool Flush() const noexcept;
 
-		private:
-			mutable Buffer::FIFO m_buffer;								///< Internal FIFO buffer used for passthrough operations.
-			ExternalReader::PointerType m_read_handler;					///< External reader callable for reading data.
-			ExternalWriter::PointerType m_write_handler;				///< External writer callable for writing data.
-			std::size_t m_chunk_size;									///< Size of each write chunk (will accumulate).
+		/**
+		 * @brief Flush pending bytes and then close the writer.
+		 * @return true if the flush (and subsequent close) succeeded.
+		 * @details Equivalent to @c Flush() followed by @c out.Close().
+		 *          After this call the writer will reject further writes.
+		 */
+		bool FlushAndClose() const noexcept;
 
-			/**
-			 * @brief Internal helper to passthrough write operation.
-			 * @param data DataType to fill with read data.
-			 * @return true if data was successfully processed, false otherwise.
-			 */
-			bool 														PassthroughWrite(Buffer::DataType&& data) const noexcept;
+		/**
+		 * @brief Propagate a permanent error to the writer.
+		 * @details Calls @c SetError() on the underlying ExternalWriter.
+		 *          Subsequent writes will fail and readers may observe the error.
+		 */
+		void SetError() const noexcept;
+
+		/**
+		 * @brief Read up to @p bytes from the source and forward them to the sink
+		 *        (const overload – non-destructive read when the reader supports it).
+		 * @param bytes Number of bytes to request (0 = none).
+		 * @return true on success, false on read or write failure.
+		 *
+		 * @details Data is written in blocks of @c chunk_size. Any tail shorter
+		 *          than @c chunk_size is kept in the internal buffer and will be
+		 *          sent on a later call or by @ref Flush().
+		 */
+		bool Passthrough(std::size_t bytes) const noexcept;
+
+		/**
+		 * @brief Read up to @p bytes from the source and forward them to the sink
+		 *        (non-const overload – may consume data destructively).
+		 * @param bytes Number of bytes to request (0 = none).
+		 * @return true on success, false on read or write failure.
+		 */
+		bool Passthrough(std::size_t bytes) noexcept;
+
+	private:
+		mutable FIFO                     m_buffer;        ///< Leftover bytes (< chunk_size).
+		ExternalReader::PointerType      m_read_handler;  ///< Owned reader.
+		ExternalWriter::PointerType      m_write_handler; ///< Owned writer.
+		std::size_t                      m_chunk_size;    ///< 0 = write everything immediately.
+
+		/**
+		 * @brief Internal helper that writes @p data (plus any previous leftovers)
+		 *        to the sink in chunks of @c m_chunk_size.
+		 * @param data Newly read data (will be moved from).
+		 * @return true on success, false if any write failed.
+		 *
+		 * @details On failure the remaining unwritten bytes are preserved in
+		 *          @c m_buffer so they are not lost.
+		 */
+		bool PassthroughWrite(DataType&& data) const noexcept;
 	};
+
 }

@@ -1,84 +1,115 @@
 #include <StormByte/buffer/bridge.hxx>
-#include <StormByte/buffer/fifo.hxx>
 
 #include <algorithm>
 
 using namespace StormByte::Buffer;
 
+// ---------------------------------------------------------------------------
+// Flush / Close / Error
+// ---------------------------------------------------------------------------
+
 bool Bridge::Flush() const noexcept {
-	// After PassthroughWrite the internal buffer will contain at most
-	// <chunk_size bytes (the remainder). We can therefore extract all
-	// remaining bytes and write them in a single call.
 	if (m_buffer.Empty())
 		return true;
 
 	DataType data;
-	// Extract all available data (count == 0 means "all" for FIFO)
-	const bool extracted = m_buffer.Extract(0, data);
-	if (!extracted)
+	if (!m_buffer.Extract(0, data))
 		return false;
+
+	if (data.empty())
+		return true;
 
 	return m_write_handler->Write(std::move(data));
 }
 
+bool Bridge::FlushAndClose() const noexcept {
+	const bool ok = Flush();
+	m_write_handler->Close();
+	return ok;
+}
+
+void Bridge::SetError() const noexcept {
+	m_write_handler->SetError();
+}
+
+// ---------------------------------------------------------------------------
+// Passthrough entry points
+// ---------------------------------------------------------------------------
+
 bool Bridge::Passthrough(std::size_t bytes) const noexcept {
+	// NO hacer early-return si bytes == 0:
+	// 0 significa "todo lo disponible" en la semántica del reader.
 	DataType out;
-	bool operation_ok = m_read_handler->Read(bytes, out);
-	if (operation_ok) {
-		operation_ok = PassthroughWrite(std::move(out));
-	}
-	return operation_ok;
+	if (!m_read_handler->Read(bytes, out))
+		return false;
+	return PassthroughWrite(std::move(out));
 }
 
 bool Bridge::Passthrough(std::size_t bytes) noexcept {
 	DataType out;
-	bool operation_ok = m_read_handler->Read(bytes, out);
-	if (operation_ok) {
-		operation_ok = PassthroughWrite(std::move(out));
+	if (!m_read_handler->Extract(bytes, out)) {
+		if (!m_read_handler->Read(bytes, out))
+			return false;
 	}
-	return operation_ok;
+	return PassthroughWrite(std::move(out));
 }
 
+// ---------------------------------------------------------------------------
+// Core chunking logic
+// ---------------------------------------------------------------------------
+
 bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
-	// Combine existing internal buffer and newly read data into a single
-	// contiguous temporary. We do not mutate `m_buffer` until we have
-	// attempted to write chunks to the writer; this allows rolling back to
-	// the original combined remainder if a write fails.
-	const DataType& existing = m_buffer.Data();
+	// Fast path: no previous leftovers and no chunking
+	if (m_buffer.Empty() && m_chunk_size == 0) {
+		if (data.empty())
+			return true;
+		return m_write_handler->Write(std::move(data));
+	}
+
+	// Merge previous leftovers + new data
 	DataType combined;
+	const DataType& existing = m_buffer.Data();
 	combined.reserve(existing.size() + data.size());
-	combined.insert(combined.end(), existing.begin(), existing.end());
-	combined.insert(combined.end(), std::make_move_iterator(data.begin()), std::make_move_iterator(data.end()));
 
-	std::size_t pos = 0;
-	bool operation_ok = true;
+	if (!existing.empty())
+		combined.insert(combined.end(), existing.begin(), existing.end());
 
-	// Special-case: chunk_size == 0 disables chunking — write all data at once.
-	if (m_chunk_size == 0) {
-		// Clear internal buffer (we're not accumulating leftovers in this mode)
-		m_buffer.Clear();
-		if (combined.empty()) return true;
-		return m_write_handler->Write(std::move(combined));
+	if (!data.empty()) {
+		combined.insert(combined.end(),
+						std::make_move_iterator(data.begin()),
+						std::make_move_iterator(data.end()));
 	}
 
-	// Write as many full chunks as possible from the combined buffer.
-	while (operation_ok && pos + m_chunk_size <= combined.size()) {
-		DataType chunk(combined.begin() + pos, combined.begin() + pos + m_chunk_size);
-		operation_ok = m_write_handler->Write(std::move(chunk));
-		if (operation_ok) pos += m_chunk_size;
-	}
-
-	// Whatever remains (from `pos` to end) should be stored back into m_buffer.
-	// Move-construct the remainder from the combined temporary to avoid an
-	// extra copy when element types are movable.
-	DataType remainder(
-		std::make_move_iterator(combined.begin() + pos),
-		std::make_move_iterator(combined.end())
-	);
+	// Clear the internal buffer; we will put back only the final remainder
 	m_buffer.Clear();
-	if (!remainder.empty()) {
-		m_buffer.Write(std::move(remainder));
+
+	if (combined.empty())
+		return true;
+
+	// No chunking → write everything
+	if (m_chunk_size == 0)
+		return m_write_handler->Write(std::move(combined));
+
+	// Write as many full chunks as possible
+	std::size_t pos = 0;
+	bool ok = true;
+
+	while (ok && pos + m_chunk_size <= combined.size()) {
+		DataType chunk(combined.begin() + static_cast<std::ptrdiff_t>(pos),
+					combined.begin() + static_cast<std::ptrdiff_t>(pos + m_chunk_size));
+		ok = m_write_handler->Write(std::move(chunk));
+		if (ok)
+			pos += m_chunk_size;
 	}
 
-	return operation_ok;
+	// Store the unwritten tail (if any) back into the internal buffer
+	if (pos < combined.size()) {
+		DataType remainder(
+			std::make_move_iterator(combined.begin() + static_cast<std::ptrdiff_t>(pos)),
+			std::make_move_iterator(combined.end())
+		);
+		(void)m_buffer.Write(std::move(remainder));
+	}
+
+	return ok;
 }

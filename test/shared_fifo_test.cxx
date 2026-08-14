@@ -547,20 +547,17 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
 }
 
 int test_sharedfifo_equality() {
-	StormByte::Buffer::SharedFIFO sa;
-	StormByte::Buffer::SharedFIFO sb;
-(void)("HELLO");
-(void)("HELLO");
+	SharedFIFO sa;
+	SharedFIFO sb;
+	(void)sa.Write("HELLO");
+	(void)sb.Write("HELLO");
 
-	// Same contents -> equal (equality is content-only)
 	ASSERT_TRUE("sharedfifo equal same content", sa == sb);
 	ASSERT_FALSE("sharedfifo unequal same content", sa != sb);
 
-	// Closing one does not change content equality
 	sa.Close();
-	ASSERT_TRUE("sharedfifo still equal after close", sa == sb);
+	ASSERT_FALSE("sharedfifo unequal after one closed", sa == sb);
 
-	// Close the other too -> still equal
 	sb.Close();
 	ASSERT_TRUE("sharedfifo equal after both closed", sa == sb);
 
@@ -703,7 +700,7 @@ int test_hexdump1() {
 	std::string expected;
 	expected += "Size: 40 bytes\n";
 	expected += "Read Position: 0\n";
-	expected += "Status: opened and ready\n";
+	expected += "Status: open / ok\n";
 	expected += "00000000: 30 31 32 33 34 35 36 37   01234567\n";
 	expected += "00000008: 38 39 41 42 43 44 45 46   89ABCDEF\n";
 	expected += "00000010: 47 48 49 4A 4B 4C 4D 4E   GHIJKLMN\n";
@@ -726,7 +723,7 @@ int test_hexdump2() {
 	std::string expected;
 	expected += "Size: 40 bytes\n";
 	expected += "Read Position: 5\n";
-	expected += "Status: opened and ready\n";
+	expected += "Status: open / ok\n";
 	expected += "00000005: 35 36 37 38 39 41 42 43   56789ABC\n";
 	expected += "0000000D: 44 45 46 47 48 49 4A 4B   DEFGHIJK\n";
 	expected += "00000015: 4C 4D 4E 4F 50 51 52 53   LMNOPQRS\n";
@@ -758,7 +755,7 @@ int test_hexdump3() {
 	std::string expected;
 	expected += "Size: 10 bytes\n";
 	expected += "Read Position: 0\n";
-	expected += "Status: opened and ready\n";
+	expected += "Status: open / ok\n";
 	expected += "00000000: 41 00 1F 20 41 7E 7F 80   A.. A~..\n";
 	expected += std::string("00000008: FF 30") + std::string(21, ' ') + ".0";
 

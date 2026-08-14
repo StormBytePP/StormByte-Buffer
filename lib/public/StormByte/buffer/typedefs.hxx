@@ -59,17 +59,6 @@ namespace StormByte::Buffer {
 	using DataType = std::vector<std::byte>;
 
 	/**
-	 * @brief Type alias for pipeline transformation functions.
-	 * 
-	 * @details Function signature for pipeline stage transformations that read
-	 *          from a Consumer and write to a Producer, enabling data processing
-	 *          in multi-stage pipelines.
-	 * 
-	 * @see Consumer, Producer, Pipeline
-	 */
-	using PipeFunction = std::function<void(Consumer, Producer, std::shared_ptr<Logger::Log>)>;
-
-	/**
 	 * @brief Execution mode selector for pipeline processing.
 	 *
 	 * @details Defines how pipeline stages are scheduled when invoking

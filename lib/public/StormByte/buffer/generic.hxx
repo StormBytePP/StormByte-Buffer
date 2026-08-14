@@ -404,6 +404,9 @@ namespace StormByte::Buffer {
 			 */
 			virtual bool 													IsWritable() const noexcept = 0;
 
+			virtual void Close() noexcept = 0;
+			virtual void SetError() noexcept = 0;
+
 			/**
 			 * @brief Write bytes from a vector to the buffer.
 			 * @param count Number of bytes to write.

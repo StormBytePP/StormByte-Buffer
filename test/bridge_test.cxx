@@ -2,6 +2,9 @@
 #include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <iostream>
+#include <memory>
+#include <string>
 
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::DataType;
@@ -10,99 +13,216 @@ using StormByte::Buffer::ExternalReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
-using StormByte::Buffer::ReadOnly;
-using StormByte::Buffer::WriteOnly;
+using StormByte::Buffer::Position;
 
-// FaultyReader: first call returns false and writes nothing; subsequent
-// calls behave like a ExternalBufferReader and extract from the source FIFO.
-class FaultyReader final: public ExternalReader {
-	public:
-		FaultyReader(FIFO& from) noexcept: m_source(from), m_first(true) {}
-		bool Read(std::size_t bytes, DataType& outBuffer) const noexcept override {
-			return const_cast<FaultyReader*>(this)->Read(bytes, outBuffer);
-		}
-		bool Read(std::size_t bytes, DataType& outBuffer) noexcept override {
-			if (m_first) {
-				// Simulate an untrusted read: do not write to outBuffer and
-				// indicate failure.
-				m_first = false;
-				return false;
-			}
-			return m_source.Extract(bytes, outBuffer);
-		}
-		PointerType Clone() const override { return MakePointer<FaultyReader>(m_source); }
-		PointerType Move() override { return MakePointer<FaultyReader>(m_source); }
-	private:
-		FIFO& m_source;
-		mutable bool m_first;
-};
+// ---------------------------------------------------------------------------
+// Test helpers – full ExternalReader / ExternalWriter implementations
+// ---------------------------------------------------------------------------
 
-// FailingWriter accepts a limited number of successful writes (by call count)
-class FailingWriter final: public ExternalWriter {
-	public:
-		FailingWriter(FIFO& to, std::size_t succeed_calls) noexcept: m_target(to), m_succeed(succeed_calls), m_calls(0) {}
-		bool Write(DataType&& in) noexcept override {
-			if (m_calls < m_succeed) {
-				++m_calls;
-				return m_target.Write(std::move(in));
-			}
-			// Simulate failure: do not consume input and return false
+/**
+ * FaultyReader: first Read/Extract returns false and writes nothing;
+ * subsequent calls extract from the source FIFO.
+ */
+class FaultyReader final : public ExternalReader {
+public:
+	explicit FaultyReader(FIFO& from) noexcept
+		: m_source(from), m_fail_extract(true), m_fail_read(true) {}
+
+	std::size_t AvailableBytes() const noexcept override {
+		return m_source.AvailableBytes();
+	}
+	bool Empty() const noexcept override { return m_source.Empty(); }
+	bool EoF() const noexcept override { return m_source.EoF(); }
+	bool IsReadable() const noexcept override { return m_source.IsReadable(); }
+
+	bool Read(std::size_t bytes, DataType& out) const noexcept override {
+		if (m_fail_read) {
+			m_fail_read = false;
 			return false;
 		}
-		PointerType Clone() const override { return MakePointer<FailingWriter>(m_target, m_succeed); }
-		PointerType Move() override { return MakePointer<FailingWriter>(m_target, m_succeed); }
-	private:
-		FIFO& m_target;
-		std::size_t m_succeed;
-		std::size_t m_calls;
-};
+		return m_source.Extract(bytes, out);
+	}
 
-// Writer that only accepts first write call
-class FailingWriterOnce final: public ExternalWriter {
-	public:
-		FailingWriterOnce(FIFO& to) noexcept: m_target(to), m_called(false) {}
-		bool Write(DataType&& inBuffer) noexcept override {
-			if (!m_called) {
-				m_called = true;
-				return m_target.Write(std::move(inBuffer));
-			}
+	bool Extract(std::size_t bytes, DataType& out) noexcept override {
+		if (m_fail_extract) {
+			m_fail_extract = false;
 			return false;
 		}
-		PointerType Clone() const override { return FailingWriterOnce::MakePointer<FailingWriterOnce>(m_target); }
-		PointerType Move() override { return FailingWriterOnce::MakePointer<FailingWriterOnce>(m_target); }
-	private:
-		FIFO& m_target;
-		bool m_called;
+		return m_source.Extract(bytes, out);
+	}
+
+	bool Peek(std::size_t bytes, DataType& out) const noexcept override {
+		return m_source.Peek(bytes, out);
+	}
+	void ReadUntilEoF(DataType& out) const noexcept override {
+		m_source.ReadUntilEoF(out);
+	}
+	void ExtractUntilEoF(DataType& out) noexcept override {
+		m_source.ExtractUntilEoF(out);
+	}
+	void Seek(std::ptrdiff_t offset, Position mode) const noexcept override {
+		m_source.Seek(offset, mode);
+	}
+	void Clean() noexcept override { m_source.Clean(); }
+
+	PointerType Clone() const noexcept override {
+		return MakePointer<FaultyReader>(m_source);
+	}
+	PointerType Move() noexcept override {
+		return MakePointer<FaultyReader>(m_source);
+	}
+
+private:
+	FIFO& m_source;
+	mutable bool m_fail_extract;
+	mutable bool m_fail_read;
 };
+
+/**
+ * FailingWriter: accepts a limited number of successful Write calls.
+ */
+class FailingWriter final : public ExternalWriter {
+public:
+	FailingWriter(FIFO& to, std::size_t succeed_calls) noexcept
+		: m_target(to), m_succeed(succeed_calls), m_calls(0), m_closed(false), m_error(false) {}
+
+	bool IsWritable() const noexcept override {
+		return !m_closed && !m_error;
+	}
+
+	bool Write(const DataType& data) noexcept override {
+		DataType copy = data;
+		return Write(std::move(copy));
+	}
+
+	bool Write(DataType&& in) noexcept override {
+		if (m_closed || m_error)
+			return false;
+		if (m_calls < m_succeed) {
+			++m_calls;
+			return m_target.Write(std::move(in));
+		}
+		return false;
+	}
+
+	bool Write(std::size_t count, const DataType& data) noexcept override {
+		if (count == 0)
+			return Write(data);
+		DataType tmp(data.begin(),
+					data.begin() + static_cast<std::ptrdiff_t>(std::min(count, data.size())));
+		return Write(std::move(tmp));
+	}
+
+	bool Write(std::size_t count, DataType&& data) noexcept override {
+		if (count == 0)
+			return Write(std::move(data));
+		if (count < data.size())
+			data.resize(count);
+		return Write(std::move(data));
+	}
+
+	void Close() noexcept override { m_closed = true; }
+	void SetError() noexcept override { m_error = true; }
+
+	PointerType Clone() const noexcept override {
+		return MakePointer<FailingWriter>(m_target, m_succeed);
+	}
+	PointerType Move() noexcept override {
+		return MakePointer<FailingWriter>(m_target, m_succeed);
+	}
+
+private:
+	FIFO& m_target;
+	std::size_t m_succeed;
+	std::size_t m_calls;
+	bool m_closed;
+	bool m_error;
+};
+
+/**
+ * FailingWriterOnce: only the first Write succeeds.
+ */
+class FailingWriterOnce final : public ExternalWriter {
+public:
+	explicit FailingWriterOnce(FIFO& to) noexcept
+		: m_target(to), m_called(false), m_closed(false), m_error(false) {}
+
+	bool IsWritable() const noexcept override {
+		return !m_closed && !m_error;
+	}
+
+	bool Write(const DataType& data) noexcept override {
+		DataType copy = data;
+		return Write(std::move(copy));
+	}
+
+	bool Write(DataType&& in) noexcept override {
+		if (m_closed || m_error)
+			return false;
+		if (!m_called) {
+			m_called = true;
+			return m_target.Write(std::move(in));
+		}
+		return false;
+	}
+
+	bool Write(std::size_t count, const DataType& data) noexcept override {
+		if (count == 0)
+			return Write(data);
+		DataType tmp(data.begin(),
+					data.begin() + static_cast<std::ptrdiff_t>(std::min(count, data.size())));
+		return Write(std::move(tmp));
+	}
+
+	bool Write(std::size_t count, DataType&& data) noexcept override {
+		if (count == 0)
+			return Write(std::move(data));
+		if (count < data.size())
+			data.resize(count);
+		return Write(std::move(data));
+	}
+
+	void Close() noexcept override { m_closed = true; }
+	void SetError() noexcept override { m_error = true; }
+
+	PointerType Clone() const noexcept override {
+		return MakePointer<FailingWriterOnce>(m_target);
+	}
+	PointerType Move() noexcept override {
+		return MakePointer<FailingWriterOnce>(m_target);
+	}
+
+private:
+	FIFO& m_target;
+	bool m_called;
+	bool m_closed;
+	bool m_error;
+};
+
+// ---------------------------------------------------------------------------
+// Original tests (same semantics)
+// ---------------------------------------------------------------------------
 
 int test_simple_bridge_passthrough() {
 	const std::string fn_name = "test_simple_bridge_passthrough";
 	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
 
-	// Prepare source and target FIFOs
 	FIFO source_fifo;
 	FIFO target_fifo;
-
-	// Fill source FIFO with test data
 	source_fifo.Write(test_data);
 
-	// Create SimpleReader and SimpleWriter
 	ExternalBufferReader reader(source_fifo);
 	ExternalBufferWriter writer(target_fifo);
 
-	// Create Bridge with chunk size of 16 bytes
 	Bridge bridge(reader, writer, 16);
 
-	// Perform passthrough of all data
 	std::size_t total_bytes = source_fifo.Size();
 	bool passthrough_success = bridge.Passthrough(total_bytes);
 	ASSERT_TRUE(fn_name, passthrough_success);
 
-	// Flush any remaining data
 	bool flush_success = bridge.Flush();
 	ASSERT_TRUE(fn_name, flush_success);
 
-	// Verify target FIFO contents match source data
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
 
 	RETURN_TEST(fn_name, 0);
@@ -112,33 +232,25 @@ int test_little_data_and_flush() {
 	const std::string fn_name = "test_little_data_and_flush";
 	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
 
-	// Prepare source and target FIFOs
 	FIFO source_fifo;
 	FIFO target_fifo;
-
-	// Fill source FIFO with test data
 	source_fifo.Write(test_data);
 
-	// Create SimpleReader and SimpleWriter
 	ExternalBufferReader reader(source_fifo);
 	ExternalBufferWriter writer(target_fifo);
 
-	// Create Bridge with chunk size of 4096 bytes (default)
-	Bridge bridge(reader, writer);
+	Bridge bridge(reader, writer); // default chunk_size 4096
 
-	// Perform passthrough of all data
 	std::size_t total_bytes = source_fifo.Size();
 	bool passthrough_success = bridge.Passthrough(total_bytes);
 	ASSERT_TRUE(fn_name, passthrough_success);
 
-	// Verify that target FIFO is still empty (data not flushed yet)
-	ASSERT_EQUAL(fn_name, 0, target_fifo.Size());
+	// Data not flushed yet (chunk larger than payload)
+	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), target_fifo.Size());
 
-	// Flush any remaining data
 	bool flush_success = bridge.Flush();
 	ASSERT_TRUE(fn_name, flush_success);
 
-	// Verify target FIFO contents match source data
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
 
 	RETURN_TEST(fn_name, 0);
@@ -148,28 +260,21 @@ int test_flush_on_destruct() {
 	const std::string fn_name = "test_flush_on_destruct";
 	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
 
-	// Prepare source and target FIFOs
 	FIFO source_fifo;
 	FIFO target_fifo;
-
-	// Fill source FIFO with test data
 	source_fifo.Write(test_data);
 
-	// Create SimpleReader and SimpleWriter
 	ExternalBufferReader reader(source_fifo);
 	ExternalBufferWriter writer(target_fifo);
 
 	{
-		// Create Bridge with chunk size of 4096 bytes (default)
 		std::unique_ptr<Bridge> bridge = std::make_unique<Bridge>(reader, writer);
 
-		// Perform passthrough of all data
 		std::size_t total_bytes = source_fifo.Size();
 		bool passthrough_success = bridge->Passthrough(total_bytes);
 		ASSERT_TRUE(fn_name, passthrough_success);
 	}
 
-	// Verify target FIFO contents match source data
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
 
 	RETURN_TEST(fn_name, 0);
@@ -188,13 +293,11 @@ int test_reader_false_prevents_write_then_recover() {
 
 	Bridge bridge(reader, writer, 16);
 
-	// First attempt should fail and perform no write
 	bool first = bridge.Passthrough(8);
 	ASSERT_TRUE(fn_name, !first);
 	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), target_fifo.Size());
 
-	// Next call should succeed and transfer data
-	bool second = bridge.Passthrough(source_fifo.AvailableBytes()); // request remaining
+	bool second = bridge.Passthrough(source_fifo.AvailableBytes());
 	ASSERT_TRUE(fn_name, second);
 	ASSERT_TRUE(fn_name, bridge.Flush());
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
@@ -210,21 +313,18 @@ int test_writer_failure_stops_passthrough() {
 	FIFO target_fifo;
 	source_fifo.Write(test_data);
 
-	// Allow only first write call to succeed
 	FailingWriter writer(target_fifo, 1);
 	ExternalBufferReader reader(source_fifo);
 
 	Bridge bridge(reader, writer, 16);
 	bool ok = bridge.Passthrough(source_fifo.Size());
-	// Either passthrough fails (writer returns false) or flush fails; expect failure
 	if (ok) {
 		bool flushed = bridge.Flush();
-		ASSERT_TRUE(fn_name, !flushed); // flush should fail because writer returns false later
+		ASSERT_TRUE(fn_name, !flushed);
 	} else {
 		ASSERT_TRUE(fn_name, !ok);
 	}
 
-	// Target should contain at most one write's worth of data (one successful call)
 	ASSERT_TRUE(fn_name, target_fifo.Size() <= test_data.size());
 
 	RETURN_TEST(fn_name, 0);
@@ -243,10 +343,9 @@ int test_multiple_passthrough_calls() {
 
 	Bridge bridge(reader, writer, 16);
 
-	// Call passthrough in pieces so internal buffer accumulates across calls
 	bool ok1 = bridge.Passthrough(10);
 	bool ok2 = bridge.Passthrough(10);
-	bool ok3 = bridge.Passthrough(source_fifo.AvailableBytes()); // remaining
+	bool ok3 = bridge.Passthrough(source_fifo.AvailableBytes());
 	ASSERT_TRUE(fn_name, ok1);
 	ASSERT_TRUE(fn_name, ok2);
 	ASSERT_TRUE(fn_name, ok3);
@@ -269,7 +368,8 @@ int test_passthrough_zero_reads_all() {
 	ExternalBufferWriter writer(target_fifo);
 
 	Bridge bridge(reader, writer, 32);
-	bool ok = bridge.Passthrough(source_fifo.AvailableBytes()); // request all available
+	// Original semantics: request all currently available bytes
+	bool ok = bridge.Passthrough(source_fifo.AvailableBytes());
 	ASSERT_TRUE(fn_name, ok);
 	ASSERT_TRUE(fn_name, bridge.Flush());
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
@@ -290,13 +390,11 @@ int test_destruction_flush_with_failing_writer() {
 
 	{
 		Bridge bridge(reader, writer, 64);
-		// Pass through only a portion so destructor must flush a remainder
 		bool ok = bridge.Passthrough(10);
 		ASSERT_TRUE(fn_name, ok);
-		// bridge destroyed at scope exit; destructor calls Flush()
+		// destructor calls Flush()
 	}
 
-	// Ensure no crash and some data (at least one successful write) may have occurred
 	ASSERT_TRUE(fn_name, target_fifo.Size() <= test_data.size());
 
 	RETURN_TEST(fn_name, 0);
@@ -304,10 +402,10 @@ int test_destruction_flush_with_failing_writer() {
 
 int test_large_transfer_stress() {
 	const std::string fn_name = "test_large_transfer_stress";
-	// 200 KB of patterned data
 	std::string test_data;
 	test_data.reserve(200 * 1024);
-	for (size_t i = 0; i < 200 * 1024; ++i) test_data.push_back(static_cast<char>('A' + (i % 26)));
+	for (size_t i = 0; i < 200 * 1024; ++i)
+		test_data.push_back(static_cast<char>('A' + (i % 26)));
 
 	FIFO source_fifo;
 	FIFO target_fifo;
@@ -317,7 +415,8 @@ int test_large_transfer_stress() {
 	ExternalBufferWriter writer(target_fifo);
 
 	Bridge bridge(reader, writer, 4096);
-	bool ok = bridge.Passthrough(0); // all
+	// Original test used Passthrough(0) meaning "all available" via reader
+	bool ok = bridge.Passthrough(0);
 	ASSERT_TRUE(fn_name, ok);
 	ASSERT_TRUE(fn_name, bridge.Flush());
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
@@ -336,14 +435,12 @@ int test_chunk_size_zero_passthrough_no_flush() {
 	ExternalBufferReader reader(source_fifo);
 	ExternalBufferWriter writer(target_fifo);
 
-	// chunk_size == 0 disables chunking and should passthrough everything immediately
 	Bridge bridge(reader, writer, 0);
 
 	std::size_t total_bytes = source_fifo.Size();
 	bool ok = bridge.Passthrough(total_bytes);
 	ASSERT_TRUE(fn_name, ok);
 
-	// Because chunking is disabled, data should already be in target_fifo without a flush
 	ASSERT_EQUAL(fn_name, test_data.size(), static_cast<std::size_t>(target_fifo.Size()));
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
 
@@ -363,24 +460,146 @@ int test_const_bridge_passthrough_non_destructive() {
 
 	Bridge bridge(reader, writer, 16);
 
-	// Record the original total buffer size (Size() should not change on const reads)
 	std::size_t size_before = source_fifo.Size();
 
 	const Bridge& cbridge = bridge;
 	bool ok = cbridge.Passthrough(source_fifo.AvailableBytes());
 	ASSERT_TRUE(fn_name, ok);
 
-	// For const passthrough, the underlying buffer storage (Size) must not be cleared
+	// Storage size unchanged; logical available bytes consumed by Read
 	ASSERT_EQUAL(fn_name, size_before, source_fifo.Size());
-	// But original buffer read position is advanced, so available bytes should be zero
 	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), source_fifo.AvailableBytes());
 
-	// Flush and verify target received data
 	ASSERT_TRUE(fn_name, bridge.Flush());
 	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
 
 	RETURN_TEST(fn_name, 0);
 }
+
+// ---------------------------------------------------------------------------
+// New tests for the enriched API
+// ---------------------------------------------------------------------------
+
+int test_flush_and_close() {
+	const std::string fn_name = "test_flush_and_close";
+	const std::string test_data = "Flush and close me";
+
+	FIFO source_fifo;
+	FIFO target_fifo;
+	source_fifo.Write(test_data);
+
+	ExternalBufferReader reader(source_fifo);
+	ExternalBufferWriter writer(target_fifo);
+
+	Bridge bridge(reader, writer, 4096);
+	ASSERT_TRUE(fn_name, bridge.Passthrough(test_data.size()));
+	ASSERT_TRUE(fn_name, bridge.IsWritable());
+
+	ASSERT_TRUE(fn_name, bridge.FlushAndClose());
+	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
+	ASSERT_TRUE(fn_name, !bridge.IsWritable());
+
+	// Further writes through the writer should fail
+	ASSERT_TRUE(fn_name, !target_fifo.IsWritable());
+
+	RETURN_TEST(fn_name, 0);
+}
+
+int test_bridge_set_error_propagation() {
+	const std::string fn_name = "test_bridge_set_error_propagation";
+	const std::string test_data = "error path";
+
+	FIFO source_fifo;
+	FIFO target_fifo;
+	source_fifo.Write(test_data);
+
+	ExternalBufferReader reader(source_fifo);
+	ExternalBufferWriter writer(target_fifo);
+
+	Bridge bridge(reader, writer, 16);
+	ASSERT_TRUE(fn_name, bridge.IsWritable());
+	ASSERT_TRUE(fn_name, bridge.IsReadable());
+
+	bridge.SetError();
+	ASSERT_TRUE(fn_name, !bridge.IsWritable());
+
+	RETURN_TEST(fn_name, 0);
+}
+
+int test_bridge_eof_delegation() {
+	const std::string fn_name = "test_bridge_eof_delegation";
+	const std::string test_data = "eof";
+
+	FIFO source_fifo;
+	FIFO target_fifo;
+	source_fifo.Write(test_data);
+	source_fifo.Close();
+
+	ExternalBufferReader reader(source_fifo);
+	ExternalBufferWriter writer(target_fifo);
+
+	Bridge bridge(reader, writer, 8);
+
+	// Drain everything
+	ASSERT_TRUE(fn_name, bridge.Passthrough(0));
+	ASSERT_TRUE(fn_name, bridge.Flush());
+
+	// Source closed + empty → EoF
+	ASSERT_TRUE(fn_name, bridge.EoF());
+
+	RETURN_TEST(fn_name, 0);
+}
+
+int test_pending_bytes_invariant() {
+	const std::string fn_name = "test_pending_bytes_invariant";
+	const std::string test_data = "0123456789ABCDEFGHIJ"; // 20 bytes
+
+	FIFO source_fifo;
+	FIFO target_fifo;
+	source_fifo.Write(test_data);
+
+	ExternalBufferReader reader(source_fifo);
+	ExternalBufferWriter writer(target_fifo);
+
+	const std::size_t chunk = 8;
+	Bridge bridge(reader, writer, chunk);
+
+	ASSERT_TRUE(fn_name, bridge.Passthrough(5));
+	ASSERT_TRUE(fn_name, bridge.PendingBytes() < chunk);
+	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(5), bridge.PendingBytes());
+
+	ASSERT_TRUE(fn_name, bridge.Passthrough(10));
+	ASSERT_TRUE(fn_name, bridge.PendingBytes() < chunk);
+
+	// Drenar el resto del source
+	ASSERT_TRUE(fn_name, bridge.Passthrough(source_fifo.AvailableBytes()));
+	ASSERT_TRUE(fn_name, bridge.Flush());
+	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), bridge.PendingBytes());
+	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
+
+	RETURN_TEST(fn_name, 0);
+}
+
+int test_chunk_size_accessor() {
+	const std::string fn_name = "test_chunk_size_accessor";
+
+	FIFO source_fifo;
+	FIFO target_fifo;
+	ExternalBufferReader reader(source_fifo);
+	ExternalBufferWriter writer(target_fifo);
+
+	Bridge bridge(reader, writer, 1234);
+	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(1234), bridge.ChunkSize());
+
+	Bridge bridge0(reader, writer, 0);
+	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), bridge0.ChunkSize());
+
+	RETURN_TEST(fn_name, 0);
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
 
 int main() {
 	int result = 0;
@@ -396,6 +615,13 @@ int main() {
 	result += test_large_transfer_stress();
 	result += test_chunk_size_zero_passthrough_no_flush();
 	result += test_const_bridge_passthrough_non_destructive();
+
+	// New coverage
+	result += test_flush_and_close();
+	result += test_bridge_set_error_propagation();
+	result += test_bridge_eof_delegation();
+	result += test_pending_bytes_invariant();
+	result += test_chunk_size_accessor();
 
 	if (result == 0) {
 		std::cout << "Bridge tests passed!" << std::endl;

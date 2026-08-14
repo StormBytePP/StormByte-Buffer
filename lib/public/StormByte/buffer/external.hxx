@@ -1,9 +1,11 @@
 #pragma once
 
 #include <StormByte/buffer/generic.hxx>
+#include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/clonable.hxx>
 
 #include <functional>
+#include <string_view>
 
 /**
  * @namespace Buffer
@@ -11,279 +13,347 @@
  *
  * The Buffer namespace provides classes and utilities for byte buffers,
  * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, and multi-stage processing pipelines.
+ * interfaces, external I/O adapters and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
+
 	/**
 	 * @class ExternalReader
-	 * @brief Interface for reading data from an external source.
-	 * @details This class defines the interface for reading data from an external source
-	 *          such as a file, network socket, or other I/O stream.
-	 *          It provides methods for reading data into a buffer.
-	 * @note This class is intended to be used as a base class for specific
-	 *       implementations that handle different types of external data sources.
+	 * @brief Abstract interface for reading data from an external or internal source.
+	 *
+	 * @par Overview
+	 * Provides a rich, buffer-agnostic reading API so that pipeline stages
+	 * (and other consumers) can work uniformly against any concrete source
+	 * (file, socket, Ring, LockFreeRing, FIFO, etc.).
+	 *
+	 * @par Design goals
+	 * - Sufficiently powerful to replace direct use of ReadOnly/Consumer
+	 *   inside Pipeline stages.
+	 * - Allows the Pipeline to inject any concrete buffer implementation
+	 *   (including private ones such as LockFreeRing) without changing
+	 *   stage code.
+	 *
+	 * @note Implementations are expected to be lightweight adapters;
+	 *       the real storage lives elsewhere.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC ExternalReader: public Clonable<ExternalReader, std::unique_ptr<ExternalReader>> {
-		public:
-			/**
-			 * @brief Construct ExternalReader.
-			 */
-			ExternalReader() noexcept 												= default;
+	class STORMBYTE_BUFFER_PUBLIC ExternalReader
+		: public Clonable<ExternalReader, std::unique_ptr<ExternalReader>>
+	{
+	public:
+		ExternalReader() noexcept = default;
+		ExternalReader(const ExternalReader&) = default;
+		ExternalReader(ExternalReader&&) noexcept = default;
+		~ExternalReader() noexcept override = default;
 
-			/**
-			 * @brief Construct ExternalReader.
-			 * @param other ExternalReader to copy from.
-			 */
-			ExternalReader(const ExternalReader& other) 							= default;
+		ExternalReader& operator=(const ExternalReader&) = default;
+		ExternalReader& operator=(ExternalReader&&) noexcept = default;
 
-			/**
-			 * @brief Move constructor.
-			 * @param other ExternalReader to move from.
-			 */
-			ExternalReader(ExternalReader&& other) noexcept 						= default;
+		// -----------------------------------------------------------------
+		// Queries
+		// -----------------------------------------------------------------
 
-			/**
-			 * @brief Destructor.
-			 */
-			virtual ~ExternalReader() noexcept 										= default;
+		/**
+		 * @brief Number of bytes currently available for reading.
+		 * @return Bytes that can be read without blocking (or until EoF).
+		 */
+		virtual std::size_t AvailableBytes() const noexcept = 0;
 
-			/**
-			 * @brief Assignment operator.
-			 * @param other ExternalReader to copy from.
-			 * @return Reference to this ExternalReader.
-			 */
-			ExternalReader& operator=(const ExternalReader& other) 					= default;
+		/**
+		 * @brief Check whether the underlying source is empty.
+		 * @return true if no data remains.
+		 */
+		virtual bool Empty() const noexcept = 0;
 
-			/**
-			 * @brief Move assignment operator.
-			 * @param other ExternalReader to move from.
-			 * @return Reference to this ExternalReader.
-			 */
-			ExternalReader& operator=(ExternalReader&& other) noexcept 				= default;
+		/**
+		 * @brief Check end-of-file / end-of-stream condition.
+		 * @return true when the source is closed (or in error) and no more
+		 *         bytes are available.
+		 */
+		virtual bool EoF() const noexcept = 0;
 
-			/**
-			 * @brief Read data into the provided buffer.
-			 * @param bytes Number of bytes to read.
-			 * @param out DataType to fill with read data.
-			 * @return true if data was successfully read, false otherwise.
-			 */
-			virtual bool 															Read(std::size_t bytes, DataType& out) const noexcept = 0;
+		/**
+		 * @brief Check whether the source can still be read.
+		 * @return false when the source is in a permanent error state.
+		 */
+		virtual bool IsReadable() const noexcept = 0;
 
-			/**
-			 * @brief Read data into the provided buffer.
-			 * @param bytes Number of bytes to read.
-			 * @param out DataType to fill with read data.
-			 * @return true if data was successfully read, false otherwise.
-			 * @note Non-const version for mutable readers or destructive read operations.
-			 */
-			virtual bool 															Read(std::size_t bytes, DataType& out) noexcept = 0;
+		// -----------------------------------------------------------------
+		// Reading
+		// -----------------------------------------------------------------
+
+		/**
+		 * @brief Non-destructive read (advances logical position).
+		 * @param count Number of bytes requested (0 = all available).
+		 * @param out   Destination buffer (appended to).
+		 * @return true on success, false on insufficient data or error.
+		 */
+		virtual bool Read(std::size_t count, DataType& out) const noexcept = 0;
+
+		/**
+		 * @brief Destructive read (consumes / erases data).
+		 * @param count Number of bytes requested (0 = all available).
+		 * @param out   Destination buffer (appended to).
+		 * @return true on success, false on insufficient data or error.
+		 */
+		virtual bool Extract(std::size_t count, DataType& out) noexcept = 0;
+
+		/**
+		 * @brief Non-destructive peek (does **not** advance position).
+		 * @param count Number of bytes requested (0 = all available).
+		 * @param out   Destination buffer (appended to).
+		 * @return true on success, false on insufficient data or error.
+		 */
+		virtual bool Peek(std::size_t count, DataType& out) const noexcept = 0;
+
+		/**
+		 * @brief Read everything until EoF (non-destructive).
+		 * @param out Destination buffer.
+		 */
+		virtual void ReadUntilEoF(DataType& out) const noexcept = 0;
+
+		/**
+		 * @brief Extract everything until EoF (destructive).
+		 * @param out Destination buffer.
+		 */
+		virtual void ExtractUntilEoF(DataType& out) noexcept = 0;
+
+		// -----------------------------------------------------------------
+		// Positioning / maintenance (optional but useful)
+		// -----------------------------------------------------------------
+
+		/**
+		 * @brief Move the logical read position.
+		 * @param offset Offset value.
+		 * @param mode   Absolute or Relative.
+		 * @note Default implementation is a no-op. Concrete adapters that
+		 *       support seeking should override it.
+		 */
+		virtual void Seek(std::ptrdiff_t offset, Position mode) const noexcept {
+			(void)offset;
+			(void)mode;
+		}
+
+		/**
+		 * @brief Discard already-consumed data (from start up to current
+		 *        read position). Default is a no-op.
+		 */
+		virtual void Clean() noexcept {}
+
+		/**
+		 * @brief Convenience overload – extract all available bytes.
+		 */
+		inline bool Extract(DataType& out) noexcept {
+			return Extract(0, out);
+		}
+
+		/**
+		 * @brief Convenience overload – read all available bytes.
+		 */
+		inline bool Read(DataType& out) const noexcept {
+			return Read(0, out);
+		}
 	};
 
 	/**
 	 * @class ExternalBufferReader
-	 * @brief Implementation of ExternalReader that reads from a ReadOnly buffer.
+	 * @brief Adapter that turns any ReadOnly buffer into an ExternalReader.
+	 *
+	 * @note Does **not** take ownership of the referenced buffer.
+	 *       The caller must guarantee that the ReadOnly object outlives
+	 *       this adapter.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC ExternalBufferReader final: public ExternalReader {
-		public:
-			/**
-			 * @brief Construct ExternalBufferReader with a ReadOnly buffer.
-			 * @param buffer ReadOnly buffer to read from.
-			 * @note The `ExternalBufferReader` does NOT take ownership of `buffer`.
-			 *       The caller is responsible for ensuring that `buffer` outlives
-			 *       this `ExternalBufferReader` instance. The reader stores a
-			 *       reference wrapper to the provided `ReadOnly` object.
-			 */
-			inline ExternalBufferReader(ReadOnly& buffer) noexcept:
-				m_buffer(buffer) {}
+	class STORMBYTE_BUFFER_PUBLIC ExternalBufferReader final : public ExternalReader {
+	public:
+		/**
+		 * @brief Construct from a ReadOnly reference.
+		 * @param buffer Buffer to adapt (must outlive this object).
+		 */
+		explicit ExternalBufferReader(ReadOnly& buffer) noexcept
+			: m_buffer(buffer) {}
 
-			/**
-			 * @brief Copy constructor (deleted).
-			 * @param other ExternalBufferReader to copy from.
-			 */
-			ExternalBufferReader(const ExternalBufferReader& other) 				= default;
+		ExternalBufferReader(const ExternalBufferReader&) = default;
+		ExternalBufferReader(ExternalBufferReader&&) noexcept = default;
+		~ExternalBufferReader() noexcept override = default;
 
-			/**
-			 * @brief Move constructor.
-			 * @param other ExternalBufferReader to move from.
-			 */
-			ExternalBufferReader(ExternalBufferReader&& other) noexcept 			= default;
+		ExternalBufferReader& operator=(const ExternalBufferReader&) = default;
+		ExternalBufferReader& operator=(ExternalBufferReader&&) noexcept = default;
 
-			/**
-			 * @brief Destructor.
-			 */
-			~ExternalBufferReader() noexcept 										= default;
+		PointerType Clone() const noexcept override {
+			return MakePointer<ExternalBufferReader>(*this);
+		}
+		PointerType Move() noexcept override {
+			return MakePointer<ExternalBufferReader>(std::move(*this));
+		}
 
-			/**
-			 * @brief Copy assignment (deleted).
-			 * @param other ExternalBufferReader to copy from.
-			 * @return Reference to this ExternalBufferReader.
-			 */
-			ExternalBufferReader& operator=(const ExternalBufferReader& other)		= default;
+		// -----------------------------------------------------------------
+		// Queries
+		// -----------------------------------------------------------------
+		std::size_t AvailableBytes() const noexcept override;
+		bool        Empty() const noexcept override;
+		bool        EoF() const noexcept override;
+		bool        IsReadable() const noexcept override;
 
-			/**
-			 * @brief Move assignment.
-			 * @param other ExternalBufferReader to move from.
-			 * @return Reference to this ExternalBufferReader.
-			 */
-			ExternalBufferReader& operator=(ExternalBufferReader&& other) noexcept 	= default;
+		// -----------------------------------------------------------------
+		// Reading
+		// -----------------------------------------------------------------
+		bool Read(std::size_t count, DataType& out) const noexcept override;
+		bool Extract(std::size_t count, DataType& out) noexcept override;
+		bool Peek(std::size_t count, DataType& out) const noexcept override;
 
-			/**
-			 * @brief Clone this ExternalBufferReader.
-			 * @return Pointer to the cloned ExternalBufferReader.
-			 */
-			inline PointerType 														Clone() const noexcept override {
-				return MakePointer<ExternalBufferReader>(*this);
-			}
+		void ReadUntilEoF(DataType& out) const noexcept override;
+		void ExtractUntilEoF(DataType& out) noexcept override;
 
-			/**
-			 * @brief Move this ExternalBufferReader.
-			 * @return Pointer to the moved ExternalBufferReader.
-			 */
-			inline PointerType 														Move() noexcept override {
-				return MakePointer<ExternalBufferReader>(std::move(*this));
-			}
+		void Seek(std::ptrdiff_t offset, Position mode) const noexcept override;
+		void Clean() noexcept override;
 
-			/**
-			 * @brief Read data into the provided buffer.
-			 * @param bytes Number of bytes to read.
-			 * @param out DataType to fill with read data.
-			 * @return true if data was successfully read, false otherwise.
-			 */
-			bool 																	Read(std::size_t bytes, DataType& out) const noexcept override;
-
-			/**
-			 * @brief Destructively read data into the provided buffer.
-			 * @param bytes Number of bytes to read.
-			 * @param out DataType to fill with read data.
-			 * @return true if data was successfully read, false otherwise.
-			 */
-			bool 																	Read(std::size_t bytes, DataType& out) noexcept override;
-
-		private:
-			std::reference_wrapper<ReadOnly> m_buffer;								///< Internal read-only buffer reference.
+	private:
+		std::reference_wrapper<ReadOnly> m_buffer;
 	};
 
 	/**
 	 * @class ExternalWriter
-	 * @brief Interface for writing data to an external source.
-	 * @details This class defines the interface for writing data to an external source
-	 *          such as a file, network socket, or other I/O stream.
-	 * @note This class is intended to be used as a base class for specific
-	 *       implementations that handle different types of external data sources.
+	 * @brief Abstract interface for writing data to an external or internal sink.
+	 *
+	 * @par Overview
+	 * Provides a rich, buffer-agnostic writing API (including end-of-stream
+	 * signalling) so that pipeline stages can write uniformly to any concrete
+	 * destination (file, socket, Ring, LockFreeRing, etc.).
 	 */
-	class STORMBYTE_BUFFER_PUBLIC ExternalWriter: public Clonable<ExternalWriter> {
-		public:
-			/**
-			 * @brief Construct ExternalWriter.
-			 */
-			ExternalWriter() noexcept 												= default;
+	class STORMBYTE_BUFFER_PUBLIC ExternalWriter
+		: public Clonable<ExternalWriter, std::unique_ptr<ExternalWriter>>
+	{
+	public:
+		ExternalWriter() noexcept = default;
+		ExternalWriter(const ExternalWriter&) = default;
+		ExternalWriter(ExternalWriter&&) noexcept = default;
+		~ExternalWriter() noexcept override = default;
 
-			/**
-			 * @brief Copy constructor.
-			 * @param other ExternalWriter to copy from.
-			 */
-			ExternalWriter(const ExternalWriter& other) 							= default;
+		ExternalWriter& operator=(const ExternalWriter&) = default;
+		ExternalWriter& operator=(ExternalWriter&&) noexcept = default;
 
-			/**
-			 * @brief Move constructor.
-			 * @param other ExternalWriter to move from.
-			 */
-			ExternalWriter(ExternalWriter&& other) noexcept 						= default;
+		// -----------------------------------------------------------------
+		// Queries
+		// -----------------------------------------------------------------
 
-			/**
-			 * @brief Destructor.
-			 */
-			virtual ~ExternalWriter() noexcept 										= default;
+		/**
+		 * @brief Check whether the sink still accepts writes.
+		 * @return false when the sink has been closed or is in error state.
+		 */
+		virtual bool IsWritable() const noexcept = 0;
 
-			/**
-			 * @brief Copy assignment operator.
-			 * @param other ExternalWriter to copy from.
-			 * @return Reference to this ExternalWriter.
-			 */
-			ExternalWriter& operator=(const ExternalWriter& other) 					= default;
-			/**
-			 * @brief Move assignment operator.
-			 * @param other ExternalWriter to move from.
-			 * @return Reference to this ExternalWriter.
-			 */
-			ExternalWriter& operator=(ExternalWriter&& other) noexcept 				= default;
+		// -----------------------------------------------------------------
+		// Writing
+		// -----------------------------------------------------------------
 
-			/**
-			 * @brief Move data from the provided buffer.
-			 * @param in DataType containing data to move.
-			 * @return true if data was successfully written, false otherwise.
-			 */
-			virtual bool 															Write(DataType&& in) noexcept = 0;
+		/**
+		 * @brief Write (copy) a byte vector.
+		 * @param data Data to append.
+		 * @return true on success, false if the sink is closed/error.
+		 */
+		virtual bool Write(const DataType& data) noexcept = 0;
+
+		/**
+		 * @brief Write (move) a byte vector.
+		 * @param data Data to append (will be emptied on success).
+		 * @return true on success, false if the sink is closed/error.
+		 */
+		virtual bool Write(DataType&& data) noexcept = 0;
+
+		/**
+		 * @brief Write up to @p count bytes from a vector.
+		 * @param count Maximum bytes to write (0 = entire vector).
+		 * @param data  Source vector.
+		 * @return true on success.
+		 */
+		virtual bool Write(std::size_t count, const DataType& data) noexcept = 0;
+
+		/**
+		 * @brief Write up to @p count bytes, moving from the source.
+		 * @param count Maximum bytes to write (0 = entire vector).
+		 * @param data  Source vector (modified on success).
+		 * @return true on success.
+		 */
+		virtual bool Write(std::size_t count, DataType&& data) noexcept = 0;
+
+		// Convenience overloads (implemented in terms of the pure virtuals)
+		bool Write(std::string_view sv) noexcept;
+		bool Write(const char* s) noexcept;
+		bool Write(std::size_t count, std::string_view sv) noexcept;
+
+		template<std::size_t N>
+		bool Write(const char (&s)[N]) noexcept {
+			if (N == 0) return Write(DataType{});
+			return Write(std::string_view(s, N > 0 ? N - 1 : 0));
+		}
+
+		// -----------------------------------------------------------------
+		// End-of-stream signalling
+		// -----------------------------------------------------------------
+
+		/**
+		 * @brief Mark the sink closed for further writes.
+		 * @details Subsequent Write() calls must fail. Readers can still
+		 *          drain remaining data. Implementations should wake any
+		 *          waiting readers.
+		 */
+		virtual void Close() noexcept = 0;
+
+		/**
+		 * @brief Put the sink into a permanent error state.
+		 * @details Makes the sink both unreadable and unwritable.
+		 *          Implementations should wake any waiters.
+		 */
+		virtual void SetError() noexcept = 0;
 	};
 
-	class STORMBYTE_BUFFER_PUBLIC ExternalBufferWriter final: public ExternalWriter {
-		public:
-			/**
-			 * @brief Construct ExternalBufferWriter with a WriteOnly buffer.
-			 * @param buffer WriteOnly buffer to write to.
-			 * @note The `ExternalBufferWriter` does NOT take ownership of `buffer`.
-			 *       The caller is responsible for ensuring that `buffer` outlives
-			 *       this `ExternalBufferWriter` instance. The writer stores a
-			 *       reference wrapper to the provided `WriteOnly` object.
-			 */
-			inline ExternalBufferWriter(WriteOnly& buffer) noexcept:
-				m_buffer(buffer) {}
+	/**
+	 * @class ExternalBufferWriter
+	 * @brief Adapter that turns any WriteOnly buffer into an ExternalWriter.
+	 *
+	 * @note Does **not** take ownership of the referenced buffer.
+	 *       The caller must guarantee that the WriteOnly object outlives
+	 *       this adapter.
+	 *
+	 * @warning Close() / SetError() require the concrete WriteOnly
+	 *          implementation to support those operations (Ring, LockFreeRing,
+	 *          Producer, etc.). Pure WriteOnly without those methods will
+	 *          need a thin wrapper or the methods added to the base.
+	 */
+	class STORMBYTE_BUFFER_PUBLIC ExternalBufferWriter final : public ExternalWriter {
+	public:
+		/**
+		 * @brief Construct from a WriteOnly reference.
+		 * @param buffer Buffer to adapt (must outlive this object).
+		 */
+		explicit ExternalBufferWriter(WriteOnly& buffer) noexcept
+			: m_buffer(buffer) {}
 
-			/**
-			 * @brief Copy constructor (deleted).
-			 * @param other ExternalBufferWriter to copy from.
-			 */
-			ExternalBufferWriter(const ExternalBufferWriter& other) 				= default;
+		ExternalBufferWriter(const ExternalBufferWriter&) = default;
+		ExternalBufferWriter(ExternalBufferWriter&&) noexcept = default;
+		~ExternalBufferWriter() noexcept override = default;
 
-			/**
-			 * @brief Move constructor.
-			 * @param other ExternalBufferWriter to move from.
-			 */
-			ExternalBufferWriter(ExternalBufferWriter&& other) noexcept 			= default;
+		ExternalBufferWriter& operator=(const ExternalBufferWriter&) = default;
+		ExternalBufferWriter& operator=(ExternalBufferWriter&&) noexcept = default;
 
-			/**
-			 * @brief Destructor.
-			 */
-			~ExternalBufferWriter() noexcept 										= default;
+		PointerType Clone() const noexcept override {
+			return MakePointer<ExternalBufferWriter>(*this);
+		}
+		PointerType Move() noexcept override {
+			return MakePointer<ExternalBufferWriter>(std::move(*this));
+		}
 
-			/**
-			 * @brief Copy assignment (deleted).
-			 * @param other ExternalBufferWriter to copy from.
-			 * @return Reference to this ExternalBufferWriter.
-			 */
-			ExternalBufferWriter& operator=(const ExternalBufferWriter& other) 		= default;
+		bool IsWritable() const noexcept override;
 
-			/**
-			 * @brief Move assignment.
-			 * @param other ExternalBufferWriter to move from.
-			 * @return Reference to this ExternalBufferWriter.
-			 */
-			ExternalBufferWriter& operator=(ExternalBufferWriter&& other) noexcept 	= default;
+		bool Write(const DataType& data) noexcept override;
+		bool Write(DataType&& data) noexcept override;
+		bool Write(std::size_t count, const DataType& data) noexcept override;
+		bool Write(std::size_t count, DataType&& data) noexcept override;
 
-			/**
-			 * @brief Clone this ExternalBufferWriter.
-			 * @return Pointer to the cloned ExternalBufferWriter.
-			 */
-			inline PointerType 														Clone() const noexcept override {
-				return MakePointer<ExternalBufferWriter>(*this);
-			}
+		void Close() noexcept override;
+		void SetError() noexcept override;
 
-			/**
-			 * @brief Move this ExternalBufferWriter.
-			 * @return Pointer to the moved ExternalBufferWriter.
-			 */
-			inline PointerType 														Move() noexcept override {
-				return MakePointer<ExternalBufferWriter>(std::move(*this));
-			}
-
-			/**
-			 * @brief Move data from the provided buffer.
-			 * @param in DataType containing data to move.
-			 * @return true if data was successfully written, false otherwise.
-			 */
-			bool 																	Write(DataType&& in) noexcept override;
-
-		private:
-			std::reference_wrapper<WriteOnly> m_buffer;								///< Internal write-only buffer reference.
+	private:
+		std::reference_wrapper<WriteOnly> m_buffer;
 	};
+
 }
