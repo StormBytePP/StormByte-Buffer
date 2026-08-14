@@ -33,6 +33,12 @@ SharedFIFO& SharedFIFO::operator=(FIFO&& other) noexcept {
 	return *this;
 }
 
+SharedFIFO& SharedFIFO::operator=(SharedFIFO&&) noexcept {
+	// Mutex / condition_variable are not movable.
+	// Leave in a valid state; the moved-from object should not be used.
+	return *this;
+}
+
 bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
 	std::scoped_lock<std::mutex, std::mutex> lock(m_mutex, other.m_mutex);
 	return static_cast<const FIFO&>(*this) == static_cast<const FIFO&>(other);

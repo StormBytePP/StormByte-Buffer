@@ -48,13 +48,13 @@ namespace StormByte::Buffer {
 			 * 	@brief Construct FIFO with initial data.
 			 *  @param data Initial byte vector to populate the FIFO.
 			 */
-			inline FIFO(const DataType& data) noexcept: ReadWrite(data), m_position_offset(0) {}
+			inline FIFO(const DataType& data) noexcept: m_buffer(data), m_position_offset(0) {}
 
 			/**
 			 * 	@brief Construct FIFO with initial data using move semantics.
 			 *  @param data Initial byte vector to move into the FIFO.
 			 */
-			inline FIFO(DataType&& data) noexcept: ReadWrite(std::move(data)), m_position_offset(0) {}
+			inline FIFO(DataType&& data) noexcept: m_buffer(std::move(data)), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO from an input range.
@@ -68,7 +68,7 @@ namespace StormByte::Buffer {
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
 				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
 				(!std::same_as<std::remove_cvref_t<R>, DataType>)
-			inline FIFO(const R& r) noexcept: ReadWrite(DataConvert(r)), m_position_offset(0) {}
+			inline FIFO(const R& r) noexcept: m_buffer(DataConvert(r)), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO from an rvalue range (moves when DataType rvalue).
@@ -78,16 +78,16 @@ namespace StormByte::Buffer {
 			template<std::ranges::input_range Rr>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
 				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
-			inline FIFO(Rr&& r) noexcept: ReadWrite(DataConvert(std::forward<Rr>(r))), m_position_offset(0) {}
+			inline FIFO(Rr&& r) noexcept: m_buffer(DataConvert(std::forward<Rr>(r))), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO from a string view (does not include terminating NUL).
-		 	*/
-			inline FIFO(std::string_view sv) noexcept: ReadWrite(DataConvert(sv)), m_position_offset(0) {}
+			*/
+			inline FIFO(std::string_view sv) noexcept: m_buffer(DataConvert(sv)), m_position_offset(0) {}
 
 			/**
 			 * @brief Construct FIFO from a C string pointer (null-terminated).
-		 	*/
+			*/
 			inline FIFO(const char* s) noexcept: FIFO(s ? std::string_view(s) : std::string_view()) {}
 
 			/**
@@ -172,7 +172,7 @@ namespace StormByte::Buffer {
 			 * @return Constant reference to the internal DataType buffer.
 			 */
 			inline virtual const DataType& 							Data() const noexcept override {
-				return ReadOnly::Data();
+				return m_buffer;
 			}
 
 			/**
@@ -438,6 +438,11 @@ namespace StormByte::Buffer {
 			using WriteOnly::Write;
 
 		protected:
+			/**
+			 * @brief The owned contiguous buffer storage.
+			 */
+			DataType m_buffer;
+
 			/**
 			 * @brief Current read position for read operations.
 			 *

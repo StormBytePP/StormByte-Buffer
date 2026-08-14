@@ -9,13 +9,22 @@
 
 using namespace StormByte::Buffer;
 
-FIFO::FIFO(const FIFO& other) noexcept: Generic(other), ReadWrite(other),  m_position_offset(other.m_position_offset) {}
+FIFO::FIFO(const FIFO& other) noexcept
+	: Generic(other), ReadWrite(other),
+	m_buffer(other.m_buffer),
+	m_position_offset(other.m_position_offset)
+{}
 
-FIFO::FIFO(FIFO&& other) noexcept: Generic(std::move(other)), ReadWrite(std::move(other)), m_position_offset(other.m_position_offset) {}
+FIFO::FIFO(FIFO&& other) noexcept
+	: Generic(std::move(other)), ReadWrite(std::move(other)),
+	m_buffer(std::move(other.m_buffer)),
+	m_position_offset(other.m_position_offset)
+{}
 
 FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
 		Generic::operator=(other);
+		m_buffer = other.m_buffer;
 		m_position_offset = other.m_position_offset;
 	}
 	return *this;
@@ -24,6 +33,7 @@ FIFO& FIFO::operator=(const FIFO& other) {
 FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	if (this != &other) {
 		Generic::operator=(std::move(other));
+		m_buffer = std::move(other.m_buffer);
 		m_position_offset = other.m_position_offset;
 	}
 	return *this;

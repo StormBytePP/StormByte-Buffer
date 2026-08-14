@@ -9,7 +9,7 @@
  * @namespace Buffer
  * @brief Namespace for buffer-related components in the StormByte library.
  *
-			void  Wait(const std::size_t& n, std::unique_lock<std::recursive_mutex>& lock) const;
+ * The Buffer namespace provides classes and utilities for byte buffers,
  * including FIFO buffers, thread-safe shared buffers, and producer-consumer patterns.
  */
 namespace StormByte::Buffer {
@@ -20,35 +20,35 @@ namespace StormByte::Buffer {
 	 * @par Overview
 	 *  SharedFIFO wraps the non-thread-safe @ref FIFO with a mutex and a
 	 *  condition variable to provide safe concurrent access from multiple
-	*  producer/consumer threads. It preserves the byte-oriented FIFO
-	*  semantics of @ref FIFO while adding blocking behavior for reads and
-	*  extracts.
-	*
-	* @par Blocking semantics
-	*  - @ref Read(const std::size_t&) blocks until the requested number of bytes are
-	*    available from the current non-destructive read position, or until
-	*    the FIFO is closed via @ref Close(). If @c count == 0, it returns
-	*    immediately with all bytes available from the current read position.
-	*  - @ref Extract(const std::size_t&) blocks until at least @c count bytes exist
-	*    in the buffer (destructive), or until closed. If @c count == 0, it
-	*    returns immediately with all available data and clears the buffer.
-	*
-	* @par Close behavior
-	*  @ref Close() marks the FIFO as closed and notifies all waiting threads.
-	*  Subsequent calls to @ref Write() are ignored. Waiters will wake and
-	*  complete using whatever data is presently available (which may be none).
-	*
-	* @par Seek behavior
-	*  @ref Seek() updates the internal non-destructive read position and
-	*  notifies waiters so blocked readers can re-evaluate their predicates
-	*  relative to the new position.
-	*
-	* @par Thread safety
-	*  All public member functions of SharedFIFO are thread-safe. Methods that
-	*  mutate internal state (Write/Extract/Clear/Close/Seek/Reserve) acquire
-	*  the internal mutex. Read accessors also acquire the mutex to maintain
-	*  consistency with the current head/tail/read-position state.
-	*/
+	 *  producer/consumer threads. It preserves the byte-oriented FIFO
+	 *  semantics of @ref FIFO while adding blocking behavior for reads and
+	 *  extracts.
+	 *
+	 * @par Blocking semantics
+	 *  - @ref Read(const std::size_t&) blocks until the requested number of bytes are
+	 *    available from the current non-destructive read position, or until
+	 *    the FIFO is closed via @ref Close(). If @c count == 0, it returns
+	 *    immediately with all bytes available from the current read position.
+	 *  - @ref Extract(const std::size_t&) blocks until at least @c count bytes exist
+	 *    in the buffer (destructive), or until closed. If @c count == 0, it
+	 *    returns immediately with all available data and clears the buffer.
+	 *
+	 * @par Close behavior
+	 *  @ref Close() marks the FIFO as closed and notifies all waiting threads.
+	 *  Subsequent calls to @ref Write() are ignored. Waiters will wake and
+	 *  complete using whatever data is presently available (which may be none).
+	 *
+	 * @par Seek behavior
+	 *  @ref Seek() updates the internal non-destructive read position and
+	 *  notifies waiters so blocked readers can re-evaluate their predicates
+	 *  relative to the new position.
+	 *
+	 * @par Thread safety
+	 *  All public member functions of SharedFIFO are thread-safe. Methods that
+	 *  mutate internal state (Write/Extract/Clear/Close/Seek/Reserve) acquire
+	 *  the internal mutex. Read accessors also acquire the mutex to maintain
+	 *  consistency with the current head/tail/read-position state.
+	 */
 	class STORMBYTE_BUFFER_PUBLIC SharedFIFO: public FIFO {
 		public:
 			/**
@@ -98,7 +98,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Construct FIFO from a string view (does not include terminating NUL).
-		 	*/
+			*/
 			inline SharedFIFO(std::string_view sv) noexcept: FIFO(sv), m_closed(false),
 			m_error(false), m_error_message() {}
 
@@ -263,15 +263,15 @@ namespace StormByte::Buffer {
 			 * @details Acquires the internal mutex for reading so the dump represents
 			 *          a consistent snapshot. The returned string begins with a
 			 *          status line of the form `Status: opened|closed, ready|error`\n
-			*          followed by the same output produced by `FIFO::HexDump()`.
-			* Example output:
-			* @code{.text}
-			* Size: 13 bytes
-			* Read Position: 0
-			* Status: opened and ready
-			* 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
-			* @endcode
-			*/
+			 *          followed by the same output produced by `FIFO::HexDump()`.
+			 * Example output:
+			 * @code{.text}
+			 * Size: 13 bytes
+			 * Read Position: 0
+			 * Status: opened and ready
+			 * 00000000: 48 65 6C 6C 6F 2C 20 77 6F 72 6C 64 21           Hello, world!
+			 * @endcode
+			 */
 			virtual std::string 								HexDump(const std::size_t& collumns = 0, const std::size_t& byte_limit = 0) const noexcept override;
 
 			/**

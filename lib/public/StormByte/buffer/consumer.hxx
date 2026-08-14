@@ -145,6 +145,14 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Access the internal data buffer.
+			 * @return Constant reference to the internal DataType buffer.
+			 */
+			inline const DataType& 										Data() const noexcept override {
+				return m_buffer->Data();
+			}
+
+			/**
 			 * @brief Drop bytes in the buffer
 			 * @param count Number of bytes to drop.
 			 * @return true if the bytes were successfully dropped, false otherwise.
@@ -190,7 +198,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
 			 * @return bool indicating success or failure.
 			 */
-			inline bool 												Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept {
+			inline bool 												Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override {
 				return m_buffer->Extract(count, outBuffer);
 			}
 
@@ -327,7 +335,7 @@ namespace StormByte::Buffer {
 			 * @see Read(), Position
 			 * If Position is set to Absolute and offset is negative the operation is noop
 			 */
-			inline void 												Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
+			inline void 												Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override {
 				m_buffer->Seek(offset, mode);
 			}
 

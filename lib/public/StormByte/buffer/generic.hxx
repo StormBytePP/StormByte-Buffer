@@ -19,11 +19,10 @@
 namespace StormByte::Buffer {
 	/**
 	* @class Generic
-	* @brief Generic class to maintain common API guarantees across buffer types.
-	* @par Overview
-	*  Generic provides a common base class for buffer types, ensuring consistent
-	*  API behavior and guarantees. It defines standard operations like reading,
-	*  writing, seeking, and clearing buffers.
+	* @brief Pure abstract contract that maintains common API guarantees across buffer types.
+	*
+	* Generic is now a pure interface (no data members). Concrete classes that need storage
+	* (e.g. FIFO) own their own buffer.
 	*/
 	class STORMBYTE_BUFFER_PUBLIC Generic {
 		public:
@@ -33,45 +32,31 @@ namespace StormByte::Buffer {
 			Generic() noexcept 												= default;
 
 			/**
-			 * 	@brief Construct Generic.
-			 *  @param data Initial byte vector to populate the Generic.
-			 */
-			inline Generic(const DataType& data) noexcept: m_buffer(data) {}
-
-			/**
-			 * 	@brief Construct Generic with initial data using move semantics.
-			 *  @param data Initial byte vector to move into the Generic.
-			 */
-			inline Generic(DataType&& data) noexcept: m_buffer(std::move(data)) {}
-
-			/**
-			 * 	@brief Copy construct deleted
+			 * 	@brief Copy construct.
 			 */
 			Generic(const Generic&) noexcept 								= default;
 			
 			/**
-			 * 	@brief Move construct deleted
+			 * 	@brief Move construct.
 			 */
 			Generic(Generic&&) noexcept										= default;
 
 			/**
-			 * 	@brief Virtual destructor.
+			 * 	@brief Virtual pure destructor (makes the class abstract).
 			 */
 			virtual ~Generic() noexcept 									= 0;
 			
 			/**
-			 * 	@brief Copy assign deleted
+			 * 	@brief Copy assign.
 			 */
 			Generic& operator=(const Generic& other) 						= default;
 		
 			/**
-			 * 	@brief Move assign deleted
+			 * 	@brief Move assign.
 			 */
 			Generic& operator=(Generic&&) noexcept							= default;
 
 		protected:
-			DataType m_buffer;												///< Internal buffer storage
-
 			/**
 			 * @brief Convert various source types into the library `DataType`.
 			 *
@@ -108,7 +93,7 @@ namespace StormByte::Buffer {
 						if (s > 0) out.reserve(static_cast<typename DataType::size_type>(s));
 					}
 					std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
-							   [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+							[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
 					return out;
 				}
 			}
@@ -136,12 +121,7 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @class ReadOnly
-	 * @brief Generic class providing a buffer that can be read but not written to.
-	 * @par Overview
-	 *  ReadOnly extends Generic to provide a read-only buffer interface. It allows
-	 *  reading data from the buffer while preventing any modifications. This is useful
-	 *  for scenarios where data integrity must be maintained and only read access is
-	 *  required.
+	 * @brief Pure interface for a buffer that can be read but not written to.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadOnly: virtual public Generic {
 		public:
@@ -151,24 +131,12 @@ namespace StormByte::Buffer {
 			inline ReadOnly() noexcept: Generic() {};
 
 			/**
-			 * 	@brief Construct ReadOnly.
-			 *  @param data Initial byte vector to populate the ReadOnly.
-			 */
-			inline ReadOnly(const DataType& data) noexcept: Generic(data) {}
-
-			/**
-			 * 	@brief Construct ReadOnly with initial data using move semantics.
-			 *  @param data Initial byte vector to move into the ReadOnly.
-			 */
-			inline ReadOnly(DataType&& data) noexcept: Generic(std::move(data)) {}
-
-			/**
-			 * 	@brief Copy construct deleted
+			 * 	@brief Copy construct.
 			 */
 			ReadOnly(const ReadOnly&) noexcept 								= default;
 			
 			/**
-			 * 	@brief Move construct deleted
+			 * 	@brief Move construct.
 			 */
 			ReadOnly(ReadOnly&&) noexcept									= default;
 
@@ -178,12 +146,12 @@ namespace StormByte::Buffer {
 			virtual ~ReadOnly() noexcept 									= default;
 			
 			/**
-			 * 	@brief Copy assign deleted
+			 * 	@brief Copy assign.
 			 */
 			ReadOnly& operator=(const ReadOnly&) 							= default;
 		
 			/**
-			 * 	@brief Move assign deleted
+			 * 	@brief Move assign.
 			 */
 			ReadOnly& operator=(ReadOnly&&) noexcept						= default;
 
@@ -211,9 +179,7 @@ namespace StormByte::Buffer {
 			 * @brief Access the internal data buffer.
 			 * @return Constant reference to the internal DataType buffer.
 			 */
-			virtual const DataType& 										Data() const noexcept {
-				return m_buffer;
-			}
+			virtual const DataType& 										Data() const noexcept = 0;
 
 			/**
 			 * @brief Drop bytes in the buffer
@@ -398,12 +364,7 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @class WriteOnly
-	 * @brief Generic class providing a buffer that can be written to but not read from.
-	 * @par Overview
-	 *  WriteOnly extends Generic to provide a write-only buffer interface. It allows
-	 *  writing data to the buffer while preventing any read operations. This is useful
-	 *  for scenarios where data needs to be collected or buffered without exposing it
-	 *  for reading.
+	 * @brief Pure interface for a buffer that can be written to but not read from.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteOnly: virtual public Generic {
 		public:
@@ -413,24 +374,12 @@ namespace StormByte::Buffer {
 			inline WriteOnly() noexcept: Generic() {};
 
 			/**
-			 * 	@brief Construct WriteOnly.
-			 *  @param data Initial byte vector to populate the WriteOnly.
-			 */
-			inline WriteOnly(const DataType& data) noexcept: Generic(data) {}
-
-			/**
-			 * 	@brief Construct WriteOnly with initial data using move semantics.
-			 *  @param data Initial byte vector to move into the WriteOnly.
-			 */
-			inline WriteOnly(DataType&& data) noexcept: Generic(std::move(data)) {}
-
-			/**
-			 * 	@brief Copy construct deleted
+			 * 	@brief Copy construct.
 			 */
 			WriteOnly(const WriteOnly&) 									= default;
 			
 			/**
-			 * 	@brief Move construct deleted
+			 * 	@brief Move construct.
 			 */
 			WriteOnly(WriteOnly&&) noexcept									= default;
 
@@ -440,12 +389,12 @@ namespace StormByte::Buffer {
 			virtual ~WriteOnly() noexcept 									= default;
 			
 			/**
-			 * 	@brief Copy assign deleted
+			 * 	@brief Copy assign.
 			 */
 			WriteOnly& operator=(const WriteOnly&) 							= default;
 		
 			/**
-			 * 	@brief Move assign deleted
+			 * 	@brief Move assign.
 			 */
 			WriteOnly& operator=(WriteOnly&&) noexcept						= default;
 
@@ -642,7 +591,7 @@ namespace StormByte::Buffer {
 						if (dist > 0) tmp.reserve(static_cast<typename DataType::size_type>(dist));
 					}
 					std::transform(std::ranges::begin(r), std::ranges::end(r), std::back_inserter(tmp),
-						   [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+						[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
 					return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
 				}
 			}
@@ -756,11 +705,7 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @class ReadWrite
-	 * @brief Generic class providing a buffer that can be both read from and written to.
-	 * @par Overview
-	 *  ReadWrite extends both ReadOnly and WriteOnly to provide a full read-write
-	 *  buffer interface. It allows reading and writing data to the buffer, supporting
-	 *  scenarios where data needs to be both consumed and produced.
+	 * @brief Pure interface for a buffer that can be both read from and written to.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadWrite: public ReadOnly, public WriteOnly {
 		public:
@@ -770,24 +715,12 @@ namespace StormByte::Buffer {
 			inline ReadWrite() noexcept: Generic() {};
 
 			/**
-			 * 	@brief Construct ReadWrite.
-			 *  @param data Initial byte vector to populate the ReadWrite.
-			 */
-			inline ReadWrite(const DataType& data) noexcept: Generic(data) {}
-
-			/**
-			 * 	@brief Construct ReadWrite with initial data using move semantics.
-			 *  @param data Initial byte vector to move into the ReadWrite.
-			 */
-			inline ReadWrite(DataType&& data) noexcept: Generic(std::move(data)) {}
-
-			/**
-			 * 	@brief Copy construct deleted
+			 * 	@brief Copy construct.
 			 */
 			ReadWrite(const ReadWrite& other) noexcept 						= default;
 			
 			/**
-			 * 	@brief Move construct deleted
+			 * 	@brief Move construct.
 			 */
 			ReadWrite(ReadWrite&& other) noexcept							= default;
 
@@ -797,12 +730,12 @@ namespace StormByte::Buffer {
 			virtual ~ReadWrite() noexcept 									= default;
 			
 			/**
-			 * 	@brief Copy assign deleted
+			 * 	@brief Copy assign.
 			 */
 			ReadWrite& operator=(const ReadWrite& other) 					= default;
 		
 			/**
-			 * 	@brief Move assign deleted
+			 * 	@brief Move assign.
 			 */
 			ReadWrite& operator=(ReadWrite&& other) noexcept				= default;
 	};
