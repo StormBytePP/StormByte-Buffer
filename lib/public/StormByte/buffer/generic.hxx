@@ -14,56 +14,65 @@
  * @brief Namespace for buffer-related components in the StormByte library.
  *
  * The Buffer namespace provides classes and utilities for byte buffers,
- * including Generic buffers, thread-safe shared buffers, and producer-consumer patterns.
+ * including Generic buffers, thread-safe shared buffers, producer-consumer
+ * interfaces, external I/O adapters and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
 	/**
-	* @class Generic
-	* @brief Pure abstract contract that maintains common API guarantees across buffer types.
-	*
-	* Generic is now a pure interface (no data members). Concrete classes that need storage
-	* (e.g. FIFO) own their own buffer.
-	*/
+	 * @class Generic
+	 * @brief Pure abstract root of the buffer interface hierarchy.
+	 *
+	 * @details Generic holds **no data members**. Concrete types that need
+	 *          storage (e.g. @ref FIFO, @ref Ring) own it themselves.
+	 *          Protected @c DataConvert helpers convert ranges / strings into
+	 *          @ref DataType for constructors and writes.
+	 *
+	 * @see ReadOnly, WriteOnly, ReadWrite
+	 */
 	class STORMBYTE_BUFFER_PUBLIC Generic {
 		public:
 			/**
-			 * 	@brief Construct Generic.
+			 * @name Constructors / destructor / assignment
+			 * @{
 			 */
-			Generic() noexcept 												= default;
+			/** @brief Default construct. */
+			Generic() noexcept = default;
+
+			/** @brief Copy construct. */
+			Generic(const Generic&) noexcept = default;
+
+			/** @brief Move construct. */
+			Generic(Generic&&) noexcept = default;
 
 			/**
-			 * 	@brief Copy construct.
+			 * @brief Pure virtual destructor (keeps the class abstract).
 			 */
-			Generic(const Generic&) noexcept 								= default;
-			
-			/**
-			 * 	@brief Move construct.
-			 */
-			Generic(Generic&&) noexcept										= default;
+			virtual ~Generic() noexcept = 0;
 
-			/**
-			 * 	@brief Virtual pure destructor (makes the class abstract).
-			 */
-			virtual ~Generic() noexcept 									= 0;
-			
-			/**
-			 * 	@brief Copy assign.
-			 */
-			Generic& operator=(const Generic& other) 						= default;
-		
-			/**
-			 * 	@brief Move assign.
-			 */
-			Generic& operator=(Generic&&) noexcept							= default;
+			/** @brief Copy assign. */
+			Generic& operator=(const Generic& other) = default;
+
+			/** @brief Move assign. */
+			Generic& operator=(Generic&&) noexcept = default;
+			/** @} */
 
 		protected:
 			/**
-			 * @brief Convert various source types into the library `DataType`.
+			 * @name DataConvert
+			 * @brief Convert external sources into the library @ref DataType.
 			 *
 			 * Overload forms:
-			 * - `DataType DataConvert(const Src&)` for copying/converting from lvalue ranges
-			 * - `DataType DataConvert(Src&&)` for consuming rvalue ranges and moving when
-			 *   the source type is already `DataType`.
+			 * - @c DataConvert(const Src&) — copy / convert from lvalue ranges
+			 * - @c DataConvert(Src&&) — consume rvalue ranges; move when @p Src is @ref DataType
+			 * - @c DataConvert(std::string_view) / @c DataConvert(const char*)
+			 * @{
+			 */
+
+			/**
+			 * @brief Convert an lvalue input range to @ref DataType.
+			 * @tparam Src Input range whose value_type is convertible to @c std::byte.
+			 * @param src Source range.
+			 * @return Converted byte vector.
 			 */
 			template<std::ranges::input_range Src>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
@@ -79,6 +88,12 @@ namespace StormByte::Buffer {
 				return out;
 			}
 
+			/**
+			 * @brief Convert an rvalue input range to @ref DataType (moves when already @ref DataType).
+			 * @tparam Src Input range type.
+			 * @param src Source range (may be moved from).
+			 * @return Converted or moved byte vector.
+			 */
 			template<std::ranges::input_range Src>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
 				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
@@ -99,399 +114,503 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Convert a `std::string_view` to `DataType`.
+			 * @brief Convert a string view to @ref DataType (no trailing NUL).
+			 * @param sv Source characters.
+			 * @return Byte vector.
 			 */
 			static DataType DataConvert(std::string_view sv) noexcept {
 				DataType out;
 				if (!sv.empty()) out.reserve(static_cast<typename DataType::size_type>(sv.size()));
-				std::transform(sv.begin(), sv.end(), std::back_inserter(out), [] (char c) noexcept { return static_cast<std::byte>(c); });
+				std::transform(sv.begin(), sv.end(), std::back_inserter(out),
+					[] (char c) noexcept { return static_cast<std::byte>(c); });
 				return out;
 			}
 
 			/**
-			 * @brief Convert a null-terminated C string to `DataType`.
+			 * @brief Convert a null-terminated C string to @ref DataType.
+			 * @param s Source string (may be null → empty vector).
+			 * @return Byte vector.
 			 */
 			static DataType DataConvert(const char* s) noexcept {
 				if (!s) return DataType{};
 				return DataConvert(std::string_view(s));
 			}
+
+			/** @} */
 	};
 
 	class WriteOnly; // Forward declaration
 
 	/**
 	 * @class ReadOnly
-	 * @brief Pure interface for a buffer that can be read but not written to.
+	 * @brief Pure interface for a buffer that can be read but not written.
+	 *
+	 * @details All read / extract / peek / seek contracts used by concrete
+	 *          buffers (@ref FIFO, @ref Ring, @ref Consumer, …) are declared here.
+	 *
+	 * @see WriteOnly, ReadWrite, Generic
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadOnly: virtual public Generic {
 		public:
 			/**
-			 * 	@brief Construct ReadOnly.
+			 * @name Constructors / destructor / assignment
+			 * @{
 			 */
-			inline ReadOnly() noexcept: Generic() {};
+			/** @brief Default construct. */
+			inline ReadOnly() noexcept: Generic() {}
+
+			/** @brief Copy construct. */
+			ReadOnly(const ReadOnly&) noexcept = default;
+
+			/** @brief Move construct. */
+			ReadOnly(ReadOnly&&) noexcept = default;
+
+			/** @brief Virtual destructor. */
+			virtual ~ReadOnly() noexcept = default;
+
+			/** @brief Copy assign. */
+			ReadOnly& operator=(const ReadOnly&) = default;
+
+			/** @brief Move assign. */
+			ReadOnly& operator=(ReadOnly&&) noexcept = default;
+			/** @} */
 
 			/**
-			 * 	@brief Copy construct.
+			 * @name Queries
+			 * @{
 			 */
-			ReadOnly(const ReadOnly&) noexcept 								= default;
-			
-			/**
-			 * 	@brief Move construct.
-			 */
-			ReadOnly(ReadOnly&&) noexcept									= default;
 
 			/**
-			 * 	@brief Virtual destructor.
+			 * @brief Bytes available from the current read position.
+			 * @return Unread byte count.
 			 */
-			virtual ~ReadOnly() noexcept 									= default;
-			
-			/**
-			 * 	@brief Copy assign.
-			 */
-			ReadOnly& operator=(const ReadOnly&) 							= default;
-		
-			/**
-			 * 	@brief Move assign.
-			 */
-			ReadOnly& operator=(ReadOnly&&) noexcept						= default;
+			virtual std::size_t AvailableBytes() const noexcept = 0;
 
 			/**
-			 * @brief Gets available bytes for reading.
-			 * @return Number of bytes available from the current read position.
+			 * @brief Access a view of the internal storage (implementation-defined).
+			 * @return Constant reference to a @ref DataType.
 			 */
-			virtual std::size_t 											AvailableBytes() const noexcept = 0;
+			virtual const DataType& Data() const noexcept = 0;
 
 			/**
-			 * @brief Clean buffer data from start to read position.
-			 * @see Size(), Empty()
-			 */
-			virtual void 													Clean() noexcept = 0;
-
-			/**
-			 * @brief Clear all buffer contents.
-			 * @details Removes all data from the buffer, resets head/tail/read positions,
-			 *          and restores capacity to the initial value requested in the constructor.
-			 * @see Size(), Empty()
-			 */
-			virtual void 													Clear() noexcept = 0;
-
-			/**
-			 * @brief Access the internal data buffer.
-			 * @return Constant reference to the internal DataType buffer.
-			 */
-			virtual const DataType& 										Data() const noexcept = 0;
-
-			/**
-			 * @brief Drop bytes in the buffer
-			 * @param count Number of bytes to drop.
-			 * @see Read()
-			 */
-			virtual bool 													Drop(const std::size_t& count) noexcept = 0;
-
-			/**
-			 * @brief Check if the buffer is empty.
-			 * @return true if the buffer contains no data, false otherwise.
+			 * @brief Whether the buffer holds no stored bytes.
+			 * @return @c true if empty.
 			 * @see Size()
 			 */
-			virtual bool 													Empty() const noexcept = 0;
+			virtual bool Empty() const noexcept = 0;
 
 			/**
-			 * @brief Check if the reader has reached end-of-file.
-			 * @return true if buffer is closed or in error state and no bytes available.
-			 * @details Returns true when the buffer has been closed or set to error
-			 *          and there are no available bytes remaining.
+			 * @brief End-of-stream condition.
+			 * @return @c true when closed (or in error) and no unread bytes remain.
 			 */
-			virtual bool 													EoF() const noexcept = 0;
+			virtual bool EoF() const noexcept = 0;
 
 			/**
-			 * @brief Destructive read that removes data from the buffer into an existing vector.
-			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 * @note For base class is the same than Read
+			 * @brief Whether the buffer can still be read.
+			 * @return @c false in permanent error state.
 			 */
-			inline virtual bool 											Extract(const std::size_t& count, DataType& outBuffer) noexcept = 0;
+			virtual bool IsReadable() const noexcept = 0;
 
 			/**
-			 * @brief Destructive read that removes all data from the buffer into an existing vector.
-			 * @param outBuffer Vector to fill with extracted bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 * @note For base class is the same than Read
+			 * @brief Total number of bytes stored.
+			 * @return Size in bytes.
+			 * @see Empty()
 			 */
-			inline bool 													Extract(DataType& outBuffer) noexcept {
-				return Extract(0, outBuffer);
-			}
+			virtual std::size_t Size() const noexcept = 0;
+
+			/** @} */
 
 			/**
-			 * @brief Destructive read that removes data from the buffer into a FIFO.
-			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return bool indicating success or failure.
+			 * @name Maintenance
+			 * @{
 			 */
-			inline virtual bool 											Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept = 0;
 
 			/**
-			 * @brief Destructive read that removes all data from the buffer into a FIFO.
-			 * @param outBuffer WriteOnly to fill with extracted bytes; resized as needed.
-			 * @return bool indicating success or failure.
+			 * @brief Discard data from the start up to the current read position.
+			 * @see Size(), Empty()
 			 */
-			inline bool 													Extract(WriteOnly& outBuffer) noexcept {
-				return Extract(0, outBuffer);
-			}
+			virtual void Clean() noexcept = 0;
 
 			/**
-			 * @brief Read all bytes until end-of-file into an existing buffer.
-			 * @param outBuffer Vector to fill with read bytes; resized as needed.
+			 * @brief Clear all buffer contents and reset logical positions.
+			 * @details Closed / error flags are implementation-defined (typically preserved).
+			 * @see Size(), Empty()
 			 */
-			virtual void													ExtractUntilEoF(DataType& outBuffer) noexcept = 0;
+			virtual void Clear() noexcept = 0;
 
 			/**
-			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
-			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
+			 * @brief Discard @p count unread bytes.
+			 * @param count Number of bytes to drop.
+			 * @return @c true on success, @c false if fewer bytes were available.
+			 * @see Read()
 			 */
-			virtual void													ExtractUntilEoF(WriteOnly& outBuffer) noexcept = 0;
+			virtual bool Drop(const std::size_t& count) noexcept = 0;
 
 			/**
-			 * @brief Check if the buffer is readable.
-			 * @return true if the buffer can be read from, false otherwise.
-			 */
-			virtual bool 													IsReadable() const noexcept = 0;
-
-			/**
-			 * @brief Non-destructive peek at buffer data without advancing read position.
-			 * @param count Number of bytes to peek; 0 peeks all available from read position.
-			 * @return ExpectedData<ReadError> containing the requested bytes, or error if insufficient data.
-			 * @details Similar to Read(), but does not advance the read position.
-			 *          Allows inspecting upcoming data without consuming it.
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call returns all available bytes. If no
-			 *            bytes are available, a `ReadError` is returned.
-			 *          - If `count > 0`: the call returns exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, a
-			 *            `ReadError` is returned.
-			 *
-			 * @see Read(), Seek()
-			 */
-			virtual bool 													Peek(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Non-destructive peek at buffer data without advancing read position.
-			 * @param count Number of bytes to peek; 0 peeks all available from read position.
-			 * @return bool indicating success or failure.
-			 * @details Similar to Read(), but does not advance the read position.
-			 *          Allows inspecting upcoming data without consuming it.
-			 *
-			 *          Semantics:
-			 *          - If `count == 0`: the call returns all available bytes. If no
-			 *            bytes are available, a `ReadError` is returned.
-			 *          - If `count > 0`: the call returns exactly `count` bytes when
-			 *            that many bytes are available. If zero bytes are available, or
-			 *            if `count` is greater than the number of available bytes, a
-			 *            `ReadError` is returned.
-			 *
-			 * @see Read(), Seek()
-			 */
-			virtual bool 													Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Read bytes into an existing buffer.
-			 * @param count Number of bytes to read; 0 reads all available from read position.
-			 * @param outBuffer Vector to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 */
-			virtual bool 													Read(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Read bytes into an existing buffer.
-			 * @param outBuffer Vector to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 */
-			inline bool 													Read(DataType& outBuffer) const noexcept {
-				return Read(0, outBuffer);
-			}
-
-			/**
-			 * @brief Read bytes into a WriteOnly buffer.
-			 * @param count Number of bytes to read; 0 reads all available from read position.
-			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 */
-			virtual bool 													Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Read bytes into a WriteOnly buffer.
-			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 */
-			inline bool 													Read(WriteOnly& outBuffer) const noexcept {
-				return Read(0, outBuffer);
-			}
-
-			/**
-			 * @brief Read all bytes until end-of-file into an existing buffer.
-			 * @param outBuffer Vector to fill with read bytes; resized as needed.
-			 */
-			virtual void													ReadUntilEoF(DataType& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Read all bytes until end-of-file into a WriteOnly buffer.
-			 * @param outBuffer WriteOnly to fill with read bytes; resized as needed.
-			 * @return bool indicating success or failure.
-			 */
-			virtual void 													ReadUntilEoF(WriteOnly& outBuffer) const noexcept = 0;
-
-			/**
-			 * @brief Move the read position for non-destructive reads.
-			 * @param position The offset value to apply.
-			 * @param mode Unused for base class; included for API consistency.
-			 * @details Changes where subsequent Read() operations will start reading from.
-			 *          Position is clamped to [0, Size()]. Does not affect stored data.
+			 * @brief Move the logical read position for non-destructive reads.
+			 * @param offset Offset value.
+			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @details Position is clamped to @c [0, Size()]. Absolute + negative offset is a no-op.
 			 * @see Read(), Position
-			 * If Position is set to Absolute and offset is negative the operation is noop
 			 */
-			virtual void 													Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept = 0;
+			virtual void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept = 0;
+
+			/** @} */
 
 			/**
-			 * @brief Get the current number of bytes stored in the buffer.
-			 * @return The total number of bytes available for reading.
-			 * @see Capacity(), Empty()
+			 * @name Extract (destructive)
+			 * @{
 			 */
-			virtual std::size_t 											Size() const noexcept = 0;
+
+			/**
+			 * @brief Extract bytes into a @ref DataType.
+			 * @param count     Bytes to extract; 0 = all available.
+			 * @param outBuffer Destination.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline virtual bool Extract(const std::size_t& count, DataType& outBuffer) noexcept = 0;
+
+			/**
+			 * @brief Extract all available bytes into a @ref DataType.
+			 * @param outBuffer Destination.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline bool Extract(DataType& outBuffer) noexcept {
+				return Extract(0, outBuffer);
+			}
+
+			/**
+			 * @brief Extract bytes into a @ref WriteOnly.
+			 * @param count     Bytes to extract; 0 = all available.
+			 * @param outBuffer Destination writer.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline virtual bool Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept = 0;
+
+			/**
+			 * @brief Extract all available bytes into a @ref WriteOnly.
+			 * @param outBuffer Destination writer.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline bool Extract(WriteOnly& outBuffer) noexcept {
+				return Extract(0, outBuffer);
+			}
+
+			/**
+			 * @brief Extract until EoF into a @ref DataType.
+			 * @param outBuffer Destination.
+			 */
+			virtual void ExtractUntilEoF(DataType& outBuffer) noexcept = 0;
+
+			/**
+			 * @brief Extract until EoF into a @ref WriteOnly.
+			 * @param outBuffer Destination writer.
+			 */
+			virtual void ExtractUntilEoF(WriteOnly& outBuffer) noexcept = 0;
+
+			/** @} */
+
+			/**
+			 * @name Peek (non-destructive, does not advance)
+			 * @{
+			 */
+
+			/**
+			 * @brief Peek into a @ref DataType without advancing the read position.
+			 * @param count     Bytes to peek; 0 = all available.
+			 * @param outBuffer Destination.
+			 * @return @c true on success, @c false if insufficient data or error.
+			 *
+			 * @details
+			 * - @c count == 0: all available bytes (fails if none).
+			 * - @c count > 0: exactly @c count bytes, or fail if fewer are available.
+			 *
+			 * @see Read(), Seek()
+			 */
+			virtual bool Peek(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
+
+			/**
+			 * @brief Peek into a @ref WriteOnly without advancing the read position.
+			 * @param count     Bytes to peek; 0 = all available.
+			 * @param outBuffer Destination writer.
+			 * @return @c true on success, @c false if insufficient data or error.
+			 *
+			 * @details Same count semantics as the @ref DataType overload.
+			 * @see Read(), Seek()
+			 */
+			virtual bool Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
+
+			/** @} */
+
+			/**
+			 * @name Read (non-destructive, advances position)
+			 * @{
+			 */
+
+			/**
+			 * @brief Read into a @ref DataType.
+			 * @param count     Bytes to read; 0 = all available.
+			 * @param outBuffer Destination.
+			 * @return @c true on success, @c false on failure.
+			 */
+			virtual bool Read(const std::size_t& count, DataType& outBuffer) const noexcept = 0;
+
+			/**
+			 * @brief Read all available bytes into a @ref DataType.
+			 * @param outBuffer Destination.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline bool Read(DataType& outBuffer) const noexcept {
+				return Read(0, outBuffer);
+			}
+
+			/**
+			 * @brief Read into a @ref WriteOnly.
+			 * @param count     Bytes to read; 0 = all available.
+			 * @param outBuffer Destination writer.
+			 * @return @c true on success, @c false on failure.
+			 */
+			virtual bool Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept = 0;
+
+			/**
+			 * @brief Read all available bytes into a @ref WriteOnly.
+			 * @param outBuffer Destination writer.
+			 * @return @c true on success, @c false on failure.
+			 */
+			inline bool Read(WriteOnly& outBuffer) const noexcept {
+				return Read(0, outBuffer);
+			}
+
+			/**
+			 * @brief Read until EoF into a @ref DataType.
+			 * @param outBuffer Destination.
+			 */
+			virtual void ReadUntilEoF(DataType& outBuffer) const noexcept = 0;
+
+			/**
+			 * @brief Read until EoF into a @ref WriteOnly.
+			 * @param outBuffer Destination writer.
+			 */
+			virtual void ReadUntilEoF(WriteOnly& outBuffer) const noexcept = 0;
+
+			/** @} */
 	};
 
 	/**
 	 * @class WriteOnly
-	 * @brief Pure interface for a buffer that can be written to but not read from.
+	 * @brief Pure interface for a buffer that can be written but not read.
+	 *
+	 * @details Declares lifecycle (@ref Close / @ref SetError), writability, and
+	 *          the canonical @c Write overloads. Convenience overloads for strings,
+	 *          ranges and iterators are implemented inline in terms of those.
+	 *
+	 * @see ReadOnly, ReadWrite, Generic
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteOnly: virtual public Generic {
 		public:
 			/**
-			 * 	@brief Construct WriteOnly.
+			 * @name Constructors / destructor / assignment
+			 * @{
 			 */
-			inline WriteOnly() noexcept: Generic() {};
+			/** @brief Default construct. */
+			inline WriteOnly() noexcept: Generic() {}
+
+			/** @brief Copy construct. */
+			WriteOnly(const WriteOnly&) = default;
+
+			/** @brief Move construct. */
+			WriteOnly(WriteOnly&&) noexcept = default;
+
+			/** @brief Virtual destructor. */
+			virtual ~WriteOnly() noexcept = default;
+
+			/** @brief Copy assign. */
+			WriteOnly& operator=(const WriteOnly&) = default;
+
+			/** @brief Move assign. */
+			WriteOnly& operator=(WriteOnly&&) noexcept = default;
+			/** @} */
 
 			/**
-			 * 	@brief Copy construct.
+			 * @name Lifecycle / queries
+			 * @{
 			 */
-			WriteOnly(const WriteOnly&) 									= default;
-			
-			/**
-			 * 	@brief Move construct.
-			 */
-			WriteOnly(WriteOnly&&) noexcept									= default;
 
 			/**
-			 * 	@brief Virtual destructor.
+			 * @brief Whether the buffer accepts writes.
+			 * @return @c false if closed or in error state.
 			 */
-			virtual ~WriteOnly() noexcept 									= default;
-			
-			/**
-			 * 	@brief Copy assign.
-			 */
-			WriteOnly& operator=(const WriteOnly&) 							= default;
-		
-			/**
-			 * 	@brief Move assign.
-			 */
-			WriteOnly& operator=(WriteOnly&&) noexcept						= default;
+			virtual bool IsWritable() const noexcept = 0;
 
 			/**
-			 * @brief Check if the buffer is writable.
-			 * @return true if the buffer can accept write operations, false if closed or in error state.
+			 * @brief Mark the buffer closed for further writes.
+			 * @details Subsequent @c Write() calls must fail. Readers may still drain data.
+			 *          Thread-safe implementations should wake blocked waiters.
 			 */
-			virtual bool 													IsWritable() const noexcept = 0;
-
 			virtual void Close() noexcept = 0;
+
+			/**
+			 * @brief Enter a permanent error state (unreadable and unwritable).
+			 * @details Implementations should wake any blocked waiters.
+			 */
 			virtual void SetError() noexcept = 0;
 
+			/** @} */
+
 			/**
-			 * @brief Write bytes from a vector to the buffer.
+			 * @name Write (canonical pure virtuals)
+			 * @{
+			 */
+
+			/**
+			 * @brief Append bytes from a @ref DataType (copy).
 			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
+			 * @param data  Source vector.
+			 * @return @c true on success, @c false if closed / error.
+			 * @see IsWritable()
 			 */
-			virtual bool 													Write(const std::size_t& count, const DataType& data) noexcept = 0;
+			virtual bool Write(const std::size_t& count, const DataType& data) noexcept = 0;
 
 			/**
-			 * @note String convenience overloads
-			 *
-			 * These non-template overloads exist to ensure `std::string` / C-string
-			 * inputs bind to a stable, well-defined implementation instead of the
-			 * generic input-range template above. Without these entries, calls like
-			 * `Write("abc")` or `Write(std::string{})` may select the range
-			 * template which can lead to surprising template instantiation
-			 * differences and SFINAE interactions. The overloads also avoid copying
-			 * the trailing NUL for string-literal arrays by explicitly constructing a
-			 * `std::string_view` of size `N-1`.
+			 * @brief Append bytes from a @ref DataType (move).
+			 * @param count Number of bytes to write.
+			 * @param data  Source vector.
+			 * @return @c true on success, @c false if closed / error.
+			 * @see IsWritable()
+			 */
+			virtual bool Write(const std::size_t& count, DataType&& data) noexcept = 0;
+
+			/**
+			 * @brief Append bytes from a @ref ReadOnly (copy path).
+			 * @param count Number of bytes to write.
+			 * @param data  Source buffer.
+			 * @return @c true on success, @c false if closed / error.
+			 * @see IsWritable()
+			 */
+			virtual bool Write(const std::size_t& count, const ReadOnly& data) noexcept = 0;
+
+			/**
+			 * @brief Append bytes from a @ref ReadOnly (move / extract path).
+			 * @param count Number of bytes to write.
+			 * @param data  Source buffer.
+			 * @return @c true on success, @c false if closed / error.
+			 * @see IsWritable()
+			 */
+			virtual bool Write(const std::size_t& count, ReadOnly&& data) noexcept = 0;
+
+			/** @} */
+
+			/**
+			 * @name Write (ReadOnly conveniences)
+			 * @{
 			 */
 
 			/**
-			 * @brief Write from a string view (does not include terminating NUL).
+			 * @brief Append all available bytes from a @ref ReadOnly (copy).
+			 * @param data Source buffer.
+			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool 															Write(std::string_view sv) noexcept {
+			inline bool Write(const ReadOnly& data) noexcept {
+				return Write(data.AvailableBytes(), data);
+			}
+
+			/**
+			 * @brief Append all available bytes from a @ref ReadOnly (move path).
+			 * @param data Source buffer.
+			 * @return @c true on success, @c false if closed / error.
+			 */
+			inline bool Write(ReadOnly&& data) noexcept {
+				return Write(data.AvailableBytes(), std::move(data));
+			}
+
+			/** @} */
+
+			/**
+			 * @name Write (string conveniences)
+			 * @brief Stable overloads so string / C-string calls do not hit range templates.
+			 *        String literals exclude the trailing NUL.
+			 * @{
+			 */
+
+			/**
+			 * @brief Write a string view (no trailing NUL).
+			 * @param sv Source characters.
+			 * @return @c true on success, @c false if closed / error.
+			 */
+			bool Write(std::string_view sv) noexcept {
 				DataType tmp;
 				if (!sv.empty()) tmp.reserve(static_cast<typename DataType::size_type>(sv.size()));
-				std::transform(sv.begin(), sv.end(), std::back_inserter(tmp), [] (char e) noexcept { return static_cast<std::byte>(e); });
+				std::transform(sv.begin(), sv.end(), std::back_inserter(tmp),
+					[] (char e) noexcept { return static_cast<std::byte>(e); });
 				return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
 			}
 
 			/**
-			 * @brief Write from a C string pointer (null-terminated). Uses `std::string_view`.
+			 * @brief Write a null-terminated C string.
+			 * @param s Source (may be null → empty write).
+			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool 															Write(const char* s) noexcept {
+			bool Write(const char* s) noexcept {
 				if (!s) return Write(DataType{});
 				return Write(std::string_view(s));
 			}
 
 			/**
-			 * @brief Write up-to `count` bytes from a string view (0 => all available).
+			 * @brief Write up to @p count characters from a string view.
+			 * @param count Maximum characters (0 = entire view).
+			 * @param sv    Source characters.
+			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool 															Write(const std::size_t& count, std::string_view sv) noexcept {
-				size_t to_write = (count == 0) ? static_cast<size_t>(sv.size()) : std::min(count, static_cast<std::size_t>(sv.size()));
+			bool Write(const std::size_t& count, std::string_view sv) noexcept {
+				size_t to_write = (count == 0) ? static_cast<size_t>(sv.size())
+											: std::min(count, static_cast<std::size_t>(sv.size()));
 				DataType tmp;
 				if (to_write > 0) tmp.reserve(static_cast<typename DataType::size_type>(to_write));
-				std::transform(sv.begin(), sv.begin() + to_write, std::back_inserter(tmp), [] (char e) noexcept { return static_cast<std::byte>(e); });
+				std::transform(sv.begin(), sv.begin() + to_write, std::back_inserter(tmp),
+					[] (char e) noexcept { return static_cast<std::byte>(e); });
 				return Write(static_cast<std::size_t>(to_write), std::move(tmp));
 			}
 
 			/**
-			 * @brief Write up-to `count` bytes from a C string pointer (null-terminated).
+			 * @brief Write up to @p count characters from a C string.
+			 * @param count Maximum characters (0 = entire string).
+			 * @param s     Source (may be null).
+			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool 															Write(const std::size_t& count, const char* s) noexcept {
+			bool Write(const std::size_t& count, const char* s) noexcept {
 				if (!s) return Write(count, DataType{});
 				return Write(count, std::string_view(s));
 			}
 
 			/**
-			 * @brief Write from a string literal (array) and avoid copying the trailing NUL.
+			 * @brief Write a string literal without the trailing NUL.
+			 * @tparam N Array extent (includes NUL for literals).
+			 * @param s  Literal / char array.
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::size_t N>
-			bool 															Write(const char (&s)[N]) noexcept {
-				// N includes the terminating NUL for string literals, so exclude it
+			bool Write(const char (&s)[N]) noexcept {
 				if (N == 0) return Write(DataType{});
 				return Write(std::string_view(s, (N > 0) ? (N - 1) : 0));
 			}
 
+			/** @} */
+
 			/**
-			 * @brief Write all elements from an input range to the buffer.
-			 * @tparam R An input range whose element type is convertible to `std::byte`.
-			 * @param r The input range to write from. Elements are converted
-			 *          element-wise using `static_cast<std::byte>`.
-			 * @return bool indicating success or failure.
-			 * @details The entire range is converted into a `DataType` (the
-			 *          library's `std::vector<std::byte>`) and then forwarded to the
-			 *          canonical `Write(count, DataType)` entry point.
+			 * @name Write (range / iterator conveniences)
+			 * @{
+			 */
+
+			/**
+			 * @brief Write all elements from an input range.
+			 * @tparam R Range whose value_type is convertible to @c std::byte.
+			 * @param r  Source range.
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range R>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
 				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); }
-			bool 															Write(const R& r) noexcept {
+			bool Write(const R& r) noexcept {
 				DataType tmp;
 				if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
 					auto dist = std::ranges::distance(r);
@@ -503,25 +622,23 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Write up-to `count` elements from an input range.
-			 * @tparam Rw An input range whose value_type is convertible to `std::byte`.
-			 * @param count Maximum number of elements to write; pass `0` to write
-			 *              the entire range.
-			 * @param r The input range to read from.
-			 * @return bool with the number of bytes actually written
-			 *         (may be less than `count` if the range is shorter).
-			 * @details Elements are copied and converted into an internal `DataType`
-			 *          buffer before invoking the canonical `Write(count, DataType)`.
+			 * @brief Write up to @p count elements from an input range.
+			 * @tparam Rw Range type.
+			 * @param count Maximum elements (0 = entire range).
+			 * @param r     Source range.
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rw>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rw>>>) &&
 				requires(std::ranges::range_value_t<Rw> v) { static_cast<std::byte>(v); }
-			bool 															Write(const std::size_t& count, const Rw& r) noexcept {
+			bool Write(const std::size_t& count, const Rw& r) noexcept {
 				if (count == 0) return Write(r);
 				DataType tmp;
 				if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
 					auto dist = std::ranges::distance(r);
-					if (dist > 0) tmp.reserve(static_cast<typename DataType::size_type>(std::min(dist, static_cast<decltype(dist)>(count))));
+					if (dist > 0)
+						tmp.reserve(static_cast<typename DataType::size_type>(
+							std::min(dist, static_cast<decltype(dist)>(count))));
 				}
 				auto it = std::ranges::begin(r);
 				auto end = std::ranges::end(r);
@@ -533,24 +650,19 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Write up-to `count` elements from an rvalue range.
-			 * @tparam Rrw An input range type that may be an rvalue `DataType`.
-			 * @param count Maximum number of elements to write; pass `0` to write
-			 *              the entire range.
-			 * @param r The rvalue range to consume. If `r` is a `DataType` rvalue the
-			 *          implementation will move it into the write fast-path and trim
-			 *          it to `count` if necessary. Otherwise elements are converted
-			 *          and copied into a temporary `DataType`.
-			 * @return bool indicating success or failure.
+			 * @brief Write up to @p count elements from an rvalue range.
+			 * @tparam Rrw Range type (may be @ref DataType rvalue).
+			 * @param count Maximum elements (0 = entire range).
+			 * @param r     Source range (moved when @ref DataType).
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rrw>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rrw>>>) &&
 				requires(std::ranges::range_value_t<Rrw> v) { static_cast<std::byte>(v); }
-			bool 															Write(const std::size_t& count, Rrw&& r) noexcept {
+			bool Write(const std::size_t& count, Rrw&& r) noexcept {
 				using Dec = std::remove_cvref_t<Rrw>;
 				if (count == 0) return Write(std::forward<Rrw>(r));
 				if constexpr (std::same_as<Dec, DataType>) {
-					// r is DataType; we can move and resize if needed
 					DataType tmp = std::move(r);
 					if (tmp.size() > count) tmp.resize(count);
 					return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
@@ -558,7 +670,9 @@ namespace StormByte::Buffer {
 					DataType tmp;
 					if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
 						auto dist = std::ranges::distance(r);
-						if (dist > 0) tmp.reserve(static_cast<typename DataType::size_type>(std::min(dist, static_cast<decltype(dist)>(count))));
+						if (dist > 0)
+							tmp.reserve(static_cast<typename DataType::size_type>(
+								std::min(dist, static_cast<decltype(dist)>(count))));
 					}
 					auto it = std::ranges::begin(r);
 					auto end = std::ranges::end(r);
@@ -571,21 +685,17 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Write from an rvalue input range.
-			 * @tparam Rr Input range type; this overload prefers moving when the
-			 *            range type is the library `DataType` (i.e. `std::vector<std::byte>`).
-			 * @param r The rvalue range to write from. If `r` is a `DataType` rvalue
-			 *          it will be forwarded into the move-write fast-path; otherwise
-			 *          elements are converted and copied into a temporary `DataType`.
-			 * @return bool indicating success or failure.
+			 * @brief Write all elements from an rvalue range.
+			 * @tparam Rr Range type.
+			 * @param r  Source (moved when @ref DataType).
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rr>
 				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
 				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
-			bool 															Write(Rr&& r) noexcept {
+			bool Write(Rr&& r) noexcept {
 				using Dec = std::remove_cvref_t<Rr>;
 				if constexpr (std::same_as<Dec, DataType>) {
-					// r is already the library DataType (std::vector<std::byte>), forward to move overload
 					return Write(static_cast<std::size_t>(r.size()), std::move(r));
 				} else {
 					DataType tmp;
@@ -600,45 +710,36 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Write from iterator pair whose value_type is convertible to `std::byte`.
-			 */
-			/**
 			 * @brief Write all elements from an iterator pair.
-			 * @tparam I Input iterator type whose `value_type` is convertible to `std::byte`.
-			 * @tparam S Corresponding sentinel type for `I`.
-			 * @param first Iterator to the beginning of the sequence.
-			 * @param last  Sentinel/iterator marking the end of the sequence.
-			 * @return bool indicating success or failure.
-			 * @details Elements are converted via `static_cast<std::byte>` into an
-			 *          internal `DataType` buffer which is then forwarded to the
-			 *          canonical `Write(count, DataType)`.
+			 * @tparam I Input iterator.
+			 * @tparam S Sentinel for @p I.
+			 * @param first Begin iterator.
+			 * @param last  End sentinel.
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::input_iterator I, std::sentinel_for<I> S>
 				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I>>>) &&
 				requires(std::iter_value_t<I> v) { static_cast<std::byte>(v); }
-			bool 															Write(I first, S last) noexcept {
+			bool Write(I first, S last) noexcept {
 				DataType tmp;
-				std::transform(first, last, std::back_inserter(tmp), [] (auto&& e) noexcept { return static_cast<std::byte>(e); });
+				std::transform(first, last, std::back_inserter(tmp),
+					[] (auto&& e) noexcept { return static_cast<std::byte>(e); });
 				return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
 			}
 
 			/**
-			 * @brief Write up-to `count` bytes from an iterator pair (0 => all available).
-			 */
-			/**
-			 * @brief Write up-to `count` elements from an iterator pair.
-			 * @tparam I2 Input iterator type whose `value_type` is convertible to `std::byte`.
-			 * @tparam S2 Corresponding sentinel type for `I2`.
-			 * @param count Maximum number of elements to write; pass `0` to write all.
-			 * @param first Iterator to the beginning of the sequence.
-			 * @param last  Sentinel/iterator marking the end of the sequence.
-			 * @return bool indicating success or failure.
-			 * @details Iterates until `count` elements are consumed or `first == last`.
+			 * @brief Write up to @p count elements from an iterator pair.
+			 * @tparam I2 Input iterator.
+			 * @tparam S2 Sentinel for @p I2.
+			 * @param count Maximum elements (0 = all).
+			 * @param first Begin iterator.
+			 * @param last  End sentinel.
+			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::input_iterator I2, std::sentinel_for<I2> S2>
 				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I2>>>) &&
 				requires(std::iter_value_t<I2> v) { static_cast<std::byte>(v); }
-			bool 															Write(const std::size_t& count, I2 first, S2 last) noexcept {
+			bool Write(const std::size_t& count, I2 first, S2 last) noexcept {
 				if (count == 0) return Write(first, last);
 				DataType tmp;
 				std::size_t written = 0;
@@ -648,98 +749,40 @@ namespace StormByte::Buffer {
 				return Write(static_cast<std::size_t>(written), std::move(tmp));
 			}
 
-			/**
-			 * @brief Move bytes from a vector to the buffer.
-			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
-			 */
-			virtual bool 													Write(const std::size_t& count, DataType&& data) noexcept = 0;
-
-			/**
-			 * @brief Write bytes from a vector to the buffer.
-			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
-			 */
-			virtual bool 													Write(const std::size_t& count, const ReadOnly& data) noexcept = 0;
-
-			/**
-			 * @brief Write bytes from a vector to the buffer.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
-			 */
-			inline bool	 													Write(const ReadOnly& data) noexcept {
-				return Write(data.AvailableBytes(), data);
-			}
-
-			/**
-			 * @brief Move bytes from a vector to the buffer.
-			 * @param count Number of bytes to write.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
-			 */
-			virtual bool 													Write(const std::size_t& count, ReadOnly&& data) noexcept = 0;
-
-			/**
-			 * @brief Move bytes from a vector to the buffer.
-			 * @param data Byte vector to append to the WriteOnly.
-			 * @return bool indicating success or failure.
-			 * @details Appends data to the buffer, growing capacity automatically if needed.
-			 *          Handles wrap-around efficiently. Ignores writes if buffer is closed.
-			 * @see IsClosed()
-			 */
-			inline bool 													Write(ReadOnly&& data) noexcept {
-				return Write(data.AvailableBytes(), std::move(data));
-			}
+			/** @} */
 	};
 
 	/**
 	 * @class ReadWrite
-	 * @brief Pure interface for a buffer that can be both read from and written to.
+	 * @brief Pure interface combining @ref ReadOnly and @ref WriteOnly.
+	 *
+	 * @details Concrete bidirectional buffers (@ref FIFO, @ref Ring, …) implement this.
+	 *
+	 * @see ReadOnly, WriteOnly, Generic
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadWrite: public ReadOnly, public WriteOnly {
 		public:
 			/**
-			 * 	@brief Construct ReadWrite.
+			 * @name Constructors / destructor / assignment
+			 * @{
 			 */
-			inline ReadWrite() noexcept: Generic() {};
+			/** @brief Default construct. */
+			inline ReadWrite() noexcept: Generic() {}
 
-			/**
-			 * 	@brief Copy construct.
-			 */
-			ReadWrite(const ReadWrite& other) noexcept 						= default;
-			
-			/**
-			 * 	@brief Move construct.
-			 */
-			ReadWrite(ReadWrite&& other) noexcept							= default;
+			/** @brief Copy construct. */
+			ReadWrite(const ReadWrite& other) noexcept = default;
 
-			/**
-			 * 	@brief Virtual destructor.
-			 */
-			virtual ~ReadWrite() noexcept 									= default;
-			
-			/**
-			 * 	@brief Copy assign.
-			 */
-			ReadWrite& operator=(const ReadWrite& other) 					= default;
-		
-			/**
-			 * 	@brief Move assign.
-			 */
-			ReadWrite& operator=(ReadWrite&& other) noexcept				= default;
+			/** @brief Move construct. */
+			ReadWrite(ReadWrite&& other) noexcept = default;
+
+			/** @brief Virtual destructor. */
+			virtual ~ReadWrite() noexcept = default;
+
+			/** @brief Copy assign. */
+			ReadWrite& operator=(const ReadWrite& other) = default;
+
+			/** @brief Move assign. */
+			ReadWrite& operator=(ReadWrite&& other) noexcept = default;
+			/** @} */
 	};
 }

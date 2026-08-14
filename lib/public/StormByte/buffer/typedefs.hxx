@@ -16,20 +16,21 @@
  *
  * The Buffer namespace provides classes and utilities for byte buffers,
  * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, and multi-stage processing pipelines.
+ * interfaces, external I/O adapters and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
-	class Consumer;					///< Forward declaration of Consumer class.
-	class Producer;					///< Forward declaration of Producer class.
-	class ReadOnly;					///< Forward declaration of ReadOnly class.
-	class WriteOnly;				///< Forward declaration of WriteOnly class.
+	class Consumer;		///< Forward declaration of the Consumer class.
+	class Producer;		///< Forward declaration of the Producer class.
+	class ReadOnly;		///< Forward declaration of the ReadOnly interface.
+	class WriteOnly;	///< Forward declaration of the WriteOnly interface.
 
 	/**
 	 * @enum Position
-	 * @brief Positioning mode for buffer seek / read operations.
+	 * @brief Positioning mode for buffer seek / non-destructive read operations.
 	 *
-	 * Defines how position values are interpreted in operations such as
-	 * seeking or non-destructive reads.
+	 * Defines how offset values are interpreted by @c Seek() and related APIs.
+	 *
+	 * @see ReadOnly::Seek()
 	 */
 	enum class STORMBYTE_BUFFER_PUBLIC Position {
 		/**
@@ -38,7 +39,7 @@ namespace StormByte::Buffer {
 		Absolute,
 
 		/**
-		 * @brief Offset relative to the current read position.
+		 * @brief Offset relative to the current logical read position.
 		 */
 		Relative
 	};
@@ -46,8 +47,9 @@ namespace StormByte::Buffer {
 	/**
 	 * @brief Primary byte storage type used throughout the buffer API.
 	 *
-	 * @details Alias for @c std::vector<std::byte>. Serves as the fundamental
-	 *          container for byte-oriented buffer implementations.
+	 * @details Alias for @c std::vector&lt;std::byte&gt;. Serves as the fundamental
+	 *          container for byte-oriented buffer implementations
+	 *          (@ref FIFO, adapters, extract/read destinations, etc.).
 	 */
 	using DataType = std::vector<std::byte>;
 
@@ -63,10 +65,11 @@ namespace StormByte::Buffer {
 	 *
 	 * @note Prefer Async for production workloads; use Sync for deterministic
 	 *       debugging.
+	 *
 	 * @see Pipeline::Process()
 	 */
 	enum class STORMBYTE_BUFFER_PUBLIC ExecutionMode {
-		Sync,   ///< Sequential execution on the caller’s thread.
-		Async   ///< One background thread; stages run sequentially on it.
+		Sync,	///< Sequential execution on the caller’s thread.
+		Async	///< One background thread; stages run sequentially on it.
 	};
 }
