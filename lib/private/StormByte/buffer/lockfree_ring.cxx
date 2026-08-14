@@ -192,7 +192,7 @@ void LockFreeRing::Grow() noexcept {
 		new_storage[i] = m_storage[(h + i) & old_mask];
 
 	const std::size_t logical = m_logical.load(std::memory_order_relaxed);
-	const std::size_t logical_off = logical - h; // still unread relative to new head
+	const std::size_t logical_off = logical - h;
 
 	m_storage  = std::move(new_storage);
 	m_capacity = new_cap;
@@ -234,10 +234,24 @@ bool LockFreeRing::ReadInternal(std::size_t count, DataType& out, Operation op) 
 
 	std::size_t avail = AvailableBytes();
 
+	// count == 0 → "all currently available". If empty and still open, wait for data or close.
+	if (count == 0) {
+		if (avail == 0) {
+			if (m_closed.load(std::memory_order_acquire))
+				return false;
+			if (!WaitFor(1))
+				return false;
+			avail = AvailableBytes();
+			if (avail == 0)
+				return false; // closed/error with nothing left
+		}
+		count = avail;
+	}
+
 	if (avail == 0 && m_closed.load(std::memory_order_acquire))
 		return false;
 
-	const std::size_t want = (count == 0) ? avail : count;
+	const std::size_t want = count;
 
 	if (want > avail) {
 		if (!WaitFor(want))
@@ -250,7 +264,6 @@ bool LockFreeRing::ReadInternal(std::size_t count, DataType& out, Operation op) 
 	// Serialize with Grow()/WriteInternal storage updates
 	std::lock_guard lock(m_wait_mtx);
 
-	// Re-check under lock (producer may have grown / advanced)
 	avail = AvailableBytes();
 	if (m_error.load(std::memory_order_acquire))
 		return false;
@@ -268,8 +281,6 @@ bool LockFreeRing::ReadInternal(std::size_t count, DataType& out, Operation op) 
 		const std::size_t new_logical = logical + want;
 		m_logical.store(new_logical, std::memory_order_relaxed);
 		// Reclaim slot space so the producer does not Grow forever.
-		// Safe for pipeline intermediates: once Read/Extract advanced past data,
-		// the producer may overwrite those slots.
 		m_head.store(new_logical, std::memory_order_release);
 		m_cv.notify_all();
 	}
@@ -306,12 +317,38 @@ bool LockFreeRing::Extract(const std::size_t& count, WriteOnly& out) noexcept {
 }
 
 void LockFreeRing::ReadUntilEoF(DataType& out) const noexcept {
+	auto* self = const_cast<LockFreeRing*>(this);
 	while (true) {
+		if (self->m_error.load(std::memory_order_acquire))
+			return;
+
+		{
+			std::unique_lock lock(self->m_wait_mtx);
+			self->m_cv.wait(lock, [&] {
+				if (self->m_error.load(std::memory_order_acquire) ||
+					self->m_closed.load(std::memory_order_acquire))
+					return true;
+				return self->AvailableBytes() > 0;
+			});
+		}
+
+		if (self->m_error.load(std::memory_order_acquire))
+			return;
+
+		if (self->AvailableBytes() == 0 &&
+			self->m_closed.load(std::memory_order_acquire))
+			return; // true EoF
+
 		DataType chunk;
-		if (!Read(0, chunk) || chunk.empty()) break;
+		if (!self->Read(0, chunk) || chunk.empty()) {
+			if (self->EoF())
+				return;
+			continue;
+		}
 		out.insert(out.end(), chunk.begin(), chunk.end());
 	}
 }
+
 void LockFreeRing::ReadUntilEoF(WriteOnly& out) const noexcept {
 	DataType tmp;
 	ReadUntilEoF(tmp);
@@ -320,13 +357,38 @@ void LockFreeRing::ReadUntilEoF(WriteOnly& out) const noexcept {
 
 void LockFreeRing::ExtractUntilEoF(DataType& out) noexcept {
 	while (true) {
+		if (m_error.load(std::memory_order_acquire))
+			return;
+
+		{
+			std::unique_lock lock(m_wait_mtx);
+			m_cv.wait(lock, [&] {
+				if (m_error.load(std::memory_order_acquire) ||
+					m_closed.load(std::memory_order_acquire))
+					return true;
+				return AvailableBytes() > 0;
+			});
+		}
+
+		if (m_error.load(std::memory_order_acquire))
+			return;
+
+		if (AvailableBytes() == 0 &&
+			m_closed.load(std::memory_order_acquire))
+			return; // true EoF
+
 		DataType chunk;
-		if (!Extract(0, chunk) || chunk.empty()) break;
+		if (!Extract(0, chunk) || chunk.empty()) {
+			if (EoF())
+				return;
+			continue;
+		}
 		out.insert(out.end(),
-				std::make_move_iterator(chunk.begin()),
-				std::make_move_iterator(chunk.end()));
+			std::make_move_iterator(chunk.begin()),
+			std::make_move_iterator(chunk.end()));
 	}
 }
+
 void LockFreeRing::ExtractUntilEoF(WriteOnly& out) noexcept {
 	DataType tmp;
 	ExtractUntilEoF(tmp);

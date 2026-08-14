@@ -56,7 +56,7 @@ bool Ring::operator==(const Ring& other) const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// Pure readers → shared_lock (máxima concurrencia)
+// Pure readers → shared_lock
 // ---------------------------------------------------------------------------
 
 std::size_t Ring::AvailableBytes() const noexcept {
@@ -96,7 +96,7 @@ std::size_t Ring::Size() const noexcept {
 }
 
 const DataType& Ring::Data() const noexcept {
-	std::unique_lock lock(m_mutex);			// necesita escribir la cache
+	std::unique_lock lock(m_mutex);
 	m_data_cache.assign(m_buffer.begin(), m_buffer.end());
 	return m_data_cache;
 }
@@ -166,7 +166,7 @@ bool Ring::Drop(const std::size_t& count) noexcept {
 }
 
 void Ring::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
-	std::unique_lock lock(m_mutex);			// modifica m_position_offset
+	std::unique_lock lock(m_mutex);
 	switch (mode) {
 		case Position::Absolute:
 			m_position_offset = (offset < 0) ? 0
@@ -223,7 +223,6 @@ std::ostringstream Ring::HexDumpHeader() const noexcept {
 std::string Ring::FormatHexLines(std::span<const std::byte> data,
 								std::size_t start_offset,
 								std::size_t columns) noexcept {
-	// (igual que antes – omitido por brevedad, copia el original)
 	const std::size_t cols = (columns == 0) ? 16 : columns;
 	const int offset_width = 8;
 	std::vector<std::string> lines;
@@ -257,7 +256,7 @@ std::string Ring::FormatHexLines(std::span<const std::byte> data,
 }
 
 // ---------------------------------------------------------------------------
-// Read / Extract / Peek – lock hold time mínimo
+// Read / Extract / Peek
 // ---------------------------------------------------------------------------
 
 bool Ring::Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
@@ -293,7 +292,7 @@ void Ring::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 }
 
 bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation flag) noexcept {
-	DataType local;									// trabajo fuera del lock cuando sea posible
+	DataType local;
 	{
 		std::unique_lock lock(m_mutex);
 
@@ -302,6 +301,15 @@ bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation
 
 		if (m_error || (m_closed && avail == 0))
 			return false;
+
+		// count == 0 → all available; if empty and still open, wait for data or close
+		if (count == 0 && avail == 0 && !m_closed) {
+			Wait(1, lock);
+			avail = (m_position_offset <= m_buffer.size())
+						? (m_buffer.size() - m_position_offset) : 0;
+			if (avail == 0)
+				return false; // closed/error with nothing left
+		}
 
 		const std::size_t real_count = (count == 0) ? avail : count;
 		if (real_count > avail && !m_closed)
@@ -333,7 +341,7 @@ bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation
 			default:
 				return false;
 		}
-	} // ← lock liberado lo antes posible
+	}
 
 	outBuffer.insert(outBuffer.end(),
 					std::make_move_iterator(local.begin()),
@@ -350,6 +358,28 @@ bool Ring::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, Operatio
 
 void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 	while (true) {
+		{
+			std::unique_lock lock(m_mutex);
+			if (m_error)
+				return;
+
+			m_cv.wait(lock, [&] {
+				if (m_error || m_closed)
+					return true;
+				const std::size_t avail = (m_position_offset <= m_buffer.size())
+					? (m_buffer.size() - m_position_offset) : 0;
+				return avail > 0;
+			});
+
+			if (m_error)
+				return;
+
+			const std::size_t avail = (m_position_offset <= m_buffer.size())
+				? (m_buffer.size() - m_position_offset) : 0;
+			if (avail == 0 && m_closed)
+				return; // true EoF
+		}
+
 		DataType chunk;
 		bool ok = false;
 		switch (flag) {
@@ -357,7 +387,11 @@ void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 			case Operation::Extract: ok = Extract(0, chunk); break;
 			default: return;
 		}
-		if (!ok || chunk.empty()) break;
+		if (!ok || chunk.empty()) {
+			if (EoF())
+				return;
+			continue;
+		}
 		outBuffer.insert(outBuffer.end(),
 						std::make_move_iterator(chunk.begin()),
 						std::make_move_iterator(chunk.end()));
