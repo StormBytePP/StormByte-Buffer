@@ -12,7 +12,13 @@
  * interfaces, and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
-	// Generic Buffer exceptions
+	/**
+	 * @class Exception
+	 * @brief Base exception type for the Buffer module.
+	 *
+	 * @details Prefixes the component name with @c "Buffer::" and forwards
+	 *          a format string plus arguments to @ref StormByte::Exception.
+	 */
 	class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
 		public:
 			template <typename... Args>
@@ -31,9 +37,7 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @class ReadError
-	 * @brief Exception class for read errors from buffers.
-	 * 
-	 * @details Thrown when a read operation fails
+	 * @brief Exception thrown when a read operation fails.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
 		public:
@@ -44,9 +48,7 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @class WriteError
-	 * @brief Exception class for write errors to buffers.
-	 * 
-	 * @details Thrown when a write operation fails
+	 * @brief Exception thrown when a write operation fails.
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
 		public:

@@ -26,54 +26,47 @@ namespace StormByte::Buffer {
 
 	/**
 	 * @enum Position
-	 * @brief Specifies positioning mode for buffer operations.
+	 * @brief Positioning mode for buffer seek / read operations.
 	 *
-	 * This enumeration defines how position values should be interpreted
-	 * in buffer operations such as seeking or reading.
+	 * Defines how position values are interpreted in operations such as
+	 * seeking or non-destructive reads.
 	 */
 	enum class STORMBYTE_BUFFER_PUBLIC Position {
 		/**
-		 * @brief Absolute positioning from the beginning of the buffer.
-		 *
-		 * When this mode is used, position values are interpreted as
-		 * offsets from the start of the buffer (position 0).
+		 * @brief Absolute offset from the beginning of the buffer (position 0).
 		 */
 		Absolute,
-		
+
 		/**
-		 * @brief Relative positioning from the current position.
-		 *
-		 * When this mode is used, position values are interpreted as
-		 * offsets from the current read/write position.
+		 * @brief Offset relative to the current read position.
 		 */
 		Relative
 	};
 
 	/**
-	 * @brief Type alias for the primary data storage type used in buffers.
+	 * @brief Primary byte storage type used throughout the buffer API.
 	 *
-	 * @details DataType is defined as a vector of bytes (std::byte) and
-	 *          serves as the fundamental container for byte-oriented
-	 *          buffer implementations within the StormByte Buffer namespace.
+	 * @details Alias for @c std::vector<std::byte>. Serves as the fundamental
+	 *          container for byte-oriented buffer implementations.
 	 */
 	using DataType = std::vector<std::byte>;
 
 	/**
-	 * @brief Execution mode selector for pipeline processing.
+	 * @enum ExecutionMode
+	 * @brief How @ref Pipeline::Process schedules stages.
 	 *
-	 * @details Defines how pipeline stages are scheduled when invoking
-	 *          Pipeline::Process(). Use to control concurrency behavior:
-	 *          - ExecutionMode::Sync  : All stages execute sequentially in the
-	 *                                   caller's thread (no detached threads).
-	 *          - ExecutionMode::Async : Each stage executes concurrently in its
-	 *                                   own detached thread (previous default behavior).
+	 * - @c Sync  — all stages run sequentially on the caller’s thread
+	 *              (no background threads).
+	 * - @c Async — a **single** background thread runs all stages **in order**;
+	 *              @ref Pipeline::Process returns immediately with the final
+	 *              @ref Consumer. This is **not** one thread per stage.
 	 *
-	 * @note Async maximizes throughput via parallel stage execution; Sync can
-	 *       simplify debugging and deterministic ordering.
+	 * @note Prefer Async for production workloads; use Sync for deterministic
+	 *       debugging.
 	 * @see Pipeline::Process()
 	 */
 	enum class STORMBYTE_BUFFER_PUBLIC ExecutionMode {
-		Sync,   ///< Sequential single-threaded execution of all stages.
-		Async   ///< Concurrent detached-thread execution per stage.
+		Sync,   ///< Sequential execution on the caller’s thread.
+		Async   ///< One background thread; stages run sequentially on it.
 	};
 }

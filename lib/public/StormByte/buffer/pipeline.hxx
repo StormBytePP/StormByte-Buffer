@@ -19,7 +19,6 @@
  * interfaces, external I/O adapters and multi-stage processing pipelines.
  */
 namespace StormByte::Buffer {
-
 	// Forward declaration – LockFreeRing is private and not installed
 	class LockFreeRing;
 
@@ -64,99 +63,98 @@ namespace StormByte::Buffer {
 	 * @see ExternalReader, ExternalWriter, Producer, Consumer, LockFreeRing
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Pipeline final {
-	public:
-		/**
-		 * @brief Signature of a pipeline stage.
-		 *
-		 * Stages receive abstract reader/writer interfaces so the Pipeline
-		 * can freely choose the concrete buffer implementation (LockFreeRing
-		 * for intermediates, Ring for the final output, etc.).
-		 *
-		 * @param in  Abstract reader for the stage input.
-		 * @param out Abstract writer for the stage output.
-		 * @param log Optional logger (may be null).
-		 */
-		using PipeFunction = std::function<void(
-			ExternalReader&,
-			ExternalWriter&,
-			std::shared_ptr<Logger::Log>
-		)>;
+		public:
+			/**
+			 * @brief Signature of a pipeline stage.
+			 *
+			 * Stages receive abstract reader/writer interfaces so the Pipeline
+			 * can freely choose the concrete buffer implementation (LockFreeRing
+			 * for intermediates, Ring for the final output, etc.).
+			 *
+			 * @param in  Abstract reader for the stage input.
+			 * @param out Abstract writer for the stage output.
+			 * @param log Optional logger (may be null).
+			 */
+			using PipeFunction = std::function<void(
+				ExternalReader&,
+				ExternalWriter&,
+				std::shared_ptr<Logger::Log>
+			)>;
 
-		/**
-		 * @brief Default constructor.
-		 */
-		Pipeline() noexcept;
+			/**
+			 * @brief Default constructor.
+			 */
+			Pipeline() noexcept;
 
-		/**
-		 * @brief Copy constructor.
-		 * @param other Source pipeline (only the list of stages is copied).
-		 */
-		Pipeline(const Pipeline& other);
+			/**
+			 * @brief Copy constructor.
+			 * @param other Source pipeline (only the list of stages is copied).
+			 */
+			Pipeline(const Pipeline& other);
 
-		/**
-		 * @brief Move constructor.
-		 * @param other Source pipeline (left in a valid but unspecified state).
-		 */
-		Pipeline(Pipeline&& other) noexcept;
+			/**
+			 * @brief Move constructor.
+			 * @param other Source pipeline (left in a valid but unspecified state).
+			 */
+			Pipeline(Pipeline&& other) noexcept;
 
-		/**
-		 * @brief Destructor.
-		 * @details Waits for any running Async execution to finish.
-		 */
-		~Pipeline() noexcept;
+			/**
+			 * @brief Destructor.
+			 * @details Waits for any running Async execution to finish.
+			 */
+			~Pipeline() noexcept;
 
-		/**
-		 * @brief Copy assignment.
-		 * @param other Source pipeline.
-		 * @return Reference to this pipeline.
-		 */
-		Pipeline& operator=(const Pipeline& other);
+			/**
+			 * @brief Copy assignment.
+			 * @param other Source pipeline.
+			 * @return Reference to this pipeline.
+			 */
+			Pipeline& operator=(const Pipeline& other);
 
-		/**
-		 * @brief Move assignment.
-		 * @param other Source pipeline.
-		 * @return Reference to this pipeline.
-		 */
-		Pipeline& operator=(Pipeline&& other) noexcept;
+			/**
+			 * @brief Move assignment.
+			 * @param other Source pipeline.
+			 * @return Reference to this pipeline.
+			 */
+			Pipeline& operator=(Pipeline&& other) noexcept;
 
-		/**
-		 * @brief Add a processing stage (copy).
-		 * @param pipe Stage function.
-		 */
-		void AddPipe(const PipeFunction& pipe);
+			/**
+			 * @brief Add a processing stage (copy).
+			 * @param pipe Stage function.
+			 */
+			void AddPipe(const PipeFunction& pipe);
 
-		/**
-		 * @brief Add a processing stage (move).
-		 * @param pipe Stage function.
-		 */
-		void AddPipe(PipeFunction&& pipe);
+			/**
+			 * @brief Add a processing stage (move).
+			 * @param pipe Stage function.
+			 */
+			void AddPipe(PipeFunction&& pipe);
 
-		/**
-		 * @brief Propagate error state to all internal buffers.
-		 * @details Calls @c SetError() on every intermediate LockFreeRing and
-		 *          on the final Producer. Waiting stages will wake up and
-		 *          observe the error condition.
-		 */
-		void SetError() const noexcept;
+			/**
+			 * @brief Propagate error state to all internal buffers.
+			 * @details Calls @c SetError() on every intermediate LockFreeRing and
+			 *          on the final Producer. Waiting stages will wake up and
+			 *          observe the error condition.
+			 */
+			void SetError() const noexcept;
 
-		/**
-		 * @brief Execute the pipeline.
-		 * @param buffer Input Consumer for the first stage.
-		 * @param mode   @c ExecutionMode::Async or @c ExecutionMode::Sync.
-		 * @param log    Optional logger passed to every stage (may be null).
-		 * @return Consumer of the final stage.
-		 *         In Async mode the Consumer is available immediately;
-		 *         the background thread continues processing.
-		 *
-		 * @note Any previous Async run is joined before starting a new one.
-		 */
-		Consumer Process(Consumer buffer,
-						const ExecutionMode& mode,
-						std::shared_ptr<Logger::Log> log) const noexcept;
+			/**
+			 * @brief Execute the pipeline.
+			 * @param buffer Input Consumer for the first stage.
+			 * @param mode   @c ExecutionMode::Async or @c ExecutionMode::Sync.
+			 * @param log    Optional logger passed to every stage (may be null).
+			 * @return Consumer of the final stage.
+			 *         In Async mode the Consumer is available immediately;
+			 *         the background thread continues processing.
+			 *
+			 * @note Any previous Async run is joined before starting a new one.
+			 */
+			Consumer Process(Consumer buffer,
+							const ExecutionMode& mode,
+							std::shared_ptr<Logger::Log> log) const noexcept;
 
-	private:
-		struct Impl;                       ///< Private implementation (PIMPL).
-		std::unique_ptr<Impl> m_impl;      ///< Opaque pointer to implementation.
+		private:
+			struct Impl;                       ///< Private implementation (PIMPL).
+			std::unique_ptr<Impl> m_impl;      ///< Opaque pointer to implementation.
 	};
-
 }
