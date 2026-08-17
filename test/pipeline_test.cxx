@@ -1369,33 +1369,31 @@ int test_pipeline_parallel_async_correctness() {
 }
 
 int test_pipeline_sync_vs_parallel_cpu_bound() {
-	// Workload where pipeline parallelism should win:
-	// - several stages
-	// - multi-MiB stream
-	// - non-trivial per-byte CPU work
-	// - bounded CONSUME chunks so stages can overlap
+	// Workload deliberately exaggerated so pipeline parallelism
+	// has a clear, repeatable advantage over pure Sync.
 	//
-	// Sync (0):            stages run one after another on the caller thread.
-	// Parallel (no Async): one thread per stage; Process blocks until done.
-	//
-	// End-to-end time for Parallel should be lower than pure Sync.
+	// - more stages
+	// - larger stream
+	// - heavier per-byte ALU work
+	// - small CONSUME chunks to allow real overlapping
 
-	constexpr int         kStages    = 8;
-	constexpr std::size_t kSize      = 4 * 1024 * 1024; // 4 MiB
-	constexpr std::size_t kChunk     = 4096;
-	constexpr int         kInnerWork = 24; // extra ALU work per byte per stage
+	constexpr int         kStages    = 12;                 // was 8
+	constexpr std::size_t kSize      = 12 * 1024 * 1024;   // was 4 MiB → 12 MiB
+	constexpr std::size_t kChunk     = 2048;               // smaller chunks → more overlap
+	constexpr int         kInnerWork = 48;                 // was 24 → heavier CPU work
 
 	auto cpu_stage = [](ExternalReader& in, ExternalWriter& out,
 						std::shared_ptr<StormByte::Logger::Log>) {
 		while (!in.EoF()) {
 			DataType data;
-			// Bound chunk size so the next stage can start before we finish the stream
 			if (CONSUME(in, kChunk, data) && !data.empty()) {
 				for (auto& b : data) {
 					std::uint8_t v = static_cast<std::uint8_t>(b);
 					for (int w = 0; w < kInnerWork; ++w) {
 						v = static_cast<std::uint8_t>(v * 131u + 17u);
 						v ^= static_cast<std::uint8_t>(w * 3);
+						// a bit more work to make it even more CPU-bound
+						v = static_cast<std::uint8_t>((v << 1) | (v >> 7));
 					}
 					b = static_cast<std::byte>(v);
 				}
@@ -1416,7 +1414,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	for (std::size_t i = 0; i < kSize; ++i)
 		input_data[i] = static_cast<std::byte>((i * 31u + 17u) & 0xFFu);
 
-	// Reference: run the same transform sequentially in-process (single-threaded oracle)
+	// Oracle (single-threaded sequential transform)
 	DataType expected = input_data;
 	for (int s = 0; s < kStages; ++s) {
 		for (auto& b : expected) {
@@ -1424,6 +1422,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 			for (int w = 0; w < kInnerWork; ++w) {
 				v = static_cast<std::uint8_t>(v * 131u + 17u);
 				v ^= static_cast<std::uint8_t>(w * 3);
+				v = static_cast<std::uint8_t>((v << 1) | (v >> 7));
 			}
 			b = static_cast<std::byte>(v);
 		}
@@ -1438,7 +1437,6 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 
 		const auto t0 = std::chrono::steady_clock::now();
 		Consumer result = pipe.Process(input.Consumer(), mode, logging);
-		// Sync and Parallel (without Async) both block until completion
 		const auto t1 = std::chrono::steady_clock::now();
 
 		total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -1455,19 +1453,29 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	long long sync_ms = 0;
 	long long parallel_ms = 0;
 
+	// Optional warm-up (helps reduce first-run noise)
+	{
+		long long dummy = 0;
+		(void)run_mode(ExecutionMode::Sync, "warmup-sync", dummy);
+		(void)run_mode(ExecutionMode::Parallel, "warmup-parallel", dummy);
+	}
+
 	if (run_mode(ExecutionMode::Sync, "sync cpu-bound", sync_ms) != 0)
 		return 1;
 	if (run_mode(ExecutionMode::Parallel, "parallel cpu-bound", parallel_ms) != 0)
 		return 1;
 
+	// Uncomment for debugging when it fails on CI
 	// std::cout << "Sync     total: " << sync_ms << " ms\n"
-	// 		<< "Parallel total: " << parallel_ms << " ms\n";
+	//           << "Parallel total: " << parallel_ms << " ms\n";
 
-	// Parallel should finish sooner. Allow mild CI noise but require a clear win.
-	// If the machine has a single core or heavy load, this can flake — then
-	// relax to parallel_ms <= sync_ms.
+	// Require a clear win, but allow a little noise.
+	// On a healthy multi-core machine parallel should be noticeably faster.
 	ASSERT_TRUE("parallel faster than sync (cpu-bound pipeline)",
-				parallel_ms < sync_ms);
+				parallel_ms < sync_ms * 85 / 100);   // at least ~15% faster
+
+	// Fallback more permissive if you still see flakes on very loaded CI:
+	// ASSERT_TRUE("parallel not slower than sync", parallel_ms <= sync_ms);
 
 	RETURN_TEST("test_pipeline_sync_vs_parallel_cpu_bound", 0);
 }
