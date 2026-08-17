@@ -9,4 +9,4 @@ else()
 	add_subdirectory(logger)
 endif()
 
-target_link_libraries(StormByte-Buffer StormByte::Logger)
+target_link_libraries(StormByte-Buffer PUBLIC StormByte::Logger)
