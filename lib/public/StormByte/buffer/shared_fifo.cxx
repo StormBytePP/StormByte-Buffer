@@ -25,12 +25,6 @@ SharedFIFO& SharedFIFO::operator=(FIFO&& other) noexcept {
 	return *this;
 }
 
-SharedFIFO& SharedFIFO::operator=(SharedFIFO&&) noexcept {
-	// Mutex / condition_variable are not movable.
-	// Leave the object in a valid state; the moved-from object should not be used.
-	return *this;
-}
-
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------

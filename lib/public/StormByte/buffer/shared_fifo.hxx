@@ -56,7 +56,7 @@ namespace StormByte::Buffer {
 	 */
 	class STORMBYTE_BUFFER_PUBLIC SharedFIFO : public FIFO {
 		public:
-			/**
+						/**
 			 * @name Constructors / destructor / assignment
 			 * @{
 			 */
@@ -130,10 +130,9 @@ namespace StormByte::Buffer {
 			SharedFIFO(const SharedFIFO&) = delete;
 
 			/**
-			 * @brief Move constructor.
-			 * @param other Source SharedFIFO.
+			 * @brief Move constructor (deleted – mutex / condition_variable are not movable).
 			 */
-			SharedFIFO(SharedFIFO&& other) noexcept = default;
+			SharedFIFO(SharedFIFO&&) = delete;
 
 			/** @brief Virtual destructor. */
 			virtual ~SharedFIFO() noexcept = default;
@@ -158,13 +157,9 @@ namespace StormByte::Buffer {
 			SharedFIFO& operator=(const SharedFIFO&) = delete;
 
 			/**
-			 * @brief Move assignment.
-			 * @param other Source SharedFIFO.
-			 * @return Reference to this SharedFIFO.
-			 * @note Mutex / condition_variable are not moved; implementation leaves
-			 *       a valid state under this instance’s own primitives.
+			 * @brief Move assignment (deleted – mutex / condition_variable are not movable).
 			 */
-			SharedFIFO& operator=(SharedFIFO&&) noexcept;
+			SharedFIFO& operator=(SharedFIFO&&) = delete;
 
 			/** @} */
 
