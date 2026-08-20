@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 project("StormByte C++ Library: Buffer module"
-	VERSION 0.0.9999
+	VERSION 1.0.0
 	DESCRIPTION "StormByte-Buffer is a StormByte library module for handling buffers"
 	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
 )
