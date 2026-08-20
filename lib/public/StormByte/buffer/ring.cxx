@@ -52,7 +52,10 @@ bool Ring::operator==(const Ring& other) const noexcept {
 	std::shared_lock lock_this(m_mutex, std::defer_lock);
 	std::shared_lock lock_other(other.m_mutex, std::defer_lock);
 	std::lock(lock_this, lock_other);
-	return m_buffer == other.m_buffer && m_position_offset == other.m_position_offset;
+	return m_buffer == other.m_buffer &&
+		m_position_offset == other.m_position_offset &&
+		m_closed == other.m_closed &&
+		m_error == other.m_error;
 }
 
 // ---------------------------------------------------------------------------
