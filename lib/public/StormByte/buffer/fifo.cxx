@@ -120,8 +120,8 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
-std::string FIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_limit) const noexcept {
-	const std::size_t cols = (collumns == 0) ? 16 : collumns;
+std::string FIFO::HexDump(const std::size_t& columns, const std::size_t& byte_limit) const noexcept {
+	const std::size_t cols = (columns == 0) ? 16 : columns;
 	const std::size_t end = (byte_limit > 0)
 		? std::min(m_buffer.size(), m_position_offset + byte_limit)
 		: m_buffer.size();
@@ -138,8 +138,8 @@ std::string FIFO::HexDump(const std::size_t& collumns, const std::size_t& byte_l
 	return oss.str();
 }
 
-std::string FIFO::FormatHexLines(std::span<const std::byte>& data, std::size_t start_offset, std::size_t collumns) noexcept {
-	const std::size_t cols = (collumns == 0) ? 16 : collumns;
+std::string FIFO::FormatHexLines(std::span<const std::byte>& data, std::size_t start_offset, std::size_t columns) noexcept {
+	const std::size_t cols = (columns == 0) ? 16 : columns;
 	const int offset_width = 8;
 
 	std::vector<std::string> lines;

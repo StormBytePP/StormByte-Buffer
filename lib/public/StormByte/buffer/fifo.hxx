@@ -423,7 +423,7 @@ namespace StormByte::Buffer {
 			 * @return Formatted string: size / position / status, then hex/ASCII lines
 			 *         (no trailing newline).
 			 */
-			virtual std::string HexDump(const std::size_t& collumns = 16,
+			virtual std::string HexDump(const std::size_t& columns = 16,
 										const std::size_t& byte_limit = 0) const noexcept;
 
 			/** @} */
@@ -517,7 +517,7 @@ namespace StormByte::Buffer {
 			 */
 			static std::string FormatHexLines(std::span<const std::byte>& data,
 											std::size_t start_offset,
-											std::size_t collumns) noexcept;
+											std::size_t columns) noexcept;
 
 			/**
 			 * @brief Build the hexdump header (size / position / status).
