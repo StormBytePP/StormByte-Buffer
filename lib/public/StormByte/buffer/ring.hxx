@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -32,12 +32,8 @@
 #include <utility>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -91,7 +87,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Construct from an input range (copy / convert).
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
-			 * @param r  Source range (disabled when already @ref DataType).
+			 * @param r Source range (disabled when already @ref DataType).
 			 */
 			template<std::ranges::input_range R>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
@@ -105,7 +101,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Construct from an rvalue range.
 			 * @tparam Rr Range type.
-			 * @param r  Source range.
+			 * @param r Source range.
 			 */
 			template<std::ranges::input_range Rr>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
@@ -267,7 +263,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 */
 			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
@@ -286,7 +282,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Hexdump of unread contents from the current read position.
-			 * @param columns    Bytes per line (0 → default 16).
+			 * @param columns Bytes per line (0 → default 16).
 			 * @param byte_limit Max bytes to include (0 → no limit).
 			 * @return Formatted diagnostic string.
 			 */
@@ -348,9 +344,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Format hex/ASCII lines for a data span.
-			 * @param data         Bytes to dump.
+			 * @param data Bytes to dump.
 			 * @param start_offset Display offset of the first byte.
-			 * @param columns      Bytes per line.
+			 * @param columns Bytes per line.
 			 * @return Formatted lines (no header).
 			 */
 			static std::string FormatHexLines(std::span<const std::byte> data,
@@ -377,19 +373,19 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			std::deque<std::byte>               m_buffer;			///< Contiguous-ish byte storage.
-			mutable std::size_t                 m_position_offset{0};	///< Logical read offset.
-			bool                                m_closed{false};		///< Closed-for-writes flag.
-			bool                                m_error{false};			///< Permanent error flag.
-			std::string                         m_error_message;		///< Optional error detail.
+			std::deque<std::byte> m_buffer;					///< Contiguous-ish byte storage
+			mutable std::size_t m_position_offset{0};		///< Logical read offset
+			bool m_closed{false};							///< Closed-for-writes flag
+			bool m_error{false};							///< Permanent error flag
+			std::string m_error_message;					///< Optional error detail
 
-			mutable DataType                    m_data_cache;			///< Cache for @ref Data().
-			mutable std::shared_mutex           m_mutex;				///< Shared for readers, exclusive for writers.
-			mutable std::condition_variable_any m_cv;					///< Signalled on data / close / error.
+			mutable DataType m_data_cache;					///< Cache for @ref Data()
+			mutable std::shared_mutex m_mutex;				///< Shared for readers, exclusive for writers
+			mutable std::condition_variable_any m_cv;		///< Signalled on data / close / error
 
 			/**
 			 * @brief Block until at least @p n bytes are available, or closed/error.
-			 * @param n    Requested byte count.
+			 * @param n Requested byte count.
 			 * @param lock Unique lock already held on @c m_mutex (released while waiting).
 			 */
 			void Wait(const std::size_t& n, std::unique_lock<std::shared_mutex>& lock) const;
