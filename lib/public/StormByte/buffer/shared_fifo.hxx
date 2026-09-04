@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -25,12 +25,8 @@
 #include <mutex>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -75,7 +71,7 @@ namespace StormByte::Buffer {
 	 */
 	class STORMBYTE_BUFFER_PUBLIC SharedFIFO : public FIFO {
 		public:
-						/**
+			/**
 			 * @name Constructors / destructor / assignment
 			 * @{
 			 */
@@ -101,7 +97,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Construct from an input range (copy / convert).
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
-			 * @param r  Source range (disabled when already @ref DataType).
+			 * @param r Source range (disabled when already @ref DataType).
 			 */
 			template<std::ranges::input_range R>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
@@ -112,7 +108,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Construct from an rvalue range.
 			 * @tparam Rr Range type.
-			 * @param r  Source range (moved when @ref DataType).
+			 * @param r Source range (moved when @ref DataType).
 			 */
 			template<std::ranges::input_range Rr>
 			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
@@ -314,7 +310,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position (thread-safe).
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 * @details Position is clamped to @c [0, Size()]. Notifies waiters.
 			 * @see Read(), Position
 			 */
@@ -336,7 +332,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Thread-safe hexdump of unread contents.
-			 * @param columns    Bytes per line (0 → default 16).
+			 * @param columns Bytes per line (0 → default 16).
 			 * @param byte_limit Max bytes to include (0 → no limit).
 			 * @return Formatted dump (size / position / status + hex/ASCII; no trailing newline).
 			 * @details Acquires the mutex for a consistent snapshot.
@@ -351,8 +347,8 @@ namespace StormByte::Buffer {
 			// SharedFIFO only protects access and notifies waiters.
 
 		private:
-			mutable std::mutex                  m_mutex; ///< Mutex protecting internal state.
-			mutable std::condition_variable_any m_cv;    ///< Condition variable for blocking reads.
+			mutable std::mutex m_mutex;					///< Mutex protecting internal state
+			mutable std::condition_variable_any m_cv;	///< Condition variable for blocking reads
 
 			/**
 			 * @brief Hexdump header (size / position / status).
@@ -362,9 +358,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Blocking Extract / Read / Peek into @ref DataType.
-			 * @param count     Requested bytes.
+			 * @param count Requested bytes.
 			 * @param outBuffer Destination.
-			 * @param flag      Operation kind.
+			 * @param flag Operation kind.
 			 * @return @c true on success, @c false on error or insufficient data after close.
 			 */
 			virtual bool ReadInternal(const std::size_t& count, DataType& outBuffer,
@@ -372,9 +368,9 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Blocking Extract / Read / Peek into @ref WriteOnly.
-			 * @param count     Requested bytes.
+			 * @param count Requested bytes.
 			 * @param outBuffer Destination writer.
-			 * @param flag      Operation kind.
+			 * @param flag Operation kind.
 			 * @return @c true on success, @c false on error or insufficient data after close.
 			 */
 			virtual bool ReadInternal(const std::size_t& count, WriteOnly& outBuffer,
@@ -382,7 +378,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Wait until at least @p n bytes are available, or closed/error.
-			 * @param n    Requested byte count; if 0, returns immediately.
+			 * @param n Requested byte count; if 0, returns immediately.
 			 * @param lock Caller-held unique_lock on @c m_mutex (still held on return).
 			 * @note Returns when @ref Close() or @ref SetError() is called even if
 			 *       fewer than @p n bytes are available.
@@ -393,7 +389,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append from @ref DataType (copy), under lock + notify.
 			 * @param count Number of bytes.
-			 * @param src   Source.
+			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			virtual bool WriteInternal(const std::size_t& count, const DataType& src) noexcept override;
@@ -401,7 +397,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append from @ref DataType (move), under lock + notify.
 			 * @param count Number of bytes.
-			 * @param src   Source.
+			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			virtual bool WriteInternal(const std::size_t& count, DataType&& src) noexcept override;
