@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -30,12 +30,8 @@
 #include <vector>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	class Consumer;		///< Forward declaration of the Consumer class.
@@ -52,23 +48,16 @@ namespace StormByte::Buffer {
 	 * @see ReadOnly::Seek()
 	 */
 	enum class STORMBYTE_BUFFER_PUBLIC Position {
-		/**
-		 * @brief Absolute offset from the beginning of the buffer (position 0).
-		 */
-		Absolute,
-
-		/**
-		 * @brief Offset relative to the current logical read position.
-		 */
-		Relative
+		Absolute,	///< Offset from the beginning of the buffer (position 0).
+		Relative	///< Offset from the current logical read position.
 	};
 
 	/**
 	 * @brief Primary byte storage type used throughout the buffer API.
 	 *
-	 * @details Alias for @c std::vector&lt;std::byte&gt;. Serves as the fundamental
-	 *          container for byte-oriented buffer implementations
-	 *          (@ref FIFO, adapters, extract/read destinations, etc.).
+	 * Alias for @c std::vector&lt;std::byte&gt;. Serves as the fundamental
+	 * container for byte-oriented buffer implementations
+	 * (@ref FIFO, adapters, extract/read destinations, etc.).
 	 */
 	using DataType = std::vector<std::byte>;
 

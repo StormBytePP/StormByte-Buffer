@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -23,20 +23,16 @@
 #include <StormByte/exception.hxx>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
 	 * @class Exception
 	 * @brief Base exception type for the Buffer module.
 	 *
-	 * @details Prefixes the component name with @c "Buffer::" and forwards
-	 *          a C++20 format string plus arguments to @ref StormByte::Exception.
+	 * Prefixes the component name with @c "Buffer::" and forwards
+	 * a C++20 format string plus arguments to @ref StormByte::Exception.
 	 *
 	 * @see Error, ReadError, WriteError
 	 */
@@ -47,8 +43,8 @@ namespace StormByte::Buffer {
 			 * @tparam Args Format argument types.
 			 * @param component Logical sub-component name (e.g. @c "FIFO", @c "Ring").
 			 *                  Prefixed automatically with @c "Buffer::".
-			 * @param fmt       C++20 format string.
-			 * @param args      Format arguments.
+			 * @param fmt C++20 format string.
+			 * @param args Format arguments.
 			 */
 			template <typename... Args>
 			Exception(const std::string& component, std::format_string<Args...> fmt, Args&&... args):
@@ -59,8 +55,8 @@ namespace StormByte::Buffer {
 	 * @class Error
 	 * @brief General exception class for buffer errors.
 	 *
-	 * @details Intermediate base for module-specific failures. Inherits constructors
-	 *          from @ref Exception via @c using Exception::Exception.
+	 * Intermediate base for module-specific failures. Inherits constructors
+	 * from @ref Exception via @c using Exception::Exception.
 	 *
 	 * @see ReadError, WriteError
 	 */
@@ -73,14 +69,14 @@ namespace StormByte::Buffer {
 	 * @class ReadError
 	 * @brief Exception thrown when a buffer read / extract / peek operation fails.
 	 *
-	 * @details The component name is fixed to @c "Buffer::ReadError".
+	 * The component name is fixed to @c "Buffer::ReadError".
 	 */
 	class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
 		public:
 			/**
 			 * @brief Construct a read error with a format message.
 			 * @tparam Args Format argument types.
-			 * @param fmt  C++20 format string.
+			 * @param fmt C++20 format string.
 			 * @param args Format arguments.
 			 */
 			template <typename... Args>
@@ -92,14 +88,14 @@ namespace StormByte::Buffer {
 	 * @class WriteError
 	 * @brief Exception thrown when a buffer write operation fails.
 	 *
-	 * @details The component name is fixed to @c "Buffer::WriteError".
+	 * The component name is fixed to @c "Buffer::WriteError".
 	 */
 	class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
 		public:
 			/**
 			 * @brief Construct a write error with a format message.
 			 * @tparam Args Format argument types.
-			 * @param fmt  C++20 format string.
+			 * @param fmt C++20 format string.
 			 * @param args Format arguments.
 			 */
 			template <typename... Args>
