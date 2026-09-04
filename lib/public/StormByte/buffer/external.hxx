@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -27,12 +27,8 @@
 #include <string_view>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -111,7 +107,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read (advances the logical position).
 			 * @param count Number of bytes requested (0 = all available).
-			 * @param out   Destination buffer (appended to).
+			 * @param out Destination buffer (appended to).
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			virtual bool Read(std::size_t count, DataType& out) const noexcept = 0;
@@ -128,7 +124,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Destructive read (consumes / erases data from the source).
 			 * @param count Number of bytes requested (0 = all available).
-			 * @param out   Destination buffer (appended to).
+			 * @param out Destination buffer (appended to).
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			virtual bool Extract(std::size_t count, DataType& out) noexcept = 0;
@@ -145,7 +141,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive peek (does **not** advance the position).
 			 * @param count Number of bytes requested (0 = all available).
-			 * @param out   Destination buffer (appended to).
+			 * @param out Destination buffer (appended to).
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			virtual bool Peek(std::size_t count, DataType& out) const noexcept = 0;
@@ -172,7 +168,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position.
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 * @note Default implementation is a no-op. Concrete adapters that
 			 *       support seeking should override it.
 			 */
@@ -251,9 +247,9 @@ namespace StormByte::Buffer {
 			 * @{
 			 */
 			std::size_t AvailableBytes() const noexcept override;
-			bool        Empty() const noexcept override;
-			bool        EoF() const noexcept override;
-			bool        IsReadable() const noexcept override;
+			bool Empty() const noexcept override;
+			bool EoF() const noexcept override;
+			bool IsReadable() const noexcept override;
 			/** @} */
 
 			/**
@@ -277,7 +273,7 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			std::reference_wrapper<ReadOnly> m_buffer; ///< Non-owning reference to the source buffer.
+			std::reference_wrapper<ReadOnly> m_buffer;	///< Non-owning reference to the source buffer
 	};
 
 	/**
@@ -342,7 +338,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up to @p count bytes from a vector (copy).
 			 * @param count Maximum bytes to write (0 = entire vector).
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if the sink is closed / in error.
 			 */
 			virtual bool Write(std::size_t count, const DataType& data) noexcept = 0;
@@ -350,7 +346,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up to @p count bytes from a vector (move).
 			 * @param count Maximum bytes to write (0 = entire vector).
-			 * @param data  Source vector (may be modified on success).
+			 * @param data Source vector (may be modified on success).
 			 * @return @c true on success, @c false if the sink is closed / in error.
 			 */
 			virtual bool Write(std::size_t count, DataType&& data) noexcept = 0;
@@ -383,7 +379,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up to @p count characters from a string view.
 			 * @param count Maximum characters (0 = entire view).
-			 * @param sv    Source characters.
+			 * @param sv Source characters.
 			 * @return @c true on success, @c false if the sink is closed / in error.
 			 */
 			bool Write(std::size_t count, std::string_view sv) noexcept;
@@ -391,7 +387,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write a string literal without the trailing NUL.
 			 * @tparam N Array extent (includes the NUL for literals).
-			 * @param s  String literal / char array.
+			 * @param s String literal / char array.
 			 * @return @c true on success, @c false if the sink is closed / in error.
 			 */
 			template<std::size_t N>
@@ -499,6 +495,6 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			std::reference_wrapper<WriteOnly> m_buffer; ///< Non-owning reference to the sink buffer.
+			std::reference_wrapper<WriteOnly> m_buffer;	///< Non-owning reference to the sink buffer
 	};
 }

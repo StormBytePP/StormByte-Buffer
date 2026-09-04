@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -23,12 +23,8 @@
 #include <StormByte/buffer/fifo.hxx>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -78,8 +74,8 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Construct a Bridge by cloning the supplied handlers.
-			 * @param in         External reader used as source.
-			 * @param out        External writer used as sink.
+			 * @param in External reader used as source.
+			 * @param out External writer used as sink.
 			 * @param chunk_size Size of each write chunk.
 			 *                   If zero, chunking is disabled and every read is
 			 *                   forwarded immediately.
@@ -95,8 +91,8 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Construct a Bridge by moving the supplied handlers.
-			 * @param in         External reader (will be moved).
-			 * @param out        External writer (will be moved).
+			 * @param in External reader (will be moved).
+			 * @param out External writer (will be moved).
 			 * @param chunk_size Size of each write chunk (0 = no chunking).
 			 */
 			inline Bridge(ExternalReader&& in,
@@ -245,10 +241,10 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			mutable FIFO                     m_buffer;        ///< Leftover bytes (&lt; chunk_size when chunking).
-			ExternalReader::PointerType      m_read_handler;  ///< Owned reader adapter.
-			ExternalWriter::PointerType      m_write_handler; ///< Owned writer adapter.
-			std::size_t                      m_chunk_size;    ///< 0 = write everything immediately.
+			mutable FIFO m_buffer;							///< Leftover bytes (< chunk_size when chunking)
+			ExternalReader::PointerType m_read_handler;		///< Owned reader adapter
+			ExternalWriter::PointerType m_write_handler;	///< Owned writer adapter
+			std::size_t m_chunk_size;						///< 0 = write everything immediately
 
 			/**
 			 * @brief Write @p data (plus any previous leftovers) to the sink in chunks.
