@@ -1,33 +1,29 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
 #include <StormByte/buffer/consumer.hxx>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -170,7 +166,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (copy).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			inline bool Write(const std::size_t& count, const DataType& data) noexcept override {
@@ -189,7 +185,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (move path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			inline bool Write(const std::size_t& count, DataType&& data) noexcept override {
@@ -208,7 +204,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (copy path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			inline bool Write(const std::size_t& count, const ReadOnly& data) noexcept override {
@@ -218,7 +214,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (move / extract path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			inline bool Write(const std::size_t& count, ReadOnly&& data) noexcept override {
@@ -246,6 +242,6 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		protected:
-			std::shared_ptr<Ring> m_buffer; ///< Shared ring storage.
+			std::shared_ptr<Ring> m_buffer;	///< Shared ring storage
 	};
 }

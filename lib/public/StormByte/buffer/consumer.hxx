@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -24,12 +24,8 @@
 #include <memory>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -244,7 +240,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 */
 			inline void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override {
 				m_buffer->Seek(offset, mode);
@@ -260,7 +256,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Extract bytes into a @ref DataType (consumes data from the Ring).
 			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param out    Destination buffer (appended to / filled by the Ring).
+			 * @param out Destination buffer (appended to / filled by the Ring).
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Extract(const std::size_t& count, DataType& out) noexcept override {
@@ -270,7 +266,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly sink (consumes data from the Ring).
 			 * @param count Number of bytes to extract; 0 extracts all available.
-			 * @param out    Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Extract(const std::size_t& count, WriteOnly& out) noexcept override {
@@ -303,7 +299,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read into a @ref DataType (advances logical position).
 			 * @param count Number of bytes to read; 0 reads all available.
-			 * @param out    Destination buffer.
+			 * @param out Destination buffer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Read(const std::size_t& count, DataType& out) const noexcept override {
@@ -313,7 +309,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly (advances logical position).
 			 * @param count Number of bytes to read; 0 reads all available.
-			 * @param out    Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Read(const std::size_t& count, WriteOnly& out) const noexcept override {
@@ -346,7 +342,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Peek bytes into a @ref DataType without advancing the read position.
 			 * @param count Number of bytes to peek; 0 peeks all available.
-			 * @param out    Destination buffer.
+			 * @param out Destination buffer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Peek(const std::size_t& count, DataType& out) const noexcept override {
@@ -356,7 +352,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Peek bytes into a @ref WriteOnly without advancing the read position.
 			 * @param count Number of bytes to peek; 0 peeks all available.
-			 * @param out    Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			inline bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override {
@@ -366,7 +362,7 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			std::shared_ptr<Ring> m_buffer; ///< Shared ring storage.
+			std::shared_ptr<Ring> m_buffer;	///< Shared ring storage
 
 			/**
 			 * @brief Private constructor used by @ref Producer.
