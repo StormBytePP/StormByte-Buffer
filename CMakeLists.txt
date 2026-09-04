@@ -1,12 +1,15 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.28)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _sb_ver)
+string(STRIP "${_sb_ver}" _sb_ver)
+
 project("StormByte C++ Library: Buffer module"
-	VERSION 1.0.0
-	DESCRIPTION "StormByte-Buffer is a StormByte library module for handling buffers"
+	VERSION ${_sb_ver}
+	DESCRIPTION "StormByte-Buffer is the buffer module of the StormByte C++ suite."
 	HOMEPAGE_URL "https://dev.stormbyte.org/StormByte-Buffer"
 )
 
@@ -15,8 +18,8 @@ include(cmake/asan.cmake)
 cmake_policy(SET CMP0079 NEW)
 
 add_subdirectory(doc)
-add_subdirectory(lib)
 add_subdirectory(thirdparty)
+add_subdirectory(lib)
 add_subdirectory(test)
 
 include(cmake/install.cmake)
