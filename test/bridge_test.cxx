@@ -1,11 +1,28 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 3
+ * or later, as published by the Free Software Foundation.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ */
+
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
-
 #include <iostream>
 #include <memory>
 #include <string>
-
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::ExternalBufferReader;
@@ -14,15 +31,9 @@ using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
-
 // ---------------------------------------------------------------------------
 // Test helpers – full ExternalReader / ExternalWriter implementations
 // ---------------------------------------------------------------------------
-
-/**
- * FaultyReader: first Read/Extract returns false and writes nothing;
- * subsequent calls extract from the source FIFO.
- */
 class FaultyReader final : public ExternalReader {
 public:
 	explicit FaultyReader(FIFO& from) noexcept

@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 3
+ * or later, as published by the Free Software Foundation.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ */
+
 // ============================================================================
 // lib/public/StormByte/buffer/pipeline.cxx
 // ============================================================================
@@ -5,23 +24,12 @@
 #include <StormByte/buffer/lockfree_ring.hxx>   // private header
 #include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/external.hxx>
-
 #include <thread>
 #include <vector>
-
 using namespace StormByte::Buffer;
-
 // ---------------------------------------------------------------------------
 // PIMPL
 // ---------------------------------------------------------------------------
-
-/**
- * @brief Private implementation of Pipeline.
- *
- * Holds the list of stages, intermediate LockFreeRings, the final public
- * Producer and the background thread(s) used when @ref ExecutionMode::Async
- * and/or @ref ExecutionMode::Parallel are set.
- */
 struct Pipeline::Impl {
 	std::vector<PipeFunction>                          pipes;          ///< Ordered list of stages.
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;  ///< Buffers between stages.

@@ -1,19 +1,34 @@
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 3
+ * or later, as published by the Free Software Foundation.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
+ */
+
 #include <StormByte/buffer/ring.hxx>
 #include <StormByte/helpers.hxx>
-
 #include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <iomanip>
 #include <iterator>
 #include <mutex>
-
 using namespace StormByte::Buffer;
-
 // ---------------------------------------------------------------------------
 // Move / comparison
 // ---------------------------------------------------------------------------
-
 Ring::Ring(Ring&& other) noexcept {
 	std::unique_lock lock(other.m_mutex);
 	m_buffer          = std::move(other.m_buffer);
@@ -21,25 +36,21 @@ Ring::Ring(Ring&& other) noexcept {
 	m_closed          = other.m_closed;
 	m_error           = other.m_error;
 	m_error_message   = std::move(other.m_error_message);
-
 	other.m_buffer.clear();
 	other.m_position_offset = 0;
 	other.m_closed = false;
 	other.m_error  = false;
 }
-
 Ring& Ring::operator=(Ring&& other) noexcept {
 	if (this != &other) {
 		std::unique_lock lock_this(m_mutex, std::defer_lock);
 		std::unique_lock lock_other(other.m_mutex, std::defer_lock);
 		std::lock(lock_this, lock_other);
-
 		m_buffer          = std::move(other.m_buffer);
 		m_position_offset = other.m_position_offset;
 		m_closed          = other.m_closed;
 		m_error           = other.m_error;
 		m_error_message   = std::move(other.m_error_message);
-
 		other.m_buffer.clear();
 		other.m_position_offset = 0;
 		other.m_closed = false;
@@ -47,7 +58,6 @@ Ring& Ring::operator=(Ring&& other) noexcept {
 	}
 	return *this;
 }
-
 bool Ring::operator==(const Ring& other) const noexcept {
 	std::shared_lock lock_this(m_mutex, std::defer_lock);
 	std::shared_lock lock_other(other.m_mutex, std::defer_lock);
@@ -57,57 +67,46 @@ bool Ring::operator==(const Ring& other) const noexcept {
 		m_closed == other.m_closed &&
 		m_error == other.m_error;
 }
-
 // ---------------------------------------------------------------------------
 // Pure readers → shared_lock
 // ---------------------------------------------------------------------------
-
 std::size_t Ring::AvailableBytes() const noexcept {
 	std::shared_lock lock(m_mutex);
 	const std::size_t sz = m_buffer.size();
 	return (m_position_offset <= sz) ? (sz - m_position_offset) : 0;
 }
-
 bool Ring::Empty() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return m_buffer.empty();
 }
-
 bool Ring::EoF() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return m_error || (m_closed && (m_buffer.size() <= m_position_offset));
 }
-
 bool Ring::HasError() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return m_error;
 }
-
 bool Ring::IsReadable() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return !m_error;
 }
-
 bool Ring::IsWritable() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return !m_closed && !m_error;
 }
-
 std::size_t Ring::Size() const noexcept {
 	std::shared_lock lock(m_mutex);
 	return m_buffer.size();
 }
-
 const DataType& Ring::Data() const noexcept {
 	std::unique_lock lock(m_mutex);
 	m_data_cache.assign(m_buffer.begin(), m_buffer.end());
 	return m_data_cache;
 }
-
 // ---------------------------------------------------------------------------
 // Mutators → unique_lock
 // ---------------------------------------------------------------------------
-
 void Ring::Clean() noexcept {
 	std::unique_lock lock(m_mutex);
 	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
@@ -118,7 +117,6 @@ void Ring::Clean() noexcept {
 	}
 	m_position_offset = 0;
 }
-
 void Ring::Clear() noexcept {
 	{
 		std::unique_lock lock(m_mutex);
@@ -127,7 +125,6 @@ void Ring::Clear() noexcept {
 	}
 	m_cv.notify_all();
 }
-
 void Ring::Close() noexcept {
 	{
 		std::unique_lock lock(m_mutex);
@@ -135,7 +132,6 @@ void Ring::Close() noexcept {
 	}
 	m_cv.notify_all();
 }
-
 void Ring::SetError() noexcept {
 	{
 		std::unique_lock lock(m_mutex);
@@ -143,19 +139,16 @@ void Ring::SetError() noexcept {
 	}
 	m_cv.notify_all();
 }
-
 bool Ring::Drop(const std::size_t& count) noexcept {
 	bool result = false;
 	{
 		std::unique_lock lock(m_mutex);
 		if (count != 0 && count > (m_buffer.size() - m_position_offset) && !m_closed)
 			Wait(count, lock);
-
 		const std::size_t avail = (m_position_offset <= m_buffer.size())
 									? (m_buffer.size() - m_position_offset) : 0;
 		if (avail == 0 || count > avail)
 			return false;
-
 		m_position_offset = std::min(m_position_offset + count, m_buffer.size());
 		if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
 			m_buffer.erase(m_buffer.begin(),
@@ -167,7 +160,6 @@ bool Ring::Drop(const std::size_t& count) noexcept {
 	m_cv.notify_all();
 	return result;
 }
-
 void Ring::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
 	std::unique_lock lock(m_mutex);
 	switch (mode) {
@@ -189,11 +181,9 @@ void Ring::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 			break;
 	}
 }
-
 // ---------------------------------------------------------------------------
 // HexDump
 // ---------------------------------------------------------------------------
-
 std::string Ring::HexDump(const std::size_t& columns,
 						const std::size_t& byte_limit) const noexcept {
 	std::shared_lock lock(m_mutex);
@@ -201,10 +191,8 @@ std::string Ring::HexDump(const std::size_t& columns,
 	const std::size_t end  = (byte_limit > 0)
 								? std::min(m_buffer.size(), m_position_offset + byte_limit)
 								: m_buffer.size();
-
 	std::ostringstream oss = HexDumpHeader();
 	oss << '\n';
-
 	if (end > m_position_offset) {
 		DataType tmp(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset),
 					m_buffer.begin() + static_cast<std::ptrdiff_t>(end));
@@ -213,7 +201,6 @@ std::string Ring::HexDump(const std::size_t& columns,
 	}
 	return oss.str();
 }
-
 std::ostringstream Ring::HexDumpHeader() const noexcept {
 	std::ostringstream oss;
 	oss << "Size: " << m_buffer.size() << " bytes\n";
@@ -222,7 +209,6 @@ std::ostringstream Ring::HexDumpHeader() const noexcept {
 		<< " and " << (m_error ? "error" : "ready");
 	return oss;
 }
-
 std::string Ring::FormatHexLines(std::span<const std::byte> data,
 								std::size_t start_offset,
 								std::size_t columns) noexcept {
@@ -257,11 +243,9 @@ std::string Ring::FormatHexLines(std::span<const std::byte> data,
 	}
 	return oss.str();
 }
-
 // ---------------------------------------------------------------------------
 // Read / Extract / Peek
 // ---------------------------------------------------------------------------
-
 bool Ring::Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
 	return const_cast<Ring*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
@@ -280,7 +264,6 @@ bool Ring::Extract(const std::size_t& count, DataType& outBuffer) noexcept {
 bool Ring::Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
-
 void Ring::ReadUntilEoF(DataType& outBuffer) const noexcept {
 	const_cast<Ring*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
@@ -293,18 +276,14 @@ void Ring::ExtractUntilEoF(DataType& outBuffer) noexcept {
 void Ring::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
-
 bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation flag) noexcept {
 	DataType local;
 	{
 		std::unique_lock lock(m_mutex);
-
 		std::size_t avail = (m_position_offset <= m_buffer.size())
 								? (m_buffer.size() - m_position_offset) : 0;
-
 		if (m_error || (m_closed && avail == 0))
 			return false;
-
 		// count == 0 → all available; if empty and still open, wait for data or close
 		if (count == 0 && avail == 0 && !m_closed) {
 			Wait(1, lock);
@@ -313,18 +292,14 @@ bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation
 			if (avail == 0)
 				return false; // closed/error with nothing left
 		}
-
 		const std::size_t real_count = (count == 0) ? avail : count;
 		if (real_count > avail && !m_closed)
 			Wait(real_count, lock);
-
 		avail = (m_position_offset <= m_buffer.size())
 					? (m_buffer.size() - m_position_offset) : 0;
 		if ((avail == 0 && count == 0) || real_count > avail)
 			return false;
-
 		auto start = m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset);
-
 		switch (flag) {
 			case Operation::Read:
 				local.insert(local.end(), start, start + static_cast<std::ptrdiff_t>(real_count));
@@ -345,27 +320,23 @@ bool Ring::ReadInternal(const std::size_t& count, DataType& outBuffer, Operation
 				return false;
 		}
 	}
-
 	outBuffer.insert(outBuffer.end(),
 					std::make_move_iterator(local.begin()),
 					std::make_move_iterator(local.end()));
 	return true;
 }
-
 bool Ring::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, Operation flag) noexcept {
 	DataType temp;
 	if (!ReadInternal(count, temp, flag))
 		return false;
 	return outBuffer.Write(std::move(temp));
 }
-
 void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 	while (true) {
 		{
 			std::unique_lock lock(m_mutex);
 			if (m_error)
 				return;
-
 			m_cv.wait(lock, [&] {
 				if (m_error || m_closed)
 					return true;
@@ -373,16 +344,13 @@ void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 					? (m_buffer.size() - m_position_offset) : 0;
 				return avail > 0;
 			});
-
 			if (m_error)
 				return;
-
 			const std::size_t avail = (m_position_offset <= m_buffer.size())
 				? (m_buffer.size() - m_position_offset) : 0;
 			if (avail == 0 && m_closed)
 				return; // true EoF
 		}
-
 		DataType chunk;
 		bool ok = false;
 		switch (flag) {
@@ -400,18 +368,15 @@ void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 						std::make_move_iterator(chunk.end()));
 	}
 }
-
 void Ring::ReadUntilEoFInternal(WriteOnly& outBuffer, Operation flag) noexcept {
 	DataType tmp;
 	ReadUntilEoFInternal(tmp, flag);
 	if (!tmp.empty())
 		(void)outBuffer.Write(std::move(tmp));
 }
-
 // ---------------------------------------------------------------------------
 // Write
 // ---------------------------------------------------------------------------
-
 bool Ring::Write(const std::size_t& count, const DataType& data) noexcept {
 	return WriteInternal(count, data);
 }
@@ -428,16 +393,13 @@ bool Ring::Write(const std::size_t& count, ReadOnly&& data) noexcept {
 	if (!data.Extract(count, tmp)) return false;
 	return WriteInternal(0, std::move(tmp));
 }
-
 bool Ring::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
 	bool result = false;
 	{
 		std::unique_lock lock(m_mutex);
 		if (m_closed || m_error) return false;
-
 		const std::size_t real_count = (count == 0) ? src.size() : count;
 		if (real_count > src.size()) return false;
-
 		m_buffer.insert(m_buffer.end(),
 						src.begin(),
 						src.begin() + static_cast<std::ptrdiff_t>(real_count));
@@ -446,16 +408,13 @@ bool Ring::WriteInternal(const std::size_t& count, const DataType& src) noexcept
 	m_cv.notify_all();
 	return result;
 }
-
 bool Ring::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
 	bool result = false;
 	{
 		std::unique_lock lock(m_mutex);
 		if (m_closed || m_error) return false;
-
 		const std::size_t real_count = (count == 0) ? src.size() : count;
 		if (real_count > src.size()) return false;
-
 		if (real_count == src.size()) {
 			m_buffer.insert(m_buffer.end(),
 							std::make_move_iterator(src.begin()),
@@ -471,11 +430,9 @@ bool Ring::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
 	m_cv.notify_all();
 	return result;
 }
-
 // ---------------------------------------------------------------------------
 // Wait
 // ---------------------------------------------------------------------------
-
 void Ring::Wait(const std::size_t& n, std::unique_lock<std::shared_mutex>& lock) const {
 	if (n == 0) return;
 	m_cv.wait(lock, [&] {

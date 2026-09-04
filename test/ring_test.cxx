@@ -1,11 +1,20 @@
-/**
- * @file ring_test.cxx
- * @brief Comprehensive test suite for the Ring buffer class
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
  *
- * Semantics note (post-fix):
- * - Read(0)/Extract(0) on an *open empty* buffer block until data or Close/SetError.
- * - On a *closed empty* buffer they return false (EoF).
- * - *UntilEoF drains until EoF; they must not return early on a temporary empty.
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 3
+ * or later, as published by the Free Software Foundation.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
 #include <StormByte/buffer/ring.hxx>

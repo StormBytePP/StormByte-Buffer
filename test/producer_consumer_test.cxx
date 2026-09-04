@@ -1,36 +1,20 @@
-/**
- * @file producer_consumer_test.cxx
- * @brief Comprehensive test suite for Producer/Consumer buffer classes
- * 
- * This test suite validates the reliability and correctness of the Producer/Consumer
- * buffer implementation across various scenarios:
- * 
- * BASIC TESTS (11):
- * - Basic write/read, multiple writes, extract operations
- * - Close mechanism, seek operations, copy/move semantics
- * - Byte vector writes, clear operations, reserve capacity
- * 
- * THREADING TESTS (6):
- * - Single/multiple producer(s) with single/multiple consumer(s)
- * - Stress tests with rapid operations
- * - Pipeline pattern (multi-stage processing)
- * 
- * COMPLEX RELIABILITY TESTS (13):
- * - Out-of-sync partial writes (producer writes in small chunks, consumer waits for more)
- * - Insufficient data handling (consumer requests more than available)
- * - Multiple consumers with partial data availability
- * - Interleaved blocking read/extract operations
- * - Close during consumer wait states
- * - Rapid writes with slow consumers
- * - Extract(0) behavior (non-blocking read-all)
- * - Seek during blocked reads
- * - Very large data transfers (1MB+)
- * - Alternating small/large writes
- * - Clear during active production
- * - Multiple sequential blocking reads
- * - Burst writes with pre-allocated capacity
- * 
- * Total: 30 test cases
+/*
+ * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+ *
+ * This file is part of StormByte-Buffer.
+ *
+ * StormByte-Buffer is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 3
+ * or later, as published by the Free Software Foundation.
+ *
+ * StormByte-Buffer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with StormByte-Buffer. If not, see
+ * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
 #include <StormByte/buffer/producer.hxx>
