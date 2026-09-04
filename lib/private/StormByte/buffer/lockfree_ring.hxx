@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -29,8 +29,8 @@
 #include <vector>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -189,7 +189,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 */
 			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
@@ -203,7 +203,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Peek into a @ref DataType without advancing the read position.
 			 * @param count Bytes to peek; 0 = all available.
-			 * @param out   Destination.
+			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Peek(const std::size_t& count, DataType& out) const noexcept override;
@@ -211,7 +211,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
 			 * @param count Bytes to peek; 0 = all available.
-			 * @param out   Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override;
@@ -226,7 +226,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read into a @ref DataType.
 			 * @param count Bytes to read; 0 = all available.
-			 * @param out   Destination.
+			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Read(const std::size_t& count, DataType& out) const noexcept override;
@@ -234,7 +234,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly.
 			 * @param count Bytes to read; 0 = all available.
-			 * @param out   Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Read(const std::size_t& count, WriteOnly& out) const noexcept override;
@@ -261,7 +261,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Extract bytes into a @ref DataType (consumes data).
 			 * @param count Bytes to extract; 0 = all available.
-			 * @param out   Destination.
+			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Extract(const std::size_t& count, DataType& out) noexcept override;
@@ -269,7 +269,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly (consumes data).
 			 * @param count Bytes to extract; 0 = all available.
-			 * @param out   Destination writer.
+			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
 			bool Extract(const std::size_t& count, WriteOnly& out) noexcept override;
@@ -296,7 +296,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (copy).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, const DataType& data) noexcept override;
@@ -304,7 +304,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (move path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, DataType&& data) noexcept override;
@@ -312,7 +312,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (copy path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, const ReadOnly& data) noexcept override;
@@ -320,7 +320,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (move / extract path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
@@ -340,22 +340,22 @@ namespace StormByte::Buffer {
 				Peek		///< Non-destructive peek (no advance)
 			};
 
-			std::vector<std::byte> m_storage;	///< Power-of-two circular storage.
-			std::size_t            m_capacity = 0;	///< Current capacity (power of two).
-			std::size_t            m_mask     = 0;	///< @c m_capacity - 1 for fast modulo.
+			std::vector<std::byte> m_storage;				///< Power-of-two circular storage
+			std::size_t m_capacity = 0;						///< Current capacity (power of two)
+			std::size_t m_mask = 0;							///< @c m_capacity - 1 for fast modulo
 
-			alignas(64) std::atomic<std::size_t> m_head{0};	///< Consumer index.
-			alignas(64) std::atomic<std::size_t> m_tail{0};	///< Producer index.
+			alignas(64) std::atomic<std::size_t> m_head{0};	///< Consumer index
+			alignas(64) std::atomic<std::size_t> m_tail{0};	///< Producer index
 
-			mutable std::atomic<std::size_t> m_logical{0};	///< Logical cursor for Read/Peek.
+			mutable std::atomic<std::size_t> m_logical{0};	///< Logical cursor for Read/Peek
 
-			std::atomic<bool> m_closed{false};	///< Closed-for-writes flag.
-			std::atomic<bool> m_error{false};	///< Permanent error flag.
+			std::atomic<bool> m_closed{false};				///< Closed-for-writes flag
+			std::atomic<bool> m_error{false};				///< Permanent error flag
 
-			mutable std::mutex              m_wait_mtx;	///< Mutex for blocking waits only.
-			mutable std::condition_variable m_cv;		///< Signalled on data / close / error.
+			mutable std::mutex m_wait_mtx;					///< Mutex for blocking waits only
+			mutable std::condition_variable m_cv;			///< Signalled on data / close / error
 
-			mutable DataType m_data_cache;	///< Cache used by @ref Data().
+			mutable DataType m_data_cache;					///< Cache used by @ref Data()
 
 			/**
 			 * @brief Round @p v up to the next power of two.
@@ -379,8 +379,8 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Shared Extract / Read / Peek implementation into @ref DataType.
 			 * @param count Requested bytes.
-			 * @param out   Destination.
-			 * @param op    Operation kind.
+			 * @param out Destination.
+			 * @param op Operation kind.
 			 * @return @c true on success.
 			 */
 			bool ReadInternal(std::size_t count, DataType& out, Operation op) noexcept;
@@ -388,7 +388,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append raw bytes (producer path).
 			 * @param count Number of bytes.
-			 * @param src   Source pointer.
+			 * @param src Source pointer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool WriteInternal(std::size_t count, const std::byte* src) noexcept;
