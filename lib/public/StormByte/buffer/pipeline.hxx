@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -30,12 +30,8 @@
 #include <vector>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including FIFO buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
@@ -93,7 +89,7 @@ namespace StormByte::Buffer {
 			 * can inject @ref LockFreeRing for intermediates and @ref Ring for
 			 * the final output without changing stage code.
 			 *
-			 * @param in  Abstract reader for the stage input.
+			 * @param in Abstract reader for the stage input.
 			 * @param out Abstract writer for the stage output.
 			 * @param log Optional logger (may be null).
 			 */
@@ -183,9 +179,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Execute the pipeline.
 			 * @param buffer Input @ref Consumer for the first stage.
-			 * @param mode   Bitmask of @ref ExecutionMode flags
+			 * @param mode Bitmask of @ref ExecutionMode flags
 			 *              (@c Sync, @c Async, @c Parallel, or combinations).
-			 * @param log    Optional logger passed to every stage (may be null).
+			 * @param log Optional logger passed to every stage (may be null).
 			 * @return @ref Consumer of the final stage.
 			 *         When @c Async is set, the Consumer is available immediately
 			 *         while background work continues; otherwise @ref Process
@@ -201,7 +197,7 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			struct Impl;					///< Private implementation (PIMPL).
-			std::unique_ptr<Impl> m_impl;	///< Opaque pointer to implementation.
+			struct Impl;					///< Private implementation (PIMPL)
+			std::unique_ptr<Impl> m_impl;	///< Opaque pointer to implementation
 	};
 }
