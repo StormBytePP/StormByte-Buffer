@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -29,22 +29,18 @@
 #include <utility>
 
 /**
- * @namespace Buffer
- * @brief Namespace for buffer-related components in the StormByte library.
- *
- * The Buffer namespace provides classes and utilities for byte buffers,
- * including Generic buffers, thread-safe shared buffers, producer-consumer
- * interfaces, external I/O adapters and multi-stage processing pipelines.
+ * @namespace StormByte::Buffer
+ * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
 	/**
 	 * @class Generic
 	 * @brief Pure abstract root of the buffer interface hierarchy.
 	 *
-	 * @details Generic holds **no data members**. Concrete types that need
-	 *          storage (e.g. @ref FIFO, @ref Ring) own it themselves.
-	 *          Protected @c DataConvert helpers convert ranges / strings into
-	 *          @ref DataType for constructors and writes.
+	 * Generic holds **no data members**. Concrete types that need
+	 * storage (e.g. @ref FIFO, @ref Ring) own it themselves.
+	 * Protected @c DataConvert helpers convert ranges / strings into
+	 * @ref DataType for constructors and writes.
 	 *
 	 * @see ReadOnly, WriteOnly, ReadWrite
 	 */
@@ -164,8 +160,8 @@ namespace StormByte::Buffer {
 	 * @class ReadOnly
 	 * @brief Pure interface for a buffer that can be read but not written.
 	 *
-	 * @details All read / extract / peek / seek contracts used by concrete
-	 *          buffers (@ref FIFO, @ref Ring, @ref Consumer, …) are declared here.
+	 * All read / extract / peek / seek contracts used by concrete
+	 * buffers (@ref FIFO, @ref Ring, @ref Consumer, …) are declared here.
 	 *
 	 * @see WriteOnly, ReadWrite, Generic
 	 */
@@ -268,7 +264,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
 			 * @param offset Offset value.
-			 * @param mode   @ref Position::Absolute or @ref Position::Relative.
+			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 * @details Position is clamped to @c [0, Size()]. Absolute + negative offset is a no-op.
 			 * @see Read(), Position
 			 */
@@ -283,7 +279,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Extract bytes into a @ref DataType.
-			 * @param count     Bytes to extract; 0 = all available.
+			 * @param count Bytes to extract; 0 = all available.
 			 * @param outBuffer Destination.
 			 * @return @c true on success, @c false on failure.
 			 */
@@ -300,7 +296,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly.
-			 * @param count     Bytes to extract; 0 = all available.
+			 * @param count Bytes to extract; 0 = all available.
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
@@ -336,7 +332,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Peek into a @ref DataType without advancing the read position.
-			 * @param count     Bytes to peek; 0 = all available.
+			 * @param count Bytes to peek; 0 = all available.
 			 * @param outBuffer Destination.
 			 * @return @c true on success, @c false if insufficient data or error.
 			 *
@@ -350,7 +346,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
-			 * @param count     Bytes to peek; 0 = all available.
+			 * @param count Bytes to peek; 0 = all available.
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false if insufficient data or error.
 			 *
@@ -368,7 +364,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Read into a @ref DataType.
-			 * @param count     Bytes to read; 0 = all available.
+			 * @param count Bytes to read; 0 = all available.
 			 * @param outBuffer Destination.
 			 * @return @c true on success, @c false on failure.
 			 */
@@ -385,7 +381,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Read into a @ref WriteOnly.
-			 * @param count     Bytes to read; 0 = all available.
+			 * @param count Bytes to read; 0 = all available.
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
@@ -419,9 +415,9 @@ namespace StormByte::Buffer {
 	 * @class WriteOnly
 	 * @brief Pure interface for a buffer that can be written but not read.
 	 *
-	 * @details Declares lifecycle (@ref Close / @ref SetError), writability, and
-	 *          the canonical @c Write overloads. Convenience overloads for strings,
-	 *          ranges and iterators are implemented inline in terms of those.
+	 * Declares lifecycle (@ref Close / @ref SetError), writability, and
+	 * the canonical @c Write overloads. Convenience overloads for strings,
+	 * ranges and iterators are implemented inline in terms of those.
 	 *
 	 * @see ReadOnly, ReadWrite, Generic
 	 */
@@ -484,7 +480,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (copy).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 * @see IsWritable()
 			 */
@@ -493,7 +489,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref DataType (move).
 			 * @param count Number of bytes to write.
-			 * @param data  Source vector.
+			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 * @see IsWritable()
 			 */
@@ -502,7 +498,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (copy path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 * @see IsWritable()
 			 */
@@ -511,7 +507,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (move / extract path).
 			 * @param count Number of bytes to write.
-			 * @param data  Source buffer.
+			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 * @see IsWritable()
 			 */
@@ -577,7 +573,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up to @p count characters from a string view.
 			 * @param count Maximum characters (0 = entire view).
-			 * @param sv    Source characters.
+			 * @param sv Source characters.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, std::string_view sv) noexcept {
@@ -593,7 +589,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write up to @p count characters from a C string.
 			 * @param count Maximum characters (0 = entire string).
-			 * @param s     Source (may be null).
+			 * @param s Source (may be null).
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, const char* s) noexcept {
@@ -604,7 +600,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write a string literal without the trailing NUL.
 			 * @tparam N Array extent (includes NUL for literals).
-			 * @param s  Literal / char array.
+			 * @param s Literal / char array.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::size_t N>
@@ -623,7 +619,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write all elements from an input range.
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
-			 * @param r  Source range.
+			 * @param r Source range.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range R>
@@ -644,7 +640,7 @@ namespace StormByte::Buffer {
 			 * @brief Write up to @p count elements from an input range.
 			 * @tparam Rw Range type.
 			 * @param count Maximum elements (0 = entire range).
-			 * @param r     Source range.
+			 * @param r Source range.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rw>
@@ -672,7 +668,7 @@ namespace StormByte::Buffer {
 			 * @brief Write up to @p count elements from an rvalue range.
 			 * @tparam Rrw Range type (may be @ref DataType rvalue).
 			 * @param count Maximum elements (0 = entire range).
-			 * @param r     Source range (moved when @ref DataType).
+			 * @param r Source range (moved when @ref DataType).
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rrw>
@@ -706,7 +702,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Write all elements from an rvalue range.
 			 * @tparam Rr Range type.
-			 * @param r  Source (moved when @ref DataType).
+			 * @param r Source (moved when @ref DataType).
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::ranges::input_range Rr>
@@ -733,7 +729,7 @@ namespace StormByte::Buffer {
 			 * @tparam I Input iterator.
 			 * @tparam S Sentinel for @p I.
 			 * @param first Begin iterator.
-			 * @param last  End sentinel.
+			 * @param last End sentinel.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::input_iterator I, std::sentinel_for<I> S>
@@ -752,7 +748,7 @@ namespace StormByte::Buffer {
 			 * @tparam S2 Sentinel for @p I2.
 			 * @param count Maximum elements (0 = all).
 			 * @param first Begin iterator.
-			 * @param last  End sentinel.
+			 * @param last End sentinel.
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			template<std::input_iterator I2, std::sentinel_for<I2> S2>
@@ -775,7 +771,7 @@ namespace StormByte::Buffer {
 	 * @class ReadWrite
 	 * @brief Pure interface combining @ref ReadOnly and @ref WriteOnly.
 	 *
-	 * @details Concrete bidirectional buffers (@ref FIFO, @ref Ring, …) implement this.
+	 * Concrete bidirectional buffers (@ref FIFO, @ref Ring, …) implement this.
 	 *
 	 * @see ReadOnly, WriteOnly, Generic
 	 */
