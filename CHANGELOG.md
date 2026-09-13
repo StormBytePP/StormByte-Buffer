@@ -29,6 +29,10 @@ If you landed here from a release link and have not read the tree:
 
 - Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0)).
 
+### Fixed
+
+- Prevented race condition in `Sink::Eof` where concurrent `Bind` calls could create hoppers after `Eof` signaling without receiving `Eof`.
+
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.0.0...HEAD
 
 ## [1.0.0] - 2026-09-05

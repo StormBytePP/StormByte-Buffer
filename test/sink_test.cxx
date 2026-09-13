@@ -236,6 +236,39 @@ int test_sink_notify_condition_variable() {
 }
 
 /**
+ * @brief Tests race condition between concurrent Bind(key) loop and Eof().
+ * @return 0 on success.
+ */
+int test_sink_concurrent_bind_and_eof() {
+	Sink<int> producer;
+	Sink<int> consumer;
+
+	std::atomic<bool> stop_binding{false};
+	std::thread bind_thread([&]() {
+		int key = 100;
+		while (!stop_binding.load(std::memory_order_acquire)) {
+			producer.Bind(key++, consumer);
+			std::this_thread::yield();
+		}
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	producer.Eof();
+	stop_binding.store(true, std::memory_order_release);
+	bind_thread.join();
+
+	ASSERT_TRUE("test_sink_concurrent_bind_and_eof producer eof", producer.EoF());
+	ASSERT_TRUE("test_sink_concurrent_bind_and_eof consumer eof", consumer.EoF());
+
+	for (int k = 100; k < 120; ++k) {
+		producer.Push(k, 9999);
+		ASSERT_EQUAL("test_sink_concurrent_bind_and_eof size after push post eof", static_cast<std::size_t>(0), consumer.Size(k));
+	}
+
+	RETURN_TEST("test_sink_concurrent_bind_and_eof", 0);
+}
+
+/**
  * @brief Main entry point for Sink tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -249,6 +282,7 @@ int main() {
 	failed += test_sink_pop_custom_select();
 	failed += test_sink_push_waiting_for_bind();
 	failed += test_sink_notify_condition_variable();
+	failed += test_sink_concurrent_bind_and_eof();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;
