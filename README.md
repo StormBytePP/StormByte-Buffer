@@ -48,6 +48,8 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 - [Usage](#usage)
   - [FIFO](#fifo)
   - [Producer and Consumer](#producer-and-consumer)
+  - [Hopper](#hopper)
+  - [Sink](#sink)
   - [Pipeline](#pipeline)
 - [Contributing](#contributing)
 - [License](#license)
@@ -118,6 +120,83 @@ int main() {
 			auto res = consumer.Extract(0, data);
 			if (res.has_value() && !data.empty()) {
 				// process
+			}
+		}
+	});
+
+	writer.join();
+	reader.join();
+}
+```
+
+### Hopper
+
+`Hopper<T>` is a single-producer single-consumer (SPSC) queue for discrete typed items (`StormByte::Type::MoveConstructible T`), unlike byte-oriented buffers (`FIFO`, `SharedFIFO`). It supports an optional capacity ceiling (0 = unbounded) where `Push` blocks when full, `Eof()` signaling for end of production, and consumer condition-variable notification via `Notify()`. Smart pointer types (`StormByte::Type::SmartPointer<T>`) automatically discard null items on `Push`.
+
+```cpp
+#include <StormByte/buffer/hopper.hxx>
+#include <thread>
+#include <memory>
+#include <iostream>
+
+using StormByte::Buffer::Hopper;
+
+int main() {
+	Hopper<std::unique_ptr<int>> hopper(5); // Bounded hopper: capacity 5
+
+	std::thread producer([&hopper]() {
+		for (int i = 0; i < 10; ++i) {
+			hopper.Push(std::make_unique<int>(i));
+		}
+		hopper.Eof();
+	});
+
+	std::thread consumer([&hopper]() {
+		while (!hopper.Empty() || !hopper.EoF()) {
+			auto item = hopper.Pop();
+			if (item) {
+				std::cout << "Popped: " << *item << "\n";
+			}
+		}
+	});
+
+	producer.join();
+	consumer.join();
+}
+```
+
+### Sink
+
+`Sink<T>` manages a collection of `Hopper<T>` buckets keyed by arbitrary integer identifiers (representing channels, tracks, sessions, etc.). Producers push items specifying a key. Consumers `Bind` to share hoppers under specific keys, or use `Drain()` on terminal producers so `Push` to un-bound keys drops items without waiting. `Pop()` retrieves items across buckets using Round-Robin or a custom `Select` index chooser callback.
+
+```cpp
+#include <StormByte/buffer/sink.hxx>
+#include <thread>
+#include <memory>
+#include <string>
+#include <iostream>
+
+using StormByte::Buffer::Sink;
+
+int main() {
+	Sink<std::shared_ptr<std::string>> producerSink;
+	Sink<std::shared_ptr<std::string>> consumerSink;
+
+	// Share Hopper buckets for key 1 and key 2 with consumerSink
+	producerSink.Bind(1, consumerSink);
+	producerSink.Bind(2, consumerSink);
+
+	std::thread writer([&producerSink]() {
+		producerSink.Push(1, std::make_shared<std::string>("Message on Channel 1"));
+		producerSink.Push(2, std::make_shared<std::string>("Message on Channel 2"));
+		producerSink.Eof();
+	});
+
+	std::thread reader([&consumerSink]() {
+		while (!consumerSink.EoF()) {
+			auto msg = consumerSink.Pop(); // Round-robin across keys 1 and 2
+			if (msg) {
+				std::cout << "Received: " << *msg << "\n";
 			}
 		}
 	});
