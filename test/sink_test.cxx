@@ -309,7 +309,7 @@ int test_sink_destructor_unblocks_waiters() {
 }
 
 /**
- * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Eof().
+ * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Push().
  * @return 0 on success.
  */
 int test_sink_concurrent_bind_and_notify() {
@@ -333,19 +333,32 @@ int test_sink_concurrent_bind_and_notify() {
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	consumer.Notify(cv);
-	producer.Eof();
 	stop_binding.store(true, std::memory_order_release);
 	bind_thread.join();
 
+	std::atomic<int> received_val{0};
 	std::atomic<bool> woken{false};
 	std::thread wait_thread([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return consumer.Ready(); });
-		woken.store(true, std::memory_order_release);
+		bool ok = cv.wait_for(lock, std::chrono::seconds(1), [&]() {
+			int val = consumer.Pop();
+			if (val != 0) {
+				received_val.store(val, std::memory_order_release);
+				return true;
+			}
+			return false;
+		});
+		woken.store(ok, std::memory_order_release);
 	});
 
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	producer.Push(200, 7777);
+
 	wait_thread.join();
-	ASSERT_TRUE("test_sink_concurrent_bind_and_notify woken by ready eof", woken.load(std::memory_order_acquire));
+	ASSERT_TRUE("test_sink_concurrent_bind_and_notify woken by push", woken.load(std::memory_order_acquire));
+	ASSERT_EQUAL("test_sink_concurrent_bind_and_notify received item", 7777, received_val.load(std::memory_order_acquire));
+
+	producer.Eof();
 
 	RETURN_TEST("test_sink_concurrent_bind_and_notify", 0);
 }
