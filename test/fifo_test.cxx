@@ -27,6 +27,9 @@
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
+using StormByte::Buffer::ReadOnly;
+using StormByte::Buffer::ReadWrite;
+using StormByte::Buffer::WriteOnly;
 int test_fifo_write_read_vector() {
 	FIFO fifo;
 	std::string s = "Hello";
@@ -796,6 +799,42 @@ int test_fifo_hexdump_status_error() {
 	ASSERT_TRUE("hexdump mentions error", dump.find("error") != std::string::npos);
 	RETURN_TEST("test_fifo_hexdump_status_error", 0);
 }
+int test_fifo_polymorphic_interface_abi() {
+	std::unique_ptr<ReadWrite> fifo = std::make_unique<FIFO>();
+	ReadOnly& reader = *fifo;
+	WriteOnly& writer = *fifo;
+	DataType copy {std::byte{'A'}};
+	DataType moved {std::byte{'B'}};
+	FIFO source;
+	ASSERT_TRUE("write source", source.Write("CD"));
+	ASSERT_TRUE("write copy", writer.Write(0, copy));
+	ASSERT_TRUE("write move", writer.Write(0, std::move(moved)));
+	ASSERT_TRUE("write readonly copy", writer.Write(0, static_cast<const ReadOnly&>(source)));
+	source.Seek(0, Position::Absolute);
+	ASSERT_TRUE("write readonly move", writer.Write(0, std::move(source)));
+	ASSERT_TRUE("writable", writer.IsWritable());
+	ASSERT_EQUAL("size", reader.Size(), static_cast<std::size_t>(6));
+	ASSERT_EQUAL("available", reader.AvailableBytes(), static_cast<std::size_t>(6));
+	ASSERT_FALSE("empty", reader.Empty());
+	ASSERT_TRUE("readable", reader.IsReadable());
+	DataType peek;
+	ASSERT_TRUE("peek", reader.Peek(1, peek));
+	DataType read;
+	ASSERT_TRUE("read", reader.Read(1, read));
+	reader.Seek(0, Position::Absolute);
+	ASSERT_TRUE("drop", reader.Drop(1));
+	DataType extracted;
+	ASSERT_TRUE("extract", reader.Extract(1, extracted));
+	reader.Clean();
+	reader.Clear();
+	writer.Close();
+	ASSERT_TRUE("eof after close", reader.EoF());
+	DataType until_eof;
+	reader.ReadUntilEoF(until_eof);
+	reader.ExtractUntilEoF(until_eof);
+	fifo.reset();
+	RETURN_TEST("test_fifo_polymorphic_interface_abi", 0);
+}
 int main() {
 	int result = 0;
 	result += test_fifo_write_read_vector();
@@ -851,6 +890,7 @@ int main() {
 	result += test_fifo_close_preserves_copy_state();
 	result += test_fifo_hexdump_status_closed();
 	result += test_fifo_hexdump_status_error();
+	result += test_fifo_polymorphic_interface_abi();
 	if (result == 0) {
 		std::cout << "FIFO tests passed!" << std::endl;
 	} else {

@@ -74,7 +74,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Destructor.
 			 */
-			~Consumer() noexcept = default;
+			~Consumer() noexcept override;
 
 			/**
 			 * @brief Copy assignment.
@@ -132,18 +132,14 @@ namespace StormByte::Buffer {
 			 * @brief Number of bytes available for reading from the current position.
 			 * @return Available byte count.
 			 */
-			inline std::size_t AvailableBytes() const noexcept override {
-				return m_buffer->AvailableBytes();
-			}
+			std::size_t AvailableBytes() const noexcept override;
 
 			/**
 			 * @brief Access a snapshot of the underlying data (implementation-defined).
 			 * @return Constant reference to the Ring’s data view.
 			 * @warning Not intended for concurrent mutation; prefer Read / Extract.
 			 */
-			inline const DataType& Data() const noexcept override {
-				return m_buffer->Data();
-			}
+			const DataType& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the shared Ring holds no stored bytes.
@@ -151,25 +147,19 @@ namespace StormByte::Buffer {
 			 * @note With a non-zero read position, @ref Empty() may still be @c false
 			 *       even when @ref AvailableBytes() is zero.
 			 */
-			inline bool Empty() const noexcept override {
-				return m_buffer->Empty();
-			}
+			bool Empty() const noexcept override;
 
 			/**
 			 * @brief End-of-stream condition.
 			 * @return @c true when the Ring is closed (or in error) and no bytes remain.
 			 */
-			inline bool EoF() const noexcept override {
-				return m_buffer->EoF();
-			}
+			bool EoF() const noexcept override;
 
 			/**
 			 * @brief Whether the shared Ring can still be read.
 			 * @return @c false if the Ring is in a permanent error state.
 			 */
-			inline bool IsReadable() const noexcept override {
-				return m_buffer->IsReadable();
-			}
+			bool IsReadable() const noexcept override;
 
 			/**
 			 * @brief Whether the shared Ring still accepts writes.
@@ -193,9 +183,7 @@ namespace StormByte::Buffer {
 			 * @brief Total number of bytes stored in the shared Ring.
 			 * @return Size in bytes.
 			 */
-			inline std::size_t Size() const noexcept override {
-				return m_buffer->Size();
-			}
+			std::size_t Size() const noexcept override;
 
 			/** @} */
 
@@ -207,17 +195,13 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Discard already-consumed data (from start up to the read position).
 			 */
-			inline void Clean() noexcept override {
-				m_buffer->Clean();
-			}
+			void Clean() noexcept override;
 
 			/**
 			 * @brief Clear all buffer contents.
 			 * @details Does not clear closed / error flags on the shared Ring.
 			 */
-			inline void Clear() noexcept override {
-				m_buffer->Clear();
-			}
+			void Clear() noexcept override;
 
 			/**
 			 * @brief Close the shared Ring for further writes.
@@ -233,18 +217,14 @@ namespace StormByte::Buffer {
 			 * @param count Number of bytes to drop.
 			 * @return @c true on success, @c false if fewer bytes were available.
 			 */
-			inline bool Drop(const std::size_t& count) noexcept override {
-				return m_buffer->Drop(count);
-			}
+			bool Drop(const std::size_t& count) noexcept override;
 
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
 			 * @param offset Offset value.
 			 * @param mode @ref Position::Absolute or @ref Position::Relative.
 			 */
-			inline void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override {
-				m_buffer->Seek(offset, mode);
-			}
+			void Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept override;
 
 			/** @} */
 
@@ -259,9 +239,7 @@ namespace StormByte::Buffer {
 			 * @param out Destination buffer (appended to / filled by the Ring).
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Extract(const std::size_t& count, DataType& out) noexcept override {
-				return m_buffer->Extract(count, out);
-			}
+			bool Extract(const std::size_t& count, DataType& out) noexcept override;
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly sink (consumes data from the Ring).
@@ -269,25 +247,19 @@ namespace StormByte::Buffer {
 			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Extract(const std::size_t& count, WriteOnly& out) noexcept override {
-				return m_buffer->Extract(count, out);
-			}
+			bool Extract(const std::size_t& count, WriteOnly& out) noexcept override;
 
 			/**
 			 * @brief Extract all remaining bytes until EoF into a @ref DataType.
 			 * @param out Destination buffer.
 			 */
-			inline void ExtractUntilEoF(DataType& out) noexcept override {
-				m_buffer->ExtractUntilEoF(out);
-			}
+			void ExtractUntilEoF(DataType& out) noexcept override;
 
 			/**
 			 * @brief Extract all remaining bytes until EoF into a @ref WriteOnly.
 			 * @param out Destination writer.
 			 */
-			inline void ExtractUntilEoF(WriteOnly& out) noexcept override {
-				m_buffer->ExtractUntilEoF(out);
-			}
+			void ExtractUntilEoF(WriteOnly& out) noexcept override;
 
 			/** @} */
 
@@ -302,9 +274,7 @@ namespace StormByte::Buffer {
 			 * @param out Destination buffer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Read(const std::size_t& count, DataType& out) const noexcept override {
-				return m_buffer->Read(count, out);
-			}
+			bool Read(const std::size_t& count, DataType& out) const noexcept override;
 
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly (advances logical position).
@@ -312,25 +282,19 @@ namespace StormByte::Buffer {
 			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Read(const std::size_t& count, WriteOnly& out) const noexcept override {
-				return m_buffer->Read(count, out);
-			}
+			bool Read(const std::size_t& count, WriteOnly& out) const noexcept override;
 
 			/**
 			 * @brief Read all remaining bytes until EoF into a @ref DataType.
 			 * @param out Destination buffer.
 			 */
-			inline void ReadUntilEoF(DataType& out) const noexcept override {
-				m_buffer->ReadUntilEoF(out);
-			}
+			void ReadUntilEoF(DataType& out) const noexcept override;
 
 			/**
 			 * @brief Read all remaining bytes until EoF into a @ref WriteOnly.
 			 * @param out Destination writer.
 			 */
-			inline void ReadUntilEoF(WriteOnly& out) const noexcept override {
-				m_buffer->ReadUntilEoF(out);
-			}
+			void ReadUntilEoF(WriteOnly& out) const noexcept override;
 
 			/** @} */
 
@@ -345,9 +309,7 @@ namespace StormByte::Buffer {
 			 * @param out Destination buffer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Peek(const std::size_t& count, DataType& out) const noexcept override {
-				return m_buffer->Peek(count, out);
-			}
+			bool Peek(const std::size_t& count, DataType& out) const noexcept override;
 
 			/**
 			 * @brief Peek bytes into a @ref WriteOnly without advancing the read position.
@@ -355,9 +317,7 @@ namespace StormByte::Buffer {
 			 * @param out Destination writer.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			inline bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override {
-				return m_buffer->Peek(count, out);
-			}
+			bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override;
 
 			/** @} */
 

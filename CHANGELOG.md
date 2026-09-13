@@ -37,6 +37,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+- Moved virtual override definitions and destructors to compiled translation units so shared-library builds export stable vtables, RTTI and non-virtual thunks for GCC consumers, with polymorphic consumer coverage in each owning class test.
 - Closed `Sink` and marked hoppers `Eof` atomically under `m_mutex` in `Sink::Eof` and checked closed state and `consumer.m_consumer` under lock in `Sink::Bind` to prevent concurrent `Bind` calls from creating un-marked hoppers or skipping consumer `Notify`.
 - Marked `Sink` closed in destructor to safely unblock threads waiting in `Push` and `Pop`.
 

@@ -23,6 +23,7 @@
 #include <iomanip>
 #include <cctype>
 using namespace StormByte::Buffer;
+SharedFIFO::~SharedFIFO() noexcept = default;
 // ---------------------------------------------------------------------------
 // Assignment
 // ---------------------------------------------------------------------------
@@ -51,6 +52,17 @@ bool SharedFIFO::operator==(const SharedFIFO& other) const noexcept {
 std::size_t SharedFIFO::AvailableBytes() const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return FIFO::AvailableBytes();
+}
+const DataType& SharedFIFO::Data() const noexcept {
+	return m_buffer;
+}
+bool SharedFIFO::IsReadable() const noexcept {
+	std::scoped_lock lock(m_mutex);
+	return FIFO::IsReadable();
+}
+bool SharedFIFO::IsWritable() const noexcept {
+	std::scoped_lock lock(m_mutex);
+	return FIFO::IsWritable();
 }
 void SharedFIFO::Clean() noexcept {
 	std::scoped_lock lock(m_mutex);

@@ -181,7 +181,7 @@ namespace StormByte::Buffer {
 			ReadOnly(ReadOnly&&) noexcept = default;
 
 			/** @brief Virtual destructor. */
-			virtual ~ReadOnly() noexcept = default;
+			virtual ~ReadOnly() noexcept;
 
 			/** @brief Copy assign. */
 			ReadOnly& operator=(const ReadOnly&) = default;
@@ -437,7 +437,7 @@ namespace StormByte::Buffer {
 			WriteOnly(WriteOnly&&) noexcept = default;
 
 			/** @brief Virtual destructor. */
-			virtual ~WriteOnly() noexcept = default;
+			virtual ~WriteOnly() noexcept;
 
 			/** @brief Copy assign. */
 			WriteOnly& operator=(const WriteOnly&) = default;
@@ -791,7 +791,7 @@ namespace StormByte::Buffer {
 			ReadWrite(ReadWrite&& other) noexcept = default;
 
 			/** @brief Virtual destructor. */
-			virtual ~ReadWrite() noexcept = default;
+			virtual ~ReadWrite() noexcept;
 
 			/** @brief Copy assign. */
 			ReadWrite& operator=(const ReadWrite& other) = default;

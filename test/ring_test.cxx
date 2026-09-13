@@ -33,6 +33,9 @@
 using StormByte::Buffer::Ring;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::DataType;
+using StormByte::Buffer::ReadOnly;
+using StormByte::Buffer::ReadWrite;
+using StormByte::Buffer::WriteOnly;
 
 static std::string ToString(const DataType& v) {
 	return StormByte::String::FromByteVector(v);
@@ -726,6 +729,32 @@ int test_ring_burst_then_drain() {
 	ASSERT_EQUAL("10 000 bytes", total.load(), 10000u);
 	RETURN_TEST("test_ring_burst_then_drain", 0);
 }
+int test_ring_polymorphic_interface_abi() {
+	std::unique_ptr<ReadWrite> ring = std::make_unique<Ring>();
+	ReadOnly& reader = *ring;
+	WriteOnly& writer = *ring;
+	DataType data {std::byte{'A'}, std::byte{'B'}};
+	ASSERT_TRUE("write", writer.Write(0, std::move(data)));
+	ASSERT_TRUE("writable", writer.IsWritable());
+	ASSERT_EQUAL("available", reader.AvailableBytes(), static_cast<std::size_t>(2));
+	ASSERT_FALSE("empty", reader.Empty());
+	ASSERT_TRUE("readable", reader.IsReadable());
+	DataType peek;
+	ASSERT_TRUE("peek", reader.Peek(1, peek));
+	DataType read;
+	ASSERT_TRUE("read", reader.Read(1, read));
+	reader.Seek(0, Position::Absolute);
+	ASSERT_TRUE("drop", reader.Drop(1));
+	reader.Clean();
+	reader.Clear();
+	writer.Close();
+	ASSERT_TRUE("eof after close", reader.EoF());
+	DataType until_eof;
+	reader.ReadUntilEoF(until_eof);
+	reader.ExtractUntilEoF(until_eof);
+	ring.reset();
+	RETURN_TEST("test_ring_polymorphic_interface_abi", 0);
+}
 
 int main() {
 	int result = 0;
@@ -765,6 +794,7 @@ int main() {
 	result += test_ring_partial_read_on_closed();
 	result += test_ring_available_bytes_consistency();
 	result += test_ring_burst_then_drain();
+	result += test_ring_polymorphic_interface_abi();
 
 	if (result == 0)
 		std::cout << "All Ring tests passed!\n";

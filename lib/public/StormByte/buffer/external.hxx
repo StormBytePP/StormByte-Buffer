@@ -61,7 +61,7 @@ namespace StormByte::Buffer {
 			ExternalReader() noexcept = default;
 			ExternalReader(const ExternalReader&) = default;
 			ExternalReader(ExternalReader&&) noexcept = default;
-			~ExternalReader() noexcept override = default;
+			~ExternalReader() noexcept override;
 
 			ExternalReader& operator=(const ExternalReader&) = default;
 			ExternalReader& operator=(ExternalReader&&) noexcept = default;
@@ -172,17 +172,14 @@ namespace StormByte::Buffer {
 			 * @note Default implementation is a no-op. Concrete adapters that
 			 *       support seeking should override it.
 			 */
-			virtual void Seek(std::ptrdiff_t offset, Position mode) const noexcept {
-				(void)offset;
-				(void)mode;
-			}
+			virtual void Seek(std::ptrdiff_t offset, Position mode) const noexcept;
 
 			/**
 			 * @brief Discard already-consumed data (from start up to the current
 			 *        read position).
 			 * @note Default implementation is a no-op.
 			 */
-			virtual void Clean() noexcept {}
+			virtual void Clean() noexcept;
 
 			/** @} */
 	};
@@ -212,7 +209,7 @@ namespace StormByte::Buffer {
 
 			ExternalBufferReader(const ExternalBufferReader&) = default;
 			ExternalBufferReader(ExternalBufferReader&&) noexcept = default;
-			~ExternalBufferReader() noexcept override = default;
+			~ExternalBufferReader() noexcept override;
 
 			ExternalBufferReader& operator=(const ExternalBufferReader&) = default;
 			ExternalBufferReader& operator=(ExternalBufferReader&&) noexcept = default;
@@ -228,17 +225,13 @@ namespace StormByte::Buffer {
 			 * @brief Polymorphic copy.
 			 * @return New adapter referring to the same @ref ReadOnly.
 			 */
-			PointerType Clone() const noexcept override {
-				return MakePointer<ExternalBufferReader>(*this);
-			}
+			PointerType Clone() const noexcept override;
 
 			/**
 			 * @brief Polymorphic move.
 			 * @return New adapter taking over this instance’s reference.
 			 */
-			PointerType Move() noexcept override {
-				return MakePointer<ExternalBufferReader>(std::move(*this));
-			}
+			PointerType Move() noexcept override;
 
 			/** @} */
 
@@ -297,7 +290,7 @@ namespace StormByte::Buffer {
 			ExternalWriter() noexcept = default;
 			ExternalWriter(const ExternalWriter&) = default;
 			ExternalWriter(ExternalWriter&&) noexcept = default;
-			~ExternalWriter() noexcept override = default;
+			~ExternalWriter() noexcept override;
 
 			ExternalWriter& operator=(const ExternalWriter&) = default;
 			ExternalWriter& operator=(ExternalWriter&&) noexcept = default;
@@ -448,7 +441,7 @@ namespace StormByte::Buffer {
 
 			ExternalBufferWriter(const ExternalBufferWriter&) = default;
 			ExternalBufferWriter(ExternalBufferWriter&&) noexcept = default;
-			~ExternalBufferWriter() noexcept override = default;
+			~ExternalBufferWriter() noexcept override;
 
 			ExternalBufferWriter& operator=(const ExternalBufferWriter&) = default;
 			ExternalBufferWriter& operator=(ExternalBufferWriter&&) noexcept = default;
@@ -464,17 +457,13 @@ namespace StormByte::Buffer {
 			 * @brief Polymorphic copy.
 			 * @return New adapter referring to the same @ref WriteOnly.
 			 */
-			PointerType Clone() const noexcept override {
-				return MakePointer<ExternalBufferWriter>(*this);
-			}
+			PointerType Clone() const noexcept override;
 
 			/**
 			 * @brief Polymorphic move.
 			 * @return New adapter taking over this instance’s reference.
 			 */
-			PointerType Move() noexcept override {
-				return MakePointer<ExternalBufferWriter>(std::move(*this));
-			}
+			PointerType Move() noexcept override;
 
 			/** @} */
 
