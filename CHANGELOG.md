@@ -20,6 +20,10 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.0...HEAD
+
+## [1.1.0] - 2026-09-13
+
 ### Added
 
 - `Hopper<T>` — single-producer single-consumer (SPSC) queue of typed items (`MoveConstructible`) with capacity ceiling, `Eof` signaling, and condition-variable consumer notification.
@@ -33,7 +37,7 @@ If you landed here from a release link and have not read the tree:
 
 - Prevented race condition in `Sink::Eof` where concurrent `Bind` calls could create hoppers after `Eof` signaling without receiving `Eof`.
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.0.0...HEAD
+[1.1.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.1.0
 
 ## [1.0.0] - 2026-09-05
 
