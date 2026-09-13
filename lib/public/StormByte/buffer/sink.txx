@@ -87,11 +87,14 @@ namespace StormByte::Buffer {
 			 * @brief Closes the Sink and marks all hoppers Eof.
 			 */
 			void Eof() noexcept {
-				m_closed.store(true, std::memory_order_release);
-				const auto hoppers = Order();
-				for (auto& hopper : hoppers)
-					hopper->Eof();
-				m_wired.notify_all();
+				{
+					std::lock_guard<std::mutex> lock(m_mutex);
+					m_closed.store(true, std::memory_order_release);
+					const auto hoppers = m_order;
+					for (auto& hopper : hoppers)
+						hopper->Eof();
+					m_wired.notify_all();
+				}
 				if (auto* cv = m_consumer.load(std::memory_order_acquire); cv)
 					cv->notify_all();
 			}
