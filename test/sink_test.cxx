@@ -309,6 +309,48 @@ int test_sink_destructor_unblocks_waiters() {
 }
 
 /**
+ * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Eof().
+ * @return 0 on success.
+ */
+int test_sink_concurrent_bind_and_notify() {
+	Sink<int> producer;
+	Sink<int> consumer;
+
+	std::condition_variable cv;
+	std::mutex m;
+	std::atomic<bool> stop_binding{false};
+	std::atomic<int> max_key{200};
+
+	std::thread bind_thread([&]() {
+		int key = 200;
+		while (!stop_binding.load(std::memory_order_acquire)) {
+			producer.Bind(key, consumer);
+			max_key.store(key, std::memory_order_release);
+			++key;
+			std::this_thread::yield();
+		}
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	consumer.Notify(cv);
+	producer.Eof();
+	stop_binding.store(true, std::memory_order_release);
+	bind_thread.join();
+
+	std::atomic<bool> woken{false};
+	std::thread wait_thread([&]() {
+		std::unique_lock<std::mutex> lock(m);
+		cv.wait(lock, [&]() { return consumer.Ready(); });
+		woken.store(true, std::memory_order_release);
+	});
+
+	wait_thread.join();
+	ASSERT_TRUE("test_sink_concurrent_bind_and_notify woken by ready eof", woken.load(std::memory_order_acquire));
+
+	RETURN_TEST("test_sink_concurrent_bind_and_notify", 0);
+}
+
+/**
  * @brief Main entry point for Sink tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -324,6 +366,7 @@ int main() {
 	failed += test_sink_notify_condition_variable();
 	failed += test_sink_concurrent_bind_and_eof();
 	failed += test_sink_destructor_unblocks_waiters();
+	failed += test_sink_concurrent_bind_and_notify();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;
