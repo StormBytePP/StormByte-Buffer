@@ -11,7 +11,7 @@ StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
 It depends on StormByte Base and optionally StormByte Logger. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
-Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Bridge and Pipeline.
+Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge and Pipeline.
 
 If you landed here from a release link and have not read the tree:
 
