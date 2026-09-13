@@ -25,4 +25,12 @@ if(ENABLE_TEST)
 	add_executable(SharedFIFOTests shared_fifo_test.cxx)
 	target_link_libraries(SharedFIFOTests StormByte-Buffer)
 	add_test(NAME SharedFIFOTests COMMAND SharedFIFOTests)
+
+	add_executable(HopperTests hopper_test.cxx)
+	target_link_libraries(HopperTests StormByte-Buffer)
+	add_test(NAME HopperTests COMMAND HopperTests)
+
+	add_executable(SinkTests sink_test.cxx)
+	target_link_libraries(SinkTests StormByte-Buffer)
+	add_test(NAME SinkTests COMMAND SinkTests)
 endif()

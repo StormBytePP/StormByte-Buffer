@@ -7,7 +7,7 @@
 [![CI](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-StormBytePP-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/StormBytePP)
 
-This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer and pipelines for the StormByte C++ suite.
+This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink and pipelines for the StormByte C++ suite.
 
 It depends on [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0) (or newer) and optionally [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (or newer) for pipeline stages. Public headers live under `StormByte/buffer/`.
 
@@ -19,6 +19,8 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 - **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
 - **Ring** — concurrent ring (`shared_mutex`, many-to-many).
 - **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
+- **Hopper** — single-producer single-consumer (SPSC) queue of typed items with optional capacity ceiling and condition-variable notifications.
+- **Sink** — map of integer keys to Hopper buckets supporting Round-Robin or custom selection and terminal producer drain mode.
 - **Bridge** — chunked passthrough from `ExternalReader` to `ExternalWriter`.
 - **Pipeline** — stages chained with `ExecutionMode`: `Sync`, `Async`, `Parallel` (combinable).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
