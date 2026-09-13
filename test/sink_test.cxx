@@ -269,6 +269,43 @@ int test_sink_concurrent_bind_and_eof() {
 }
 
 /**
+ * @brief Tests that destroying a Sink unblocks threads waiting in Push and Pop.
+ * @return 0 on success.
+ */
+int test_sink_destructor_unblocks_waiters() {
+	auto producer = std::make_unique<Sink<int>>();
+	auto consumer = std::make_unique<Sink<int>>();
+
+	std::atomic<bool> push_done{false};
+	std::atomic<bool> pop_done{false};
+
+	std::thread push_thread([&]() {
+		producer->Push(10, 100);
+		push_done.store(true, std::memory_order_release);
+	});
+
+	std::thread pop_thread([&]() {
+		(void)consumer->Pop();
+		pop_done.store(true, std::memory_order_release);
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	ASSERT_FALSE("test_sink_destructor_unblocks_waiters push blocked", push_done.load(std::memory_order_acquire));
+	ASSERT_FALSE("test_sink_destructor_unblocks_waiters pop blocked", pop_done.load(std::memory_order_acquire));
+
+	producer.reset();
+	consumer.reset();
+
+	push_thread.join();
+	pop_thread.join();
+
+	ASSERT_TRUE("test_sink_destructor_unblocks_waiters push completed on dtor", push_done.load(std::memory_order_acquire));
+	ASSERT_TRUE("test_sink_destructor_unblocks_waiters pop completed on dtor", pop_done.load(std::memory_order_acquire));
+
+	RETURN_TEST("test_sink_destructor_unblocks_waiters", 0);
+}
+
+/**
  * @brief Main entry point for Sink tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -283,6 +320,7 @@ int main() {
 	failed += test_sink_push_waiting_for_bind();
 	failed += test_sink_notify_condition_variable();
 	failed += test_sink_concurrent_bind_and_eof();
+	failed += test_sink_destructor_unblocks_waiters();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;

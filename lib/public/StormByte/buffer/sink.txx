@@ -50,9 +50,10 @@ namespace StormByte::Buffer {
 			: m_rr(0), m_consumer(nullptr), m_closed(false), m_drain(false) {}
 
 			/**
-			 * @brief Destructor. Wakes any waiting threads on m_wired.
+			 * @brief Destructor. Marks Sink closed and wakes any waiting threads on m_wired.
 			 */
 			~Implementation() noexcept {
+				m_closed.store(true, std::memory_order_release);
 				m_wired.notify_all();
 			}
 
