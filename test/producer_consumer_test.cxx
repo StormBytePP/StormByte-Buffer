@@ -34,6 +34,9 @@
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
 using StormByte::Buffer::Position;
+using StormByte::Buffer::DataType;
+using StormByte::Buffer::ReadOnly;
+using StormByte::Buffer::WriteOnly;
 
 int test_producer_consumer_basic_write_read() {
 	Producer producer;
@@ -1296,6 +1299,33 @@ int test_empty_read_failure() {
 
 	RETURN_TEST("test_empty_read_failure", 0);
 }
+int test_producer_consumer_polymorphic_interface_abi() {
+	std::unique_ptr<WriteOnly> producer = std::make_unique<Producer>();
+	Producer& concrete_producer = static_cast<Producer&>(*producer);
+	std::unique_ptr<ReadOnly> consumer = std::make_unique<Consumer>(concrete_producer.Consumer());
+	DataType data {std::byte{'A'}, std::byte{'B'}};
+	ASSERT_TRUE("write", producer->Write(0, std::move(data)));
+	ASSERT_TRUE("writable", producer->IsWritable());
+	ASSERT_EQUAL("available", consumer->AvailableBytes(), static_cast<std::size_t>(2));
+	ASSERT_FALSE("empty", consumer->Empty());
+	ASSERT_TRUE("readable", consumer->IsReadable());
+	DataType peek;
+	ASSERT_TRUE("peek", consumer->Peek(1, peek));
+	DataType read;
+	ASSERT_TRUE("read", consumer->Read(1, read));
+	consumer->Seek(0, Position::Absolute);
+	ASSERT_TRUE("drop", consumer->Drop(1));
+	consumer->Clean();
+	consumer->Clear();
+	producer->Close();
+	ASSERT_TRUE("eof after close", consumer->EoF());
+	DataType until_eof;
+	consumer->ReadUntilEoF(until_eof);
+	consumer->ExtractUntilEoF(until_eof);
+	consumer.reset();
+	producer.reset();
+	RETURN_TEST("test_producer_consumer_polymorphic_interface_abi", 0);
+}
 
 int main() {
 	int result = 0;
@@ -1345,6 +1375,7 @@ int main() {
 	result += test_consumer_peek_basic();
 	result += test_consumer_peek_blocking();
 	result += test_empty_read_failure();
+	result += test_producer_consumer_polymorphic_interface_abi();
 
 	if (result == 0) {
 		std::cout << "All Producer/Consumer tests passed!" << std::endl;

@@ -10,6 +10,10 @@ if(ENABLE_TEST)
 	target_link_libraries(FIFOTests StormByte-Buffer)
 	add_test(NAME FIFOTests COMMAND FIFOTests)
 
+	add_executable(ExternalTests external_test.cxx)
+	target_link_libraries(ExternalTests StormByte-Buffer)
+	add_test(NAME ExternalTests COMMAND ExternalTests)
+
 	add_executable(PipelineTests pipeline_test.cxx)
 	target_link_libraries(PipelineTests StormByte-Buffer)
 	add_test(NAME PipelineTests COMMAND PipelineTests)

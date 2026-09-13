@@ -134,7 +134,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Virtual destructor.
 			 */
-			virtual ~FIFO() noexcept = default;
+			virtual ~FIFO() noexcept;
 
 			/**
 			 * @brief Copy assign, preserving buffer contents and state.
@@ -190,18 +190,13 @@ namespace StormByte::Buffer {
 			 * @return Unread byte count.
 			 * @see Size(), Read(), Extract(), Seek()
 			 */
-			inline virtual std::size_t AvailableBytes() const noexcept {
-				const std::size_t current_size = m_buffer.size();
-				return (m_position_offset <= current_size) ? (current_size - m_position_offset) : 0;
-			}
+			virtual std::size_t AvailableBytes() const noexcept;
 
 			/**
 			 * @brief Access the internal storage.
 			 * @return Constant reference to the owned @ref DataType.
 			 */
-			inline virtual const DataType& Data() const noexcept override {
-				return m_buffer;
-			}
+			virtual const DataType& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty.
@@ -210,46 +205,32 @@ namespace StormByte::Buffer {
 			 *       @ref AvailableBytes() is zero.
 			 * @see Size(), AvailableBytes()
 			 */
-			inline virtual bool Empty() const noexcept override {
-				return m_buffer.empty();
-			}
+			virtual bool Empty() const noexcept override;
 
 			/**
 			 * @brief End-of-stream condition.
 			 * @return @c true if in error, or closed with no remaining unread bytes.
 			 */
-			inline virtual bool EoF() const noexcept override {
-				const std::size_t avail =
-					(m_position_offset <= m_buffer.size())
-						? (m_buffer.size() - m_position_offset)
-						: 0;
-				return m_error || (m_closed && avail == 0);
-			}
+			virtual bool EoF() const noexcept override;
 
 			/**
 			 * @brief Whether the buffer can be read.
 			 * @return @c false in permanent error state.
 			 */
-			inline virtual bool IsReadable() const noexcept override {
-				return !m_error;
-			}
+			virtual bool IsReadable() const noexcept override;
 
 			/**
 			 * @brief Whether the buffer accepts writes.
 			 * @return @c false if closed or in error.
 			 */
-			inline virtual bool IsWritable() const noexcept override {
-				return !m_closed && !m_error;
-			}
+			virtual bool IsWritable() const noexcept override;
 
 			/**
 			 * @brief Total number of bytes stored (including already-read prefix).
 			 * @return Size of the internal buffer.
 			 * @see Empty(), AvailableBytes()
 			 */
-			inline virtual std::size_t Size() const noexcept override {
-				return m_buffer.size();
-			}
+			virtual std::size_t Size() const noexcept override;
 
 			/** @} */
 
@@ -268,19 +249,14 @@ namespace StormByte::Buffer {
 			 * @details Does **not** clear the closed / error flags.
 			 * @see Size(), Empty()
 			 */
-			inline virtual void Clear() noexcept override {
-				m_buffer.clear();
-				m_position_offset = 0;
-			}
+			virtual void Clear() noexcept override;
 
 			/**
 			 * @brief Mark the buffer closed for further writes.
 			 * @details Subsequent @c Write() calls fail. Readers may still drain
 			 *          remaining data until @ref AvailableBytes() is zero.
 			 */
-			inline void Close() noexcept override {
-				m_closed = true;
-			}
+			void Close() noexcept override;
 
 			/**
 			 * @brief Discard @p count unread bytes and advance the read position.
@@ -301,9 +277,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Enter permanent error state (unreadable and unwritable).
 			 */
-			inline void SetError() noexcept override {
-				m_error = true;
-			}
+			void SetError() noexcept override;
 
 			/** @} */
 
@@ -318,9 +292,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination (filled / resized as needed).
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Extract(const std::size_t& count, DataType& outBuffer) noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Extract);
-			}
+			bool Extract(const std::size_t& count, DataType& outBuffer) noexcept override;
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly.
@@ -328,9 +300,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Extract);
-			}
+			bool Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Extract overloads into scope. */
 			using ReadOnly::Extract;
@@ -339,17 +309,13 @@ namespace StormByte::Buffer {
 			 * @brief Extract all remaining bytes until EoF into a @ref DataType.
 			 * @param outBuffer Destination buffer.
 			 */
-			inline void ExtractUntilEoF(DataType& outBuffer) noexcept override {
-				ReadUntilEoFInternal(outBuffer, Operation::Extract);
-			}
+			void ExtractUntilEoF(DataType& outBuffer) noexcept override;
 
 			/**
 			 * @brief Extract all remaining bytes until EoF into a @ref WriteOnly.
 			 * @param outBuffer Destination writer.
 			 */
-			inline void ExtractUntilEoF(WriteOnly& outBuffer) noexcept override {
-				ReadUntilEoFInternal(outBuffer, Operation::Extract);
-			}
+			void ExtractUntilEoF(WriteOnly& outBuffer) noexcept override;
 
 			/** @} */
 
@@ -364,9 +330,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Read(const std::size_t& count, DataType& outBuffer) const noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
-			}
+			bool Read(const std::size_t& count, DataType& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly (advances position).
@@ -374,9 +338,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
-			}
+			bool Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Read overloads into scope. */
 			using ReadOnly::Read;
@@ -385,17 +347,13 @@ namespace StormByte::Buffer {
 			 * @brief Read all remaining bytes until EoF into a @ref DataType.
 			 * @param outBuffer Destination buffer.
 			 */
-			inline void ReadUntilEoF(DataType& outBuffer) const noexcept override {
-				const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
-			}
+			void ReadUntilEoF(DataType& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Read all remaining bytes until EoF into a @ref WriteOnly.
 			 * @param outBuffer Destination writer.
 			 */
-			inline void ReadUntilEoF(WriteOnly& outBuffer) const noexcept override {
-				const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
-			}
+			void ReadUntilEoF(WriteOnly& outBuffer) const noexcept override;
 
 			/** @} */
 
@@ -410,9 +368,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Peek(const std::size_t& count, DataType& outBuffer) const noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
-			}
+			bool Peek(const std::size_t& count, DataType& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
@@ -420,9 +376,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			inline bool Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override {
-				return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
-			}
+			bool Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @} */
 
@@ -454,9 +408,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, const DataType& data) noexcept override {
-				return WriteInternal(count, data);
-			}
+			bool Write(const std::size_t& count, const DataType& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref DataType (move).
@@ -464,9 +416,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, DataType&& data) noexcept override {
-				return WriteInternal(count, std::move(data));
-			}
+			bool Write(const std::size_t& count, DataType&& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (copy).
@@ -474,9 +424,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, const ReadOnly& data) noexcept override {
-				return WriteInternal(count, data);
-			}
+			bool Write(const std::size_t& count, const ReadOnly& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (move / extract path).
@@ -484,9 +432,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, ReadOnly&& data) noexcept override {
-				return WriteInternal(count, std::move(data));
-			}
+			bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
 
 			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
 			using WriteOnly::Write;
@@ -494,6 +440,13 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		protected:
+			/**
+			 * @brief Return unread bytes without virtual dispatch.
+			 * @return Number of bytes from the current read position.
+			 * @note Callers that synchronize derived state must hold their own lock.
+			 */
+			std::size_t AvailableBytesInternal() const noexcept;
+
 			DataType m_buffer;							///< Owned contiguous byte storage
 			mutable std::size_t m_position_offset {0};	///< Logical read offset from start of m_buffer
 			bool m_closed {false};						///< Once true, further writes fail

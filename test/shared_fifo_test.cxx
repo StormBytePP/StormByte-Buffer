@@ -29,6 +29,10 @@
 using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::DataType;
+using StormByte::Buffer::ReadOnly;
+using StormByte::Buffer::ReadWrite;
+using StormByte::Buffer::WriteOnly;
 static std::string toString(const std::vector<std::byte>& v) {
 	return StormByte::String::FromByteVector(v);
 }
@@ -664,6 +668,32 @@ int test_hexdump3() {
 	ASSERT_EQUAL("test_shared_hexdump_mixed exact match", expected, dump);
 	RETURN_TEST(fn_name.c_str(), 0);
 }
+int test_shared_fifo_polymorphic_interface_abi() {
+	std::unique_ptr<ReadWrite> fifo = std::make_unique<SharedFIFO>();
+	ReadOnly& reader = *fifo;
+	WriteOnly& writer = *fifo;
+	DataType data {std::byte{'A'}, std::byte{'B'}};
+	ASSERT_TRUE("write", writer.Write(0, std::move(data)));
+	ASSERT_TRUE("writable", writer.IsWritable());
+	ASSERT_EQUAL("available", reader.AvailableBytes(), static_cast<std::size_t>(2));
+	ASSERT_FALSE("empty", reader.Empty());
+	ASSERT_TRUE("readable", reader.IsReadable());
+	DataType peek;
+	ASSERT_TRUE("peek", reader.Peek(1, peek));
+	DataType read;
+	ASSERT_TRUE("read", reader.Read(1, read));
+	reader.Seek(0, Position::Absolute);
+	ASSERT_TRUE("drop", reader.Drop(1));
+	reader.Clean();
+	writer.SetError();
+	ASSERT_TRUE("eof after error", reader.EoF());
+	reader.Clear();
+	DataType until_eof;
+	reader.ReadUntilEoF(until_eof);
+	reader.ExtractUntilEoF(until_eof);
+	fifo.reset();
+	RETURN_TEST("test_shared_fifo_polymorphic_interface_abi", 0);
+}
 int main() {
 	int result = 0;
 	result += test_shared_fifo_producer_consumer_blocking();
@@ -694,6 +724,7 @@ int main() {
 	result += test_hexdump1();
 	result += test_hexdump2();
 	result += test_hexdump3();
+	result += test_shared_fifo_polymorphic_interface_abi();
 	if (result == 0) {
 		std::cout << "SharedFIFO tests passed!" << std::endl;
 	} else {

@@ -77,7 +77,7 @@ namespace StormByte::Buffer {
 			inline Producer(Producer&& other) noexcept : m_buffer(std::move(other.m_buffer)) {}
 
 			/** @brief Destructor. */
-			~Producer() noexcept = default;
+			~Producer() noexcept override;
 
 			/**
 			 * @brief Copy assignment (shares the same Ring afterwards).
@@ -136,25 +136,19 @@ namespace StormByte::Buffer {
 			 * @details Subsequent writes fail; readers may still drain data.
 			 *          Waiters on the Ring are notified.
 			 */
-			inline void Close() noexcept override {
-				m_buffer->Close();
-			}
+			void Close() noexcept override;
 
 			/**
 			 * @brief Put the shared Ring into a permanent error state.
 			 * @details Makes the buffer unreadable and unwritable; notifies waiters.
 			 */
-			inline void SetError() noexcept override {
-				m_buffer->SetError();
-			}
+			void SetError() noexcept override;
 
 			/**
 			 * @brief Whether the shared Ring still accepts writes.
 			 * @return @c false if closed or in error.
 			 */
-			inline bool IsWritable() const noexcept override {
-				return m_buffer->IsWritable();
-			}
+			bool IsWritable() const noexcept override;
 
 			/** @} */
 
@@ -169,9 +163,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, const DataType& data) noexcept override {
-				return m_buffer->Write(count, data);
-			}
+			bool Write(const std::size_t& count, const DataType& data) noexcept override;
 
 			/**
 			 * @brief Append an entire @ref DataType (copy).
@@ -188,9 +180,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, DataType&& data) noexcept override {
-				return m_buffer->Write(count, std::move(data));
-			}
+			bool Write(const std::size_t& count, DataType&& data) noexcept override;
 
 			/**
 			 * @brief Append an entire @ref DataType (move path).
@@ -207,9 +197,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, const ReadOnly& data) noexcept override {
-				return m_buffer->Write(count, data);
-			}
+			bool Write(const std::size_t& count, const ReadOnly& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (move / extract path).
@@ -217,9 +205,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			inline bool Write(const std::size_t& count, ReadOnly&& data) noexcept override {
-				return m_buffer->Write(count, std::move(data));
-			}
+			bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
 
 			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
 			using WriteOnly::Write;

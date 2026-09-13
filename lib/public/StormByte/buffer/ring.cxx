@@ -41,6 +41,7 @@ Ring::Ring(Ring&& other) noexcept {
 	other.m_closed = false;
 	other.m_error  = false;
 }
+Ring::~Ring() noexcept = default;
 Ring& Ring::operator=(Ring&& other) noexcept {
 	if (this != &other) {
 		std::unique_lock lock_this(m_mutex, std::defer_lock);

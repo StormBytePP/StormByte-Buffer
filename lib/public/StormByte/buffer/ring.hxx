@@ -138,7 +138,7 @@ namespace StormByte::Buffer {
 			Ring(Ring&& other) noexcept;
 
 			/** @brief Virtual destructor. */
-			virtual ~Ring() noexcept = default;
+			virtual ~Ring() noexcept;
 
 			/** @brief Copy assignment (deleted). */
 			Ring& operator=(const Ring&) = delete;

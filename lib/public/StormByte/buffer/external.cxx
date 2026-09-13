@@ -21,6 +21,27 @@
 #include <algorithm>
 #include <iterator>
 using namespace StormByte::Buffer;
+ExternalReader::~ExternalReader() noexcept = default;
+void ExternalReader::Seek(std::ptrdiff_t offset, Position mode) const noexcept {
+	(void)offset;
+	(void)mode;
+}
+void ExternalReader::Clean() noexcept {}
+ExternalBufferReader::~ExternalBufferReader() noexcept = default;
+ExternalReader::PointerType ExternalBufferReader::Clone() const noexcept {
+	return MakePointer<ExternalBufferReader>(*this);
+}
+ExternalReader::PointerType ExternalBufferReader::Move() noexcept {
+	return MakePointer<ExternalBufferReader>(std::move(*this));
+}
+ExternalWriter::~ExternalWriter() noexcept = default;
+ExternalBufferWriter::~ExternalBufferWriter() noexcept = default;
+ExternalWriter::PointerType ExternalBufferWriter::Clone() const noexcept {
+	return MakePointer<ExternalBufferWriter>(*this);
+}
+ExternalWriter::PointerType ExternalBufferWriter::Move() noexcept {
+	return MakePointer<ExternalBufferWriter>(std::move(*this));
+}
 // ---------------------------------------------------------------------------
 // ExternalBufferReader
 // ---------------------------------------------------------------------------

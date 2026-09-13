@@ -25,12 +25,6 @@
 #include <cstring>
 #include <iterator>
 using namespace StormByte::Buffer;
-namespace {
-	// Non-virtual helper usable while a derived class holds its mutex.
-	inline std::size_t available_bytes_impl(const DataType& buf, std::size_t pos) noexcept {
-		return (pos <= buf.size()) ? (buf.size() - pos) : 0;
-	}
-}
 FIFO::FIFO(const FIFO& other) noexcept
 	: Generic(other), ReadWrite(other),
 	m_buffer(other.m_buffer),
@@ -49,6 +43,7 @@ FIFO::FIFO(FIFO&& other) noexcept
 	other.m_closed = false;
 	other.m_error  = false;
 }
+FIFO::~FIFO() noexcept = default;
 FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
 		Generic::operator=(other);
@@ -72,6 +67,27 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	}
 	return *this;
 }
+std::size_t FIFO::AvailableBytes() const noexcept {
+	return AvailableBytesInternal();
+}
+const DataType& FIFO::Data() const noexcept {
+	return m_buffer;
+}
+bool FIFO::Empty() const noexcept {
+	return m_buffer.empty();
+}
+bool FIFO::EoF() const noexcept {
+	return m_error || (m_closed && AvailableBytesInternal() == 0);
+}
+bool FIFO::IsReadable() const noexcept {
+	return !m_error;
+}
+bool FIFO::IsWritable() const noexcept {
+	return !m_closed && !m_error;
+}
+std::size_t FIFO::Size() const noexcept {
+	return m_buffer.size();
+}
 void FIFO::Clean() noexcept {
 	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
 		const std::size_t remaining = m_buffer.size() - m_position_offset;
@@ -92,6 +108,13 @@ void FIFO::Clean() noexcept {
 		m_buffer.clear();
 	}
 	m_position_offset = 0;
+}
+void FIFO::Clear() noexcept {
+	m_buffer.clear();
+	m_position_offset = 0;
+}
+void FIFO::Close() noexcept {
+	m_closed = true;
 }
 bool FIFO::Drop(const std::size_t& count) noexcept {
 	const std::size_t avail =
@@ -125,6 +148,9 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 		default:
 			return;
 	}
+}
+void FIFO::SetError() noexcept {
+	m_error = true;
 }
 std::string FIFO::HexDump(const std::size_t& columns, const std::size_t& byte_limit) const noexcept {
 	const std::size_t cols = (columns == 0) ? 16 : columns;
@@ -180,10 +206,56 @@ std::ostringstream FIFO::HexDumpHeader() const noexcept {
 		<< " / " << (m_error ? "error" : "ok");
 	return oss;
 }
+std::size_t FIFO::AvailableBytesInternal() const noexcept {
+	const std::size_t current_size = m_buffer.size();
+	return (m_position_offset <= current_size) ? (current_size - m_position_offset) : 0;
+}
+bool FIFO::Extract(const std::size_t& count, DataType& outBuffer) noexcept {
+	return ReadInternal(count, outBuffer, Operation::Extract);
+}
+bool FIFO::Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept {
+	return ReadInternal(count, outBuffer, Operation::Extract);
+}
+void FIFO::ExtractUntilEoF(DataType& outBuffer) noexcept {
+	ReadUntilEoFInternal(outBuffer, Operation::Extract);
+}
+void FIFO::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
+	ReadUntilEoFInternal(outBuffer, Operation::Extract);
+}
+bool FIFO::Read(const std::size_t& count, DataType& outBuffer) const noexcept {
+	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
+}
+bool FIFO::Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
+	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
+}
+void FIFO::ReadUntilEoF(DataType& outBuffer) const noexcept {
+	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
+}
+void FIFO::ReadUntilEoF(WriteOnly& outBuffer) const noexcept {
+	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
+}
+bool FIFO::Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
+	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
+}
+bool FIFO::Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
+	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
+}
+bool FIFO::Write(const std::size_t& count, const DataType& data) noexcept {
+	return WriteInternal(count, data);
+}
+bool FIFO::Write(const std::size_t& count, DataType&& data) noexcept {
+	return WriteInternal(count, std::move(data));
+}
+bool FIFO::Write(const std::size_t& count, const ReadOnly& data) noexcept {
+	return WriteInternal(count, data);
+}
+bool FIFO::Write(const std::size_t& count, ReadOnly&& data) noexcept {
+	return WriteInternal(count, std::move(data));
+}
 bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
-	const std::size_t available_bytes = available_bytes_impl(m_buffer, m_position_offset);
+	const std::size_t available_bytes = AvailableBytesInternal();
 	const std::size_t real_count = count == 0 ? available_bytes : count;
 	if ((available_bytes == 0 && count == 0) || real_count > available_bytes)
 		return false;
@@ -217,7 +289,7 @@ bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Ope
 bool FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
-	const std::size_t available_bytes = available_bytes_impl(m_buffer, m_position_offset);
+	const std::size_t available_bytes = AvailableBytesInternal();
 	const std::size_t real_count = count == 0 ? available_bytes : count;
 	if ((count == 0 && available_bytes == 0) || real_count > available_bytes)
 		return false;

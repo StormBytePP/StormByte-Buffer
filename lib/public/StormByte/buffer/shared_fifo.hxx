@@ -150,7 +150,7 @@ namespace StormByte::Buffer {
 			SharedFIFO(SharedFIFO&&) = delete;
 
 			/** @brief Virtual destructor. */
-			virtual ~SharedFIFO() noexcept = default;
+			virtual ~SharedFIFO() noexcept;
 
 			/**
 			 * @brief Copy-assign from a plain @ref FIFO.
@@ -218,9 +218,7 @@ namespace StormByte::Buffer {
 			 * @warning Not safe under concurrent mutation without external exclusion.
 			 * @return Constant reference to the base @ref DataType.
 			 */
-			inline virtual const DataType& Data() const noexcept override {
-				return m_buffer;
-			}
+			virtual const DataType& Data() const noexcept override;
 
 			/**
 			 * @brief Whether the underlying storage is empty (thread-safe).
@@ -248,20 +246,14 @@ namespace StormByte::Buffer {
 			 * @return @c false in permanent error state.
 			 * @see SetError(), IsWritable(), AvailableBytes(), EoF()
 			 */
-			inline virtual bool IsReadable() const noexcept override {
-				std::scoped_lock lock(m_mutex);
-				return FIFO::IsReadable();
-			}
+			virtual bool IsReadable() const noexcept override;
 
 			/**
 			 * @brief Whether the buffer accepts writes (thread-safe).
 			 * @return @c false if closed or in error.
 			 * @see Close(), SetError(), IsReadable()
 			 */
-			inline virtual bool IsWritable() const noexcept override {
-				std::scoped_lock lock(m_mutex);
-				return FIFO::IsWritable();
-			}
+			virtual bool IsWritable() const noexcept override;
 
 			/**
 			 * @brief Total number of bytes stored (thread-safe).
