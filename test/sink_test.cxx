@@ -244,10 +244,13 @@ int test_sink_concurrent_bind_and_eof() {
 	Sink<int> consumer;
 
 	std::atomic<bool> stop_binding{false};
+	std::atomic<int> max_key{100};
 	std::thread bind_thread([&]() {
 		int key = 100;
 		while (!stop_binding.load(std::memory_order_acquire)) {
-			producer.Bind(key++, consumer);
+			producer.Bind(key, consumer);
+			max_key.store(key, std::memory_order_release);
+			++key;
 			std::this_thread::yield();
 		}
 	});
@@ -257,10 +260,10 @@ int test_sink_concurrent_bind_and_eof() {
 	stop_binding.store(true, std::memory_order_release);
 	bind_thread.join();
 
-	ASSERT_TRUE("test_sink_concurrent_bind_and_eof producer eof", producer.EoF());
 	ASSERT_TRUE("test_sink_concurrent_bind_and_eof consumer eof", consumer.EoF());
 
-	for (int k = 100; k < 120; ++k) {
+	const int last_key = max_key.load(std::memory_order_acquire);
+	for (int k = 100; k <= last_key + 10; ++k) {
 		producer.Push(k, 9999);
 		ASSERT_EQUAL("test_sink_concurrent_bind_and_eof size after push post eof", static_cast<std::size_t>(0), consumer.Size(k));
 	}

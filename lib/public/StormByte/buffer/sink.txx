@@ -106,9 +106,9 @@ namespace StormByte::Buffer {
 			 */
 			void Bind(Implementation& consumer) {
 				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
+				std::scoped_lock lock(m_mutex, consumer.m_mutex);
 				const bool closed = m_closed.load(std::memory_order_acquire)
 					|| consumer.m_closed.load(std::memory_order_acquire);
-				std::scoped_lock lock(m_mutex, consumer.m_mutex);
 				for (auto& [key, hopper] : m_buckets) {
 					if (closed)
 						hopper->Eof();
@@ -130,9 +130,9 @@ namespace StormByte::Buffer {
 			 */
 			void Bind(int key, Implementation& consumer) {
 				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
+				std::scoped_lock lock(m_mutex, consumer.m_mutex);
 				const bool closed = m_closed.load(std::memory_order_acquire)
 					|| consumer.m_closed.load(std::memory_order_acquire);
-				std::scoped_lock lock(m_mutex, consumer.m_mutex);
 				auto hopper = Ensure(key);
 				if (closed)
 					hopper->Eof();
