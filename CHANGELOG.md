@@ -26,17 +26,19 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `Hopper<T>` — single-producer single-consumer (SPSC) queue of typed items (`MoveConstructible`) with capacity ceiling, `Eof` signaling, and condition-variable consumer notification.
-- `Sink<T>` — integer key map of `Hopper<T>` buckets supporting `Bind` sharing, terminal producer `Drain` mode, and Round-Robin or custom `Select` popping.
+- `Hopper<T>` — single-producer single-consumer (SPSC) typed queue (`Type::MoveConstructible`) with optional capacity ceiling, non-blocking `Pop`, `Push` wait when full, `Eof` signaling, consumer condition variable notification (`Notify`), and automatic null item discarding for `Type::SmartPointer` types.
+- `Sink<T>` — integer key map of `Hopper<T>` buckets supporting `Bind` hopper sharing, terminal producer `Drain` mode, `Ready` check, Round-Robin or custom `Select` index chooser popping, and per-key `Capacity`, `Size`, and `Full` queries.
+- Header implementation files `hopper.txx` and `sink.txx` installed alongside public headers (`*.txx` in `cmake/install.cmake`).
 
 ### Changed
 
 - Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0)).
-- Documented `Sink::EoF()` contract: evaluates `true` when all hoppers are empty and `Hopper::EoF()` is `true` (or when closed with zero hoppers); subsequent `Bind` operations may reactivate non-EoF evaluation.
+- Documented `Sink::EoF()` contract: with hoppers, evaluates `true` when all hoppers are empty and `Hopper::EoF()` is `true`, even if this `Sink` itself did not call `Eof()`; binding a new key after `EoF()` returned `true` may return `EoF()` to `false`.
 
 ### Fixed
 
-- Prevented race condition in `Sink::Eof` where concurrent `Bind` calls could create hoppers after `Eof` signaling without receiving `Eof`.
+- Closed `Sink` and marked hoppers `Eof` atomically under `m_mutex` in `Sink::Eof` to prevent concurrent `Bind` calls from creating un-marked hoppers.
+- Marked `Sink` closed in destructor to safely unblock threads waiting in `Push` and `Pop`.
 
 [1.1.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.1.0
 
