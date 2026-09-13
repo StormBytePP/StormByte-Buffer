@@ -20,6 +20,11 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Added
+
+- `Hopper<T>` — single-producer single-consumer (SPSC) queue of typed items (`MoveConstructible`) with capacity ceiling, `Eof` signaling, and condition-variable consumer notification.
+- `Sink<T>` — integer key map of `Hopper<T>` buckets supporting `Bind` sharing, terminal producer `Drain` mode, and Round-Robin or custom `Select` popping.
+
 ### Changed
 
 - Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0)).
