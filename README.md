@@ -169,6 +169,12 @@ int main() {
 
 `Sink<T>` manages a collection of `Hopper<T>` buckets keyed by arbitrary integer identifiers (representing channels, tracks, sessions, etc.). Producers push items specifying a key. Consumers `Bind` to share hoppers under specific keys, or use `Drain()` on terminal producers so `Push` to un-bound keys drops items without waiting. `Pop()` retrieves items across buckets using Round-Robin or a custom `Select` index chooser callback.
 
+`Sink::EoF()` contract details:
+- **Zero hoppers:** `EoF()` is `true` only if this `Sink` was closed (via `Eof()` or destruction).
+- **With hoppers:** `EoF()` is `true` when all hoppers are empty and `Hopper::EoF()` is `true`, even if this `Sink` itself did not call `Eof()` (since `Bind` shares the hopper and the producer may close it from the other `Sink`).
+- **Dynamic Bind:** Binding a new key after `EoF()` returned `true` may cause `EoF()` to evaluate to `false` again if new work is attached.
+- **Meaning:** `EoF()` does not mean "this object called `Eof()`", but rather "no items remain and none can enter current buckets".
+
 ```cpp
 #include <StormByte/buffer/sink.hxx>
 #include <thread>

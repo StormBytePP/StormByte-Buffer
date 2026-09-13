@@ -32,6 +32,7 @@ If you landed here from a release link and have not read the tree:
 ### Changed
 
 - Updated dependency requirement to [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (and transitively [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0)).
+- Documented `Sink::EoF()` contract: evaluates `true` when all hoppers are empty and `Hopper::EoF()` is `true` (or when closed with zero hoppers); subsequent `Bind` operations may reactivate non-EoF evaluation.
 
 ### Fixed
 

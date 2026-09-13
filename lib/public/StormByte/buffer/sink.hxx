@@ -218,8 +218,17 @@ namespace StormByte::Buffer {
 			T Pop(const Select& select) noexcept;
 
 			/**
-			 * @brief Checks if the Sink is finished (closed and all hoppers drained).
-			 * @return true if closed and all hoppers empty+EoF, or closed with zero buckets.
+			 * @brief Checks if the Sink is finished.
+			 * @return true if no items remain and no new items can arrive in the current hoppers.
+			 *
+			 * Contract details for EoF():
+			 * - With zero hoppers: EoF() returns true only if this Sink is closed (via Eof() or destruction).
+			 * - With hoppers: EoF() returns true when all hoppers are empty and Hopper::EoF() is true,
+			 *   even if this Sink itself did not call Eof() (because Bind shares the Hopper and the producer
+			 *   closed it from the other Sink).
+			 * - Performing a Bind of a new key after EoF() returned true may cause EoF() to return false again
+			 *   if new work becomes available.
+			 * - EoF() does not mean "this object called Eof()", but "no items remain and none can enter current buckets".
 			 */
 			bool EoF() const noexcept;
 
