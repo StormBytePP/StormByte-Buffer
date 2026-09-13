@@ -9,7 +9,7 @@
 
 This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer and pipelines for the StormByte C++ suite.
 
-It depends on [StormByte Base](https://github.com/StormBytePP/StormByte) and optionally [StormByte Logger](https://github.com/StormBytePP/StormByte-Logger) for pipeline stages. Public headers live under `StormByte/buffer/`.
+It depends on [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0) (or newer) and optionally [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) (or newer) for pipeline stages. Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network and System are **other repositories**. This one does not implement them.
 
@@ -52,7 +52,7 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 
 ## Installation
 
-Needs a C++26 compiler, CMake 3.28 or newer, and [StormByte Base](https://github.com/StormBytePP/StormByte) ≥ 1.0.0.
+Needs a C++26 compiler, CMake 3.28 or newer, [StormByte Base 1.1.0](https://github.com/StormBytePP/StormByte/releases/tag/1.1.0) or newer, and optionally [StormByte Logger 1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) or newer.
 
 ```sh
 git clone --recursive https://github.com/StormBytePP/StormByte-Buffer.git
