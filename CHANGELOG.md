@@ -44,7 +44,7 @@ If you landed here from a release link and have not read the tree:
 - Closed `Sink` and marked hoppers `Eof` atomically under `m_mutex` in `Sink::Eof` and checked closed state and `consumer.m_consumer` under lock in `Sink::Bind` to prevent concurrent `Bind` calls from creating un-marked hoppers or skipping consumer `Notify`.
 - Marked `Sink` closed in destructor to safely unblock threads waiting in `Push` and `Pop`.
 
-[1.1.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.1.0
+[1.1.0]: https://github.com/StormBytePP/StormByte-Buffer/releases/tag/1.0.0..1.1.0
 
 ## [1.0.0] - 2026-09-05
 
