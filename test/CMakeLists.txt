@@ -14,6 +14,10 @@ if(ENABLE_TEST)
 	target_link_libraries(ExternalTests StormByte-Buffer)
 	add_test(NAME ExternalTests COMMAND ExternalTests)
 
+	add_executable(ExceptionTests exception_test.cxx)
+	target_link_libraries(ExceptionTests StormByte-Buffer)
+	add_test(NAME ExceptionTests COMMAND ExceptionTests)
+
 	add_executable(PipelineTests pipeline_test.cxx)
 	target_link_libraries(PipelineTests StormByte-Buffer)
 	add_test(NAME PipelineTests COMMAND PipelineTests)

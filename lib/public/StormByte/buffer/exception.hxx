@@ -22,6 +22,10 @@
 #include <StormByte/buffer/visibility.h>
 #include <StormByte/exception.hxx>
 
+#include <format>
+#include <string>
+#include <utility>
+
 /**
  * @namespace StormByte::Buffer
  * @brief Buffer module of the StormByte suite.
@@ -31,24 +35,47 @@ namespace StormByte::Buffer {
 	 * @class Exception
 	 * @brief Base exception type for the Buffer module.
 	 *
-	 * Prefixes the component name with @c "Buffer::" and forwards
-	 * a C++20 format string plus arguments to @ref StormByte::Exception.
+	 * Prefixes messages with @c "StormByte::Buffer" and forwards them to
+	 * @ref StormByte::Exception using @ref StormByte::Component.
 	 *
 	 * @see Error, ReadError, WriteError
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Exception: public StormByte::Exception {
 		public:
 			/**
-			 * @brief Construct a Buffer exception.
+			 * @brief Construct a Buffer exception from an unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit Exception(const std::string& message):
+				StormByte::Exception(StormByte::Component{"Buffer"}, "{}", message) {}
+
+			/**
+			 * @brief Construct a Buffer exception from a moved unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit Exception(std::string&& message):
+				StormByte::Exception(StormByte::Component{"Buffer"}, "{}", std::move(message)) {}
+
+			/**
+			 * @brief Construct a Buffer exception with an explicit component.
 			 * @tparam Args Format argument types.
-			 * @param component Logical sub-component name (e.g. @c "FIFO", @c "Ring").
-			 *                  Prefixed automatically with @c "Buffer::".
+			 * @param component Component name inserted after @c "StormByte::".
 			 * @param fmt C++20 format string.
 			 * @param args Format arguments.
 			 */
 			template <typename... Args>
-			Exception(const std::string& component, std::format_string<Args...> fmt, Args&&... args):
-			StormByte::Exception("Buffer::" + component, fmt, std::forward<Args>(args)...) {}
+			Exception(StormByte::Component component, std::format_string<Args...> fmt, Args&&... args):
+				StormByte::Exception(component, fmt, std::forward<Args>(args)...) {}
+
+			/**
+			 * @brief Construct a Buffer exception with a formatted message.
+			 * @tparam Args Format argument types.
+			 * @param fmt C++20 format string.
+			 * @param args Format arguments.
+			 */
+			template <typename... Args>
+			Exception(std::format_string<Args...> fmt, Args&&... args):
+				StormByte::Exception(StormByte::Component{"Buffer"}, fmt, std::forward<Args>(args)...) {}
 	};
 
 	/**
@@ -74,6 +101,20 @@ namespace StormByte::Buffer {
 	class STORMBYTE_BUFFER_PUBLIC ReadError: public Error {
 		public:
 			/**
+			 * @brief Construct a read error from an unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit ReadError(const std::string& message):
+				Error(StormByte::Component{"Buffer::ReadError"}, "{}", message) {}
+
+			/**
+			 * @brief Construct a read error from a moved unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit ReadError(std::string&& message):
+				Error(StormByte::Component{"Buffer::ReadError"}, "{}", std::move(message)) {}
+
+			/**
 			 * @brief Construct a read error with a format message.
 			 * @tparam Args Format argument types.
 			 * @param fmt C++20 format string.
@@ -81,7 +122,7 @@ namespace StormByte::Buffer {
 			 */
 			template <typename... Args>
 			ReadError(std::format_string<Args...> fmt, Args&&... args):
-			Error("Buffer::ReadError", fmt, std::forward<Args>(args)...) {}
+				Error(StormByte::Component{"Buffer::ReadError"}, fmt, std::forward<Args>(args)...) {}
 	};
 
 	/**
@@ -93,6 +134,20 @@ namespace StormByte::Buffer {
 	class STORMBYTE_BUFFER_PUBLIC WriteError: public Error {
 		public:
 			/**
+			 * @brief Construct a write error from an unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit WriteError(const std::string& message):
+				Error(StormByte::Component{"Buffer::WriteError"}, "{}", message) {}
+
+			/**
+			 * @brief Construct a write error from a moved unformatted message.
+			 * @param message Exception text.
+			 */
+			explicit WriteError(std::string&& message):
+				Error(StormByte::Component{"Buffer::WriteError"}, "{}", std::move(message)) {}
+
+			/**
 			 * @brief Construct a write error with a format message.
 			 * @tparam Args Format argument types.
 			 * @param fmt C++20 format string.
@@ -100,6 +155,6 @@ namespace StormByte::Buffer {
 			 */
 			template <typename... Args>
 			WriteError(std::format_string<Args...> fmt, Args&&... args):
-			Error("Buffer::WriteError", fmt, std::forward<Args>(args)...) {}
+				Error(StormByte::Component{"Buffer::WriteError"}, fmt, std::forward<Args>(args)...) {}
 	};
 }
