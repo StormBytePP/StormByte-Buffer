@@ -20,6 +20,7 @@
 #pragma once
 
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <condition_variable>
 #include <mutex>
@@ -99,10 +100,8 @@ namespace StormByte::Buffer {
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
 			 * @param r Source range (disabled when already @ref DataType).
 			 */
-			template<std::ranges::input_range R>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
-				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
-				(!std::same_as<std::remove_cvref_t<R>, DataType>)
+			template<StormByte::Type::ByteInputRange R>
+			requires (!StormByte::Type::SameAs<R, DataType>)
 			inline SharedFIFO(const R& r) noexcept : FIFO(r) {}
 
 			/**
@@ -110,9 +109,7 @@ namespace StormByte::Buffer {
 			 * @tparam Rr Range type.
 			 * @param r Source range (moved when @ref DataType).
 			 */
-			template<std::ranges::input_range Rr>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
-				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			template<StormByte::Type::ByteInputRange Rr>
 			inline SharedFIFO(Rr&& r) noexcept : FIFO(std::forward<Rr>(r)) {}
 
 			/**

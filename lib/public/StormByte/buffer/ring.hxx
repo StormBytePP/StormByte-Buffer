@@ -89,10 +89,8 @@ namespace StormByte::Buffer {
 			 * @tparam R Range whose value_type is convertible to @c std::byte.
 			 * @param r Source range (disabled when already @ref DataType).
 			 */
-			template<std::ranges::input_range R>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
-					requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
-					(!std::same_as<std::remove_cvref_t<R>, DataType>)
+			template<Type::ByteInputRange R>
+			requires (!Type::SameAs<R, DataType>)
 			inline explicit Ring(const R& r) noexcept {
 				auto converted = DataConvert(r);
 				m_buffer.assign(converted.begin(), converted.end());
@@ -103,9 +101,7 @@ namespace StormByte::Buffer {
 			 * @tparam Rr Range type.
 			 * @param r Source range.
 			 */
-			template<std::ranges::input_range Rr>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
-					requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Rr>
 			inline explicit Ring(Rr&& r) noexcept {
 				auto converted = DataConvert(std::forward<Rr>(r));
 				m_buffer.assign(std::make_move_iterator(converted.begin()),

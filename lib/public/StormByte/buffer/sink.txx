@@ -63,7 +63,7 @@ namespace StormByte::Buffer {
 			 * @param item Item to push.
 			 */
 			void Push(int key, T item) noexcept {
-				if constexpr (Type::SmartPointer<T>) {
+				if constexpr (Type::NullablePointer<T>) {
 					if (!item)
 						return;
 				}

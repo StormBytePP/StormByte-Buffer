@@ -32,6 +32,30 @@
 
 using StormByte::Buffer::Hopper;
 
+class NonNullableSmartPointer {
+	public:
+		NonNullableSmartPointer() noexcept = default;
+		explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
+		NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
+		NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
+		~NonNullableSmartPointer() noexcept = default;
+		NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
+		NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
+
+		int* get() noexcept { return &m_value; }
+		const int* get() const noexcept { return &m_value; }
+		int& operator*() noexcept { return m_value; }
+		const int& operator*() const noexcept { return m_value; }
+		int* operator->() noexcept { return &m_value; }
+		const int* operator->() const noexcept { return &m_value; }
+
+	private:
+		int m_value = 0;
+};
+
+static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
+static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
+
 /**
  * @brief Tests default construction of Hopper (unbounded capacity, empty, size 0).
  * @return 0 on success.
@@ -114,6 +138,22 @@ int test_hopper_smart_pointer_discard() {
 	ASSERT_EQUAL("test_hopper_smart_pointer_discard shared value", std::string("StormByte"), *popped_shared);
 
 	RETURN_TEST("test_hopper_smart_pointer_discard", 0);
+}
+
+/**
+ * @brief Tests smart pointer-like types without nullability are enqueued normally.
+ * @return 0 on success.
+ */
+int test_hopper_non_nullable_smart_pointer() {
+	Hopper<NonNullableSmartPointer> hopper;
+	hopper.Push(NonNullableSmartPointer(456));
+
+	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer size", static_cast<std::size_t>(1), hopper.Size());
+	auto popped = hopper.Pop();
+	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer value", 456, *popped);
+	ASSERT_TRUE("test_hopper_non_nullable_smart_pointer empty", hopper.Empty());
+
+	RETURN_TEST("test_hopper_non_nullable_smart_pointer", 0);
 }
 
 /**
@@ -285,6 +325,7 @@ int main() {
 	failed += test_hopper_bounded_constructor();
 	failed += test_hopper_dynamic_capacity();
 	failed += test_hopper_smart_pointer_discard();
+	failed += test_hopper_non_nullable_smart_pointer();
 	failed += test_hopper_value_types();
 	failed += test_hopper_push_blocking_and_pop_unblock();
 	failed += test_hopper_eof_behavior();

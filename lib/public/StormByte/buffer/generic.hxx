@@ -20,6 +20,7 @@
 #pragma once
 
 #include <StormByte/buffer/typedefs.hxx>
+#include <StormByte/type_traits.hxx>
 
 #include <algorithm>
 #include <iterator>
@@ -89,9 +90,7 @@ namespace StormByte::Buffer {
 			 * @param src Source range.
 			 * @return Converted byte vector.
 			 */
-			template<std::ranges::input_range Src>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
-				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Src>
 			static DataType DataConvert(const Src& src) noexcept {
 				DataType out;
 				if constexpr (requires { std::ranges::size(src); }) {
@@ -109,12 +108,9 @@ namespace StormByte::Buffer {
 			 * @param src Source range (may be moved from).
 			 * @return Converted or moved byte vector.
 			 */
-			template<std::ranges::input_range Src>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Src>>>) &&
-				requires(std::ranges::range_value_t<Src> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Src>
 			static DataType DataConvert(Src&& src) noexcept {
-				using Dec = std::remove_cvref_t<Src>;
-				if constexpr (std::same_as<Dec, DataType>) {
+				if constexpr (Type::SameAs<Src, DataType>) {
 					return std::move(src);
 				} else {
 					DataType out;
@@ -622,9 +618,7 @@ namespace StormByte::Buffer {
 			 * @param r Source range.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::ranges::input_range R>
-				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
-				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange R>
 			bool Write(const R& r) noexcept {
 				DataType tmp;
 				if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
@@ -643,9 +637,7 @@ namespace StormByte::Buffer {
 			 * @param r Source range.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::ranges::input_range Rw>
-				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rw>>>) &&
-				requires(std::ranges::range_value_t<Rw> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Rw>
 			bool Write(const std::size_t& count, const Rw& r) noexcept {
 				if (count == 0) return Write(r);
 				DataType tmp;
@@ -671,13 +663,10 @@ namespace StormByte::Buffer {
 			 * @param r Source range (moved when @ref DataType).
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::ranges::input_range Rrw>
-				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rrw>>>) &&
-				requires(std::ranges::range_value_t<Rrw> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Rrw>
 			bool Write(const std::size_t& count, Rrw&& r) noexcept {
-				using Dec = std::remove_cvref_t<Rrw>;
 				if (count == 0) return Write(std::forward<Rrw>(r));
-				if constexpr (std::same_as<Dec, DataType>) {
+				if constexpr (Type::SameAs<Rrw, DataType>) {
 					DataType tmp = std::move(r);
 					if (tmp.size() > count) tmp.resize(count);
 					return Write(static_cast<std::size_t>(tmp.size()), std::move(tmp));
@@ -705,12 +694,9 @@ namespace StormByte::Buffer {
 			 * @param r Source (moved when @ref DataType).
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::ranges::input_range Rr>
-				requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
-				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Rr>
 			bool Write(Rr&& r) noexcept {
-				using Dec = std::remove_cvref_t<Rr>;
-				if constexpr (std::same_as<Dec, DataType>) {
+				if constexpr (Type::SameAs<Rr, DataType>) {
 					return Write(static_cast<std::size_t>(r.size()), std::move(r));
 				} else {
 					DataType tmp;
@@ -732,9 +718,8 @@ namespace StormByte::Buffer {
 			 * @param last End sentinel.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::input_iterator I, std::sentinel_for<I> S>
-				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I>>>) &&
-				requires(std::iter_value_t<I> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputIterator I, typename S>
+				requires Type::SentinelFor<S, I>
 			bool Write(I first, S last) noexcept {
 				DataType tmp;
 				std::transform(first, last, std::back_inserter(tmp),
@@ -751,9 +736,8 @@ namespace StormByte::Buffer {
 			 * @param last End sentinel.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			template<std::input_iterator I2, std::sentinel_for<I2> S2>
-				requires (!std::is_class_v<std::remove_cv_t<std::iter_value_t<I2>>>) &&
-				requires(std::iter_value_t<I2> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputIterator I2, typename S2>
+				requires Type::SentinelFor<S2, I2>
 			bool Write(const std::size_t& count, I2 first, S2 last) noexcept {
 				if (count == 0) return Write(first, last);
 				DataType tmp;

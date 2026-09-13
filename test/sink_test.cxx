@@ -32,6 +32,30 @@
 
 using StormByte::Buffer::Sink;
 
+class NonNullableSmartPointer {
+	public:
+		NonNullableSmartPointer() noexcept = default;
+		explicit NonNullableSmartPointer(int value) noexcept : m_value(value) {}
+		NonNullableSmartPointer(const NonNullableSmartPointer&) noexcept = default;
+		NonNullableSmartPointer(NonNullableSmartPointer&&) noexcept = default;
+		~NonNullableSmartPointer() noexcept = default;
+		NonNullableSmartPointer& operator=(const NonNullableSmartPointer&) noexcept = default;
+		NonNullableSmartPointer& operator=(NonNullableSmartPointer&&) noexcept = default;
+
+		int* get() noexcept { return &m_value; }
+		const int* get() const noexcept { return &m_value; }
+		int& operator*() noexcept { return m_value; }
+		const int& operator*() const noexcept { return m_value; }
+		int* operator->() noexcept { return &m_value; }
+		const int* operator->() const noexcept { return &m_value; }
+
+	private:
+		int m_value = 0;
+};
+
+static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
+static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
+
 /**
  * @brief Tests default construction of Sink (zero buckets, EoF false, Ready false).
  * @return 0 on success.
@@ -79,6 +103,25 @@ int test_sink_bind_and_push_pop() {
 	ASSERT_TRUE("test_sink_bind_and_push_pop consumer eof", consumer.EoF());
 
 	RETURN_TEST("test_sink_bind_and_push_pop", 0);
+}
+
+/**
+ * @brief Tests smart pointer-like values without nullability pass through Sink normally.
+ * @return 0 on success.
+ */
+int test_sink_non_nullable_smart_pointer() {
+	Sink<NonNullableSmartPointer> producer;
+	Sink<NonNullableSmartPointer> consumer;
+
+	producer.Bind(1, consumer);
+	producer.Push(1, NonNullableSmartPointer(789));
+
+	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer size", static_cast<std::size_t>(1), consumer.Size(1));
+	auto popped = consumer.Pop();
+	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer value", 789, *popped);
+	ASSERT_FALSE("test_sink_non_nullable_smart_pointer ready", consumer.Ready());
+
+	RETURN_TEST("test_sink_non_nullable_smart_pointer", 0);
 }
 
 /**
@@ -371,6 +414,7 @@ int main() {
 	int failed = 0;
 	failed += test_sink_default_constructor();
 	failed += test_sink_bind_and_push_pop();
+	failed += test_sink_non_nullable_smart_pointer();
 	failed += test_sink_drain_mode();
 	failed += test_sink_bind_all_hoppers();
 	failed += test_sink_bind_after_eof();

@@ -87,10 +87,8 @@ namespace StormByte::Buffer {
 			 * @param r Range to copy from.
 			 * @note Disabled when @p R is already @ref DataType to avoid overload ambiguity.
 			 */
-			template<std::ranges::input_range R>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<R>>>) &&
-				requires(std::ranges::range_value_t<R> v) { static_cast<std::byte>(v); } &&
-				(!std::same_as<std::remove_cvref_t<R>, DataType>)
+			template<Type::ByteInputRange R>
+			requires (!Type::SameAs<R, DataType>)
 			inline FIFO(const R& r) noexcept
 				: m_buffer(DataConvert(r)), m_position_offset(0) {}
 
@@ -99,9 +97,7 @@ namespace StormByte::Buffer {
 			 * @tparam Rr Input range type.
 			 * @param r Range to consume.
 			 */
-			template<std::ranges::input_range Rr>
-			requires (!std::is_class_v<std::remove_cv_t<std::ranges::range_value_t<Rr>>>) &&
-				requires(std::ranges::range_value_t<Rr> v) { static_cast<std::byte>(v); }
+			template<Type::ByteInputRange Rr>
 			inline FIFO(Rr&& r) noexcept
 				: m_buffer(DataConvert(std::forward<Rr>(r))), m_position_offset(0) {}
 

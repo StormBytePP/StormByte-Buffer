@@ -104,7 +104,7 @@ namespace StormByte::Buffer {
 			 * @param item Item to enqueue.
 			 */
 			void Push(T item) noexcept {
-				if constexpr (Type::SmartPointer<T>) {
+				if constexpr (Type::NullablePointer<T>) {
 					if (!item)
 						return;
 				}
