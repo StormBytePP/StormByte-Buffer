@@ -20,6 +20,10 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Changed
+
+- Bundled StormByte Logger is [1.1.1](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.1) (and transitively [StormByte Base 1.1.1](https://github.com/StormBytePP/StormByte/releases/tag/1.1.1)). The declared requirement stays Logger [1.1.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.1.0) or newer.
+
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.0...HEAD
 
 ## [1.1.0] - 2026-09-13
