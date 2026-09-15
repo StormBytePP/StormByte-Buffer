@@ -389,6 +389,7 @@ int test_sink_concurrent_bind_and_notify() {
 				received_val.store(val, std::memory_order_release);
 				return true;
 			}
+
 			return false;
 		});
 		woken.store(ok, std::memory_order_release);
@@ -429,5 +430,6 @@ int main() {
 		std::cerr << failed << " test(s) failed." << std::endl;
 		return 1;
 	}
+
 	return 0;
 }

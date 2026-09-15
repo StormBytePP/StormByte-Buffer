@@ -281,6 +281,7 @@ int test_hopper_spsc_stress() {
 		for (int i = 0; i < item_count; ++i) {
 			hopper.Push(i);
 		}
+
 		hopper.Eof();
 	});
 
@@ -293,9 +294,11 @@ int test_hopper_spsc_stress() {
 				std::unique_lock<std::mutex> lock(m);
 				cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
 			}
+
 			while (!hopper.Empty()) {
 				received.push_back(hopper.Pop());
 			}
+
 			if (hopper.EoF() && hopper.Empty()) {
 				break;
 			}
@@ -336,5 +339,6 @@ int main() {
 		std::cerr << failed << " test(s) failed." << std::endl;
 		return 1;
 	}
+
 	return 0;
 }

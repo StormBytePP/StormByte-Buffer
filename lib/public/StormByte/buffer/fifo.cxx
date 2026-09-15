@@ -43,6 +43,7 @@ FIFO::FIFO(FIFO&& other) noexcept
 	other.m_closed = false;
 	other.m_error  = false;
 }
+
 FIFO::~FIFO() noexcept = default;
 FIFO& FIFO::operator=(const FIFO& other) {
 	if (this != &other) {
@@ -52,8 +53,10 @@ FIFO& FIFO::operator=(const FIFO& other) {
 		m_closed          = other.m_closed;
 		m_error           = other.m_error;
 	}
+
 	return *this;
 }
+
 FIFO& FIFO::operator=(FIFO&& other) noexcept {
 	if (this != &other) {
 		Generic::operator=(std::move(other));
@@ -65,29 +68,38 @@ FIFO& FIFO::operator=(FIFO&& other) noexcept {
 		other.m_closed = false;
 		other.m_error  = false;
 	}
+
 	return *this;
 }
+
 std::size_t FIFO::AvailableBytes() const noexcept {
 	return AvailableBytesInternal();
 }
+
 const DataType& FIFO::Data() const noexcept {
 	return m_buffer;
 }
+
 bool FIFO::Empty() const noexcept {
 	return m_buffer.empty();
 }
+
 bool FIFO::EoF() const noexcept {
 	return m_error || (m_closed && AvailableBytesInternal() == 0);
 }
+
 bool FIFO::IsReadable() const noexcept {
 	return !m_error;
 }
+
 bool FIFO::IsWritable() const noexcept {
 	return !m_closed && !m_error;
 }
+
 std::size_t FIFO::Size() const noexcept {
 	return m_buffer.size();
 }
+
 void FIFO::Clean() noexcept {
 	if (m_position_offset > 0 && m_position_offset <= m_buffer.size()) {
 		const std::size_t remaining = m_buffer.size() - m_position_offset;
@@ -104,18 +116,23 @@ void FIFO::Clean() noexcept {
 			}
 		}
 	}
+
 	else {
 		m_buffer.clear();
 	}
+
 	m_position_offset = 0;
 }
+
 void FIFO::Clear() noexcept {
 	m_buffer.clear();
 	m_position_offset = 0;
 }
+
 void FIFO::Close() noexcept {
 	m_closed = true;
 }
+
 bool FIFO::Drop(const std::size_t& count) noexcept {
 	const std::size_t avail =
 		(m_position_offset <= m_buffer.size())
@@ -127,15 +144,18 @@ bool FIFO::Drop(const std::size_t& count) noexcept {
 	FIFO::Clean();   // ← NO Clean() virtual
 	return true;
 }
+
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
 	switch (mode) {
 		case Position::Absolute:
 			if (offset < 0) {
 				m_position_offset = 0;
 			}
+
 			else {
 				m_position_offset = std::min(static_cast<std::size_t>(offset), m_buffer.size());
 			}
+
 			break;
 		case Position::Relative:
 			if (offset < 0) {
@@ -144,14 +164,17 @@ void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 			} else {
 				m_position_offset = std::min(m_position_offset + static_cast<std::size_t>(offset), m_buffer.size());
 			}
+
 			break;
 		default:
 			return;
 	}
 }
+
 void FIFO::SetError() noexcept {
 	m_error = true;
 }
+
 std::string FIFO::HexDump(const std::size_t& columns, const std::size_t& byte_limit) const noexcept {
 	const std::size_t cols = (columns == 0) ? 16 : columns;
 	const std::size_t end = (byte_limit > 0)
@@ -164,8 +187,10 @@ std::string FIFO::HexDump(const std::size_t& columns, const std::size_t& byte_li
 		const std::string lines = FormatHexLines(view, m_position_offset, cols);
 		oss << lines;
 	}
+
 	return oss.str();
 }
+
 std::string FIFO::FormatHexLines(std::span<const std::byte>& data, std::size_t start_offset, std::size_t columns) noexcept {
 	const std::size_t cols = (columns == 0) ? 16 : columns;
 	const int offset_width = 8;
@@ -183,21 +208,26 @@ std::string FIFO::FormatHexLines(std::span<const std::byte>& data, std::size_t s
 				line << "   ";
 			}
 		}
+
 		line << "  ";
 		for (std::size_t j = i; j < line_end; ++j) {
 			const unsigned char c = std::to_integer<unsigned char>(data[j]);
 			if (std::isprint(c)) line << static_cast<char>(c);
 			else line << '.';
 		}
+
 		lines.push_back(line.str());
 	}
+
 	std::ostringstream oss;
 	for (size_t li = 0; li < lines.size(); ++li) {
 		oss << lines[li];
 		if (li + 1 < lines.size()) oss << '\n';
 	}
+
 	return oss.str();
 }
+
 std::ostringstream FIFO::HexDumpHeader() const noexcept {
 	std::ostringstream oss;
 	oss << "Size: " << m_buffer.size() << " bytes\n";
@@ -206,52 +236,68 @@ std::ostringstream FIFO::HexDumpHeader() const noexcept {
 		<< " / " << (m_error ? "error" : "ok");
 	return oss;
 }
+
 std::size_t FIFO::AvailableBytesInternal() const noexcept {
 	const std::size_t current_size = m_buffer.size();
 	return (m_position_offset <= current_size) ? (current_size - m_position_offset) : 0;
 }
+
 bool FIFO::Extract(const std::size_t& count, DataType& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
+
 bool FIFO::Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
+
 void FIFO::ExtractUntilEoF(DataType& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
+
 void FIFO::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
+
 bool FIFO::Read(const std::size_t& count, DataType& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
+
 bool FIFO::Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
+
 void FIFO::ReadUntilEoF(DataType& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
+
 void FIFO::ReadUntilEoF(WriteOnly& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
+
 bool FIFO::Peek(const std::size_t& count, DataType& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
+
 bool FIFO::Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
+
 bool FIFO::Write(const std::size_t& count, const DataType& data) noexcept {
 	return WriteInternal(count, data);
 }
+
 bool FIFO::Write(const std::size_t& count, DataType&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
+
 bool FIFO::Write(const std::size_t& count, const ReadOnly& data) noexcept {
 	return WriteInternal(count, data);
 }
+
 bool FIFO::Write(const std::size_t& count, ReadOnly&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
+
 bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
@@ -267,10 +313,12 @@ bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Ope
 			m_position_offset += real_count;
 			break;
 		}
+
 		case Operation::Peek: {
 			outBuffer.insert(outBuffer.end(), start_it, start_it + static_cast<std::ptrdiff_t>(real_count));
 			break;
 		}
+
 		case Operation::Extract: {
 			outBuffer.insert(outBuffer.end(),
 				std::make_move_iterator(start_it),
@@ -279,13 +327,17 @@ bool FIFO::ReadInternal(const std::size_t& count, DataType& outBuffer, const Ope
 			if (m_position_offset > m_buffer.size()) {
 				m_position_offset = m_buffer.size();
 			}
+
 			break;
 		}
+
 		default:
 			return false;
 	}
+
 	return true;
 }
+
 bool FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
@@ -299,6 +351,7 @@ bool FIFO::ReadInternal(const std::size_t& count, WriteOnly& outBuffer, const Op
 		return false;
 	return outBuffer.Write(std::move(temp));
 }
+
 void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noexcept {
 	while (true) {
 		switch (flag) {
@@ -311,12 +364,14 @@ void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noex
 			default:
 				return;
 		}
+
 		DataType unused;
 		if (!Peek(1, unused)) {
 			return;
 		}
 	}
 }
+
 void FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept {
 	while (true) {
 		switch (flag) {
@@ -329,12 +384,14 @@ void FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noe
 			default:
 				return;
 		}
+
 		DataType unused;
 		if (!Peek(1, unused)) {
 			return;
 		}
 	}
 }
+
 bool FIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept {
 	if (m_closed || m_error)
 		return false;
@@ -345,11 +402,14 @@ bool FIFO::WriteInternal(const std::size_t& count, const DataType& src) noexcept
 	if (real_count == src.size()) {
 		append_vector(m_buffer, src);
 	}
+
 	else {
 		m_buffer.insert(m_buffer.end(), src.begin(), src.begin() + static_cast<std::ptrdiff_t>(real_count));
 	}
+
 	return true;
 }
+
 bool FIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
 	if (m_closed || m_error)
 		return false;
@@ -360,19 +420,23 @@ bool FIFO::WriteInternal(const std::size_t& count, DataType&& src) noexcept {
 	if (real_count == src.size()) {
 		append_vector(m_buffer, std::move(src));
 	}
+
 	else {
 		m_buffer.insert(m_buffer.end(),
 			std::make_move_iterator(src.begin()),
 			std::make_move_iterator(src.begin() + static_cast<std::ptrdiff_t>(real_count)));
 		src.erase(src.begin(), src.begin() + static_cast<std::ptrdiff_t>(real_count));
 	}
+
 	return true;
 }
+
 bool FIFO::WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept {
 	if (m_closed || m_error)
 		return false;
 	return src.Read(count, m_buffer);
 }
+
 bool FIFO::WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept {
 	if (m_closed || m_error)
 		return false;

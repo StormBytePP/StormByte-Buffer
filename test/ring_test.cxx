@@ -432,6 +432,7 @@ int test_ring_single_writer_multiple_readers() {
 			else
 				std::this_thread::yield();
 		}
+
 		DataType rem;
 		if (ring.Extract(0, rem) && !rem.empty())
 			counter += rem.size();
@@ -492,6 +493,7 @@ int test_ring_close_unblocks_waiter() {
 			DataType rem;
 			if (ring.Read(0, rem)) result = ToString(rem);
 		}
+
 		completed = true;
 	});
 
@@ -558,6 +560,7 @@ int test_ring_stress_rapid_small_writes() {
 			(void)ring.Write("X");
 			written.fetch_add(1);
 		}
+
 		ring.Close();
 	});
 
@@ -585,6 +588,7 @@ int test_ring_very_large_transfer() {
 			std::string block(chunk, static_cast<char>('A' + (i / chunk) % 26));
 			(void)ring.Write(block);
 		}
+
 		ring.Close();
 	});
 
@@ -609,6 +613,7 @@ int test_ring_alternating_small_large() {
 			else            (void)ring.Write(std::string(1000, 'Y'));
 			std::this_thread::sleep_for(std::chrono::microseconds(50));
 		}
+
 		ring.Close();
 	});
 
@@ -729,6 +734,7 @@ int test_ring_burst_then_drain() {
 	ASSERT_EQUAL("10 000 bytes", total.load(), 10000u);
 	RETURN_TEST("test_ring_burst_then_drain", 0);
 }
+
 int test_ring_polymorphic_interface_abi() {
 	std::unique_ptr<ReadWrite> ring = std::make_unique<Ring>();
 	ReadOnly& reader = *ring;

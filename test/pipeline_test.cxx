@@ -59,6 +59,7 @@ void wait_for_pipeline_completion(Consumer& consumer) {
 		std::this_thread::yield();
 	}
 }
+
 // ---------------------------------------------------------------------------
 // Basic correctness
 // ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ int test_pipeline_empty() {
 				std::string("TEST"));
 	RETURN_TEST("test_pipeline_empty", 0);
 }
+
 int test_pipeline_single_stage() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -91,6 +93,7 @@ int test_pipeline_single_stage() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -106,6 +109,7 @@ int test_pipeline_single_stage() {
 				std::string("HELLO WORLD"));
 	RETURN_TEST("test_pipeline_single_stage", 0);
 }
+
 int test_pipeline_two_stages() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -119,6 +123,7 @@ int test_pipeline_two_stages() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -132,6 +137,7 @@ int test_pipeline_two_stages() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -147,6 +153,7 @@ int test_pipeline_two_stages() {
 				std::string("HELLO_WORLD_TEST"));
 	RETURN_TEST("test_pipeline_two_stages", 0);
 }
+
 int test_pipeline_three_stages() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -160,6 +167,7 @@ int test_pipeline_three_stages() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -173,6 +181,7 @@ int test_pipeline_three_stages() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -185,6 +194,7 @@ int test_pipeline_three_stages() {
 				(void)out.Write(StormByte::String::FromByteVector(data));
 			}
 		}
+
 		(void)out.Write("]");
 		out.Close();
 	});
@@ -201,6 +211,7 @@ int test_pipeline_three_stages() {
 				std::string("[TEST-DATA]"));
 	RETURN_TEST("test_pipeline_three_stages", 0);
 }
+
 int test_pipeline_incremental_processing() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -214,6 +225,7 @@ int test_pipeline_incremental_processing() {
 				(void)out.Write(std::string(1, c));
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -229,6 +241,7 @@ int test_pipeline_incremental_processing() {
 				std::string("ABC"));
 	RETURN_TEST("test_pipeline_incremental_processing", 0);
 }
+
 int test_pipeline_filter_stage() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -243,10 +256,12 @@ int test_pipeline_filter_stage() {
 					if (std::isalpha(static_cast<unsigned char>(c)))
 						filtered += c;
 				}
+
 				if (!filtered.empty())
 					(void)out.Write(filtered);
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -262,6 +277,7 @@ int test_pipeline_filter_stage() {
 				std::string("HelloWorld"));
 	RETURN_TEST("test_pipeline_filter_stage", 0);
 }
+
 int test_pipeline_multiple_writes() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -274,6 +290,7 @@ int test_pipeline_multiple_writes() {
 				(void)out.Write(data);
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -289,6 +306,7 @@ int test_pipeline_multiple_writes() {
 				std::string("ABAB"));
 	RETURN_TEST("test_pipeline_multiple_writes", 0);
 }
+
 int test_pipeline_empty_input() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -299,6 +317,7 @@ int test_pipeline_empty_input() {
 			if (res && !data.empty())
 				(void)out.Write(data);
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -312,8 +331,10 @@ int test_pipeline_empty_input() {
 	} else {
 		ASSERT_EQUAL("empty input size", data.size(), static_cast<std::size_t>(0));
 	}
+
 	RETURN_TEST("test_pipeline_empty_input", 0);
 }
+
 int test_pipeline_large_data() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -325,6 +346,7 @@ int test_pipeline_large_data() {
 			if (res && !data.empty())
 				count += data.size();
 		}
+
 		(void)out.Write(std::to_string(count));
 		out.Close();
 	});
@@ -342,6 +364,7 @@ int test_pipeline_large_data() {
 				std::string("10000"));
 	RETURN_TEST("test_pipeline_large_data", 0);
 }
+
 int test_pipeline_reuse() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -353,6 +376,7 @@ int test_pipeline_reuse() {
 			if (res && !data.empty())
 				(void)out.Write(data);
 		}
+
 		out.Close();
 	});
 	{
@@ -368,6 +392,7 @@ int test_pipeline_reuse() {
 					StormByte::String::FromByteVector(data1),
 					std::string(">TEST1"));
 	}
+
 	{
 		Producer input2;
 		(void)input2.Write("TEST2");
@@ -381,8 +406,10 @@ int test_pipeline_reuse() {
 					StormByte::String::FromByteVector(data2),
 					std::string(">TEST2"));
 	}
+
 	RETURN_TEST("test_pipeline_reuse", 0);
 }
+
 int test_pipeline_copy_constructor() {
 	Pipeline pipeline1;
 	pipeline1.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -396,6 +423,7 @@ int test_pipeline_copy_constructor() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	Pipeline pipeline2 = pipeline1;
@@ -412,6 +440,7 @@ int test_pipeline_copy_constructor() {
 				std::string("TEST"));
 	RETURN_TEST("test_pipeline_copy_constructor", 0);
 }
+
 int test_pipeline_move_constructor() {
 	Pipeline pipeline1;
 	pipeline1.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -425,6 +454,7 @@ int test_pipeline_move_constructor() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	Pipeline pipeline2 = std::move(pipeline1);
@@ -441,6 +471,7 @@ int test_pipeline_move_constructor() {
 				std::string("test"));
 	RETURN_TEST("test_pipeline_move_constructor", 0);
 }
+
 int test_pipeline_addpipe_move() {
 	Pipeline pipeline;
 	Pipeline::PipeFunction func =
@@ -452,6 +483,7 @@ int test_pipeline_addpipe_move() {
 				if (res && !data.empty())
 					(void)out.Write(data);
 			}
+
 			out.Close();
 		};
 	pipeline.AddPipe(std::move(func));
@@ -468,6 +500,7 @@ int test_pipeline_addpipe_move() {
 				std::string("MOVE"));
 	RETURN_TEST("test_pipeline_addpipe_move", 0);
 }
+
 int test_pipeline_word_count() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -480,6 +513,7 @@ int test_pipeline_word_count() {
 			if (res && !data.empty())
 				buffer += StormByte::String::FromByteVector(data);
 		}
+
 		bool in_word = false;
 		for (char c : buffer) {
 			if (std::isspace(static_cast<unsigned char>(c))) {
@@ -489,6 +523,7 @@ int test_pipeline_word_count() {
 				++word_count;
 			}
 		}
+
 		(void)out.Write(std::to_string(word_count));
 		out.Close();
 	});
@@ -505,6 +540,7 @@ int test_pipeline_word_count() {
 				std::string("6"));
 	RETURN_TEST("test_pipeline_word_count", 0);
 }
+
 int test_pipeline_reverse_string() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -516,6 +552,7 @@ int test_pipeline_reverse_string() {
 			if (res && !data.empty())
 				buffer += StormByte::String::FromByteVector(data);
 		}
+
 		std::reverse(buffer.begin(), buffer.end());
 		(void)out.Write(buffer);
 		out.Close();
@@ -533,6 +570,7 @@ int test_pipeline_reverse_string() {
 				std::string("FEDCBA"));
 	RETURN_TEST("test_pipeline_reverse_string", 0);
 }
+
 int test_pipeline_streaming_data() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -544,6 +582,7 @@ int test_pipeline_streaming_data() {
 				(void)out.Write(data);
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -566,6 +605,7 @@ int test_pipeline_streaming_data() {
 				std::string("Part1Part2Part3"));
 	RETURN_TEST("test_pipeline_streaming_data", 0);
 }
+
 int test_pipeline_byte_arithmetic() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -581,6 +621,7 @@ int test_pipeline_byte_arithmetic() {
 				(void)out.Write(result);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -596,6 +637,7 @@ int test_pipeline_byte_arithmetic() {
 				(void)out.Write(result);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -611,6 +653,7 @@ int test_pipeline_byte_arithmetic() {
 				(void)out.Write(result);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -626,6 +669,7 @@ int test_pipeline_byte_arithmetic() {
 				(void)out.Write(result);
 			}
 		}
+
 		out.Close();
 	});
 	std::vector<std::byte> input_data = {
@@ -648,6 +692,7 @@ int test_pipeline_byte_arithmetic() {
 	ASSERT_EQUAL("byte 4", static_cast<int>(data[4]), 5);
 	RETURN_TEST("test_pipeline_byte_arithmetic", 0);
 }
+
 int test_pipeline_large_concurrent_stress() {
 	Pipeline pipeline;
 	auto xor55 = [](ExternalReader& in, ExternalWriter& out,
@@ -660,6 +705,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto add17 = [](ExternalReader& in, ExternalWriter& out,
@@ -673,6 +719,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto bnot = [](ExternalReader& in, ExternalWriter& out,
@@ -685,6 +732,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto xorAA = [](ExternalReader& in, ExternalWriter& out,
@@ -697,6 +745,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto mul3 = [](ExternalReader& in, ExternalWriter& out,
@@ -710,6 +759,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto rotl3 = [](ExternalReader& in, ExternalWriter& out,
@@ -722,9 +772,11 @@ int test_pipeline_large_concurrent_stress() {
 					uint8_t v = static_cast<uint8_t>(b);
 					r.push_back(static_cast<std::byte>((v << 3) | (v >> 5)));
 				}
+
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto sub42 = [](ExternalReader& in, ExternalWriter& out,
@@ -738,6 +790,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto xor33 = [](ExternalReader& in, ExternalWriter& out,
@@ -750,6 +803,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto mul171 = [](ExternalReader& in, ExternalWriter& out,
@@ -763,6 +817,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto rotr3 = [](ExternalReader& in, ExternalWriter& out,
@@ -775,9 +830,11 @@ int test_pipeline_large_concurrent_stress() {
 					uint8_t v = static_cast<uint8_t>(b);
 					r.push_back(static_cast<std::byte>((v >> 3) | (v << 5)));
 				}
+
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto add42 = [](ExternalReader& in, ExternalWriter& out,
@@ -791,6 +848,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	auto sub17 = [](ExternalReader& in, ExternalWriter& out,
@@ -804,6 +862,7 @@ int test_pipeline_large_concurrent_stress() {
 				(void)out.Write(std::move(r));
 			}
 		}
+
 		out.Close();
 	};
 	// 8 transforms + 8 inverses — ideal for Parallel pipeline overlap
@@ -840,6 +899,7 @@ int test_pipeline_large_concurrent_stress() {
 			offset += to_write;
 			std::this_thread::yield();
 		}
+
 		input.Close();
 	});
 	Consumer result = pipeline.Process(input.Consumer(), kAsyncParallel, logging);
@@ -853,6 +913,7 @@ int test_pipeline_large_concurrent_stress() {
 			output_data.insert(output_data.end(), chunk.begin(), chunk.end());
 		std::this_thread::yield();
 	}
+
 	ASSERT_EQUAL("large stress test size", output_data.size(), data_size);
 	bool data_matches = true;
 	std::size_t first_mismatch = 0;
@@ -863,14 +924,17 @@ int test_pipeline_large_concurrent_stress() {
 			break;
 		}
 	}
+
 	if (!data_matches) {
 		std::cout << "Data mismatch at byte " << first_mismatch
 				<< ": expected " << static_cast<int>(input_data[first_mismatch])
 				<< ", got " << static_cast<int>(output_data[first_mismatch]) << std::endl;
 	}
+
 	ASSERT_TRUE("large stress test data integrity", data_matches);
 	RETURN_TEST("test_pipeline_large_concurrent_stress", 0);
 }
+
 int test_pipeline_sync_execution() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -884,6 +948,7 @@ int test_pipeline_sync_execution() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -897,6 +962,7 @@ int test_pipeline_sync_execution() {
 				(void)out.Write(str);
 			}
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -912,6 +978,7 @@ int test_pipeline_sync_execution() {
 				std::string("SYNC-MODE-TEST"));
 	RETURN_TEST("test_pipeline_sync_execution", 0);
 }
+
 int test_pipeline_interrupted_by_seterror() {
 	Pipeline pipeline;
 	for (int i = 0; i < 8; ++i) {
@@ -925,13 +992,16 @@ int test_pipeline_interrupted_by_seterror() {
 						if (!out.IsWritable()) return;
 						std::this_thread::yield();
 					}
+
 					if (!out.IsWritable()) return;
 					(void)out.Write(data);
 				}
 			}
+
 			if (out.IsWritable()) out.Close();
 		});
 	}
+
 	Producer input;
 	std::string payload(50000, 'X');
 	(void)input.Write(payload);
@@ -944,6 +1014,7 @@ int test_pipeline_interrupted_by_seterror() {
 	ASSERT_EQUAL("interrupted size zero", result.AvailableBytes(), static_cast<std::size_t>(0));
 	RETURN_TEST("test_pipeline_interrupted_by_seterror", 0);
 }
+
 int test_pipeline_large_async_many_stages() {
 	Pipeline pipeline;
 	for (int i = 0; i < 25; ++i) {
@@ -958,9 +1029,11 @@ int test_pipeline_large_async_many_stages() {
 					(void)out.Write(s);
 				}
 			}
+
 			out.Close();
 		});
 	}
+
 	Producer input;
 	const std::string payload(8192, 'a');
 	(void)input.Write(payload);
@@ -974,6 +1047,7 @@ int test_pipeline_large_async_many_stages() {
 				std::string(8192, 'A'));
 	RETURN_TEST("test_pipeline_large_async_many_stages", 0);
 }
+
 int test_pipeline_async_reuse_many_times() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -983,6 +1057,7 @@ int test_pipeline_async_reuse_many_times() {
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
+
 		out.Close();
 	});
 	for (int i = 0; i < 50; ++i) {
@@ -996,8 +1071,10 @@ int test_pipeline_async_reuse_many_times() {
 		ASSERT_TRUE("reuse has data", CONSUME(result, 0, data));
 		ASSERT_EQUAL("reuse content", StormByte::String::FromByteVector(data), msg);
 	}
+
 	RETURN_TEST("test_pipeline_async_reuse_many_times", 0);
 }
+
 int test_pipeline_async_seterror_interrupts_quickly() {
 	Pipeline pipeline;
 	for (int i = 0; i < 12; ++i) {
@@ -1012,9 +1089,11 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 					(void)out.Write(d);
 				}
 			}
+
 			if (out.IsWritable()) out.Close();
 		});
 	}
+
 	Producer input;
 	(void)input.Write(std::string(100000, 'X'));
 	input.Close();
@@ -1026,6 +1105,7 @@ int test_pipeline_async_seterror_interrupts_quickly() {
 	ASSERT_TRUE("interrupted reaches EoF", result.EoF());
 	RETURN_TEST("test_pipeline_async_seterror_interrupts_quickly", 0);
 }
+
 // ---------------------------------------------------------------------------
 // Additional coverage
 // ---------------------------------------------------------------------------
@@ -1038,6 +1118,7 @@ int test_pipeline_stage_must_close() {
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
+
 		out.Close(); // required
 	});
 	Producer input;
@@ -1050,6 +1131,7 @@ int test_pipeline_stage_must_close() {
 	ASSERT_EQUAL("content", StormByte::String::FromByteVector(data), std::string("close-me"));
 	RETURN_TEST("test_pipeline_stage_must_close", 0);
 }
+
 int test_pipeline_identity_many_stages() {
 	Pipeline pipeline;
 	for (int i = 0; i < 10; ++i) {
@@ -1060,9 +1142,11 @@ int test_pipeline_identity_many_stages() {
 				if (CONSUME(in, 0, d) && !d.empty())
 					(void)out.Write(d);
 			}
+
 			out.Close();
 		});
 	}
+
 	Producer input;
 	const std::string msg = "identity-chain";
 	(void)input.Write(msg);
@@ -1074,6 +1158,7 @@ int test_pipeline_identity_many_stages() {
 	ASSERT_EQUAL("identity content", StormByte::String::FromByteVector(data), msg);
 	RETURN_TEST("test_pipeline_identity_many_stages", 0);
 }
+
 int test_pipeline_null_logger() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -1083,6 +1168,7 @@ int test_pipeline_null_logger() {
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -1096,6 +1182,7 @@ int test_pipeline_null_logger() {
 				std::string("null-log"));
 	RETURN_TEST("test_pipeline_null_logger", 0);
 }
+
 int test_pipeline_available_bytes_during_process() {
 	Pipeline pipeline;
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
@@ -1105,6 +1192,7 @@ int test_pipeline_available_bytes_during_process() {
 			if (CONSUME(in, 0, d) && !d.empty())
 				(void)out.Write(d);
 		}
+
 		out.Close();
 	});
 	Producer input;
@@ -1119,6 +1207,7 @@ int test_pipeline_available_bytes_during_process() {
 	ASSERT_EQUAL("size", data.size(), static_cast<std::size_t>(1000));
 	RETURN_TEST("test_pipeline_available_bytes_during_process", 0);
 }
+
 int test_pipeline_parallel_blocking() {
 	// Parallel without Async: Process must block until all stages finish.
 	Pipeline pipeline;
@@ -1133,9 +1222,11 @@ int test_pipeline_parallel_blocking() {
 					(void)out.Write(std::move(d));
 				}
 			}
+
 			out.Close();
 		});
 	}
+
 	Producer input;
 	DataType payload;
 	for (int i = 0; i < 32; ++i)
@@ -1152,6 +1243,7 @@ int test_pipeline_parallel_blocking() {
 		ASSERT_EQUAL("parallel blocking value", static_cast<int>(data[static_cast<std::size_t>(i)]), i + 4);
 	RETURN_TEST("test_pipeline_parallel_blocking", 0);
 }
+
 int test_pipeline_parallel_async_correctness() {
 	// Same transform under Async|Parallel (non-blocking Process).
 	Pipeline pipeline;
@@ -1167,9 +1259,11 @@ int test_pipeline_parallel_async_correctness() {
 					(void)out.Write(s);
 				}
 			}
+
 			out.Close();
 		});
 	}
+
 	Producer input;
 	(void)input.Write("parallel-async-ok");
 	input.Close();
@@ -1182,6 +1276,7 @@ int test_pipeline_parallel_async_correctness() {
 				std::string("PARALLEL-ASYNC-OK"));
 	RETURN_TEST("test_pipeline_parallel_async_correctness", 0);
 }
+
 int test_pipeline_sync_vs_parallel_cpu_bound() {
 	// Workload deliberately exaggerated so pipeline parallelism
 	// has a clear, repeatable advantage over pure Sync.
@@ -1207,11 +1302,14 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 						// a bit more work to make it even more CPU-bound
 						v = static_cast<std::uint8_t>((v << 1) | (v >> 7));
 					}
+
 					b = static_cast<std::byte>(v);
 				}
+
 				(void)out.Write(std::move(data));
 			}
 		}
+
 		out.Close();
 	};
 	auto build_pipeline = [&]() {
@@ -1233,9 +1331,11 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 				v ^= static_cast<std::uint8_t>(w * 3);
 				v = static_cast<std::uint8_t>((v << 1) | (v >> 7));
 			}
+
 			b = static_cast<std::byte>(v);
 		}
 	}
+
 	auto run_mode = [&](ExecutionMode mode, const char* label,
 						long long& total_ms) -> int {
 		Pipeline pipe = build_pipeline();
@@ -1261,6 +1361,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 		(void)run_mode(ExecutionMode::Sync, "warmup-sync", dummy);
 		(void)run_mode(ExecutionMode::Parallel, "warmup-parallel", dummy);
 	}
+
 	if (run_mode(ExecutionMode::Sync, "sync cpu-bound", sync_ms) != 0)
 		return 1;
 	if (run_mode(ExecutionMode::Parallel, "parallel cpu-bound", parallel_ms) != 0)
@@ -1276,6 +1377,7 @@ int test_pipeline_sync_vs_parallel_cpu_bound() {
 	// ASSERT_TRUE("parallel not slower than sync", parallel_ms <= sync_ms);
 	RETURN_TEST("test_pipeline_sync_vs_parallel_cpu_bound", 0);
 }
+
 int main() {
 	int result = 0;
 	result += test_pipeline_empty();
@@ -1313,5 +1415,6 @@ int main() {
 	} else {
 		std::cout << result << " Pipeline tests failed." << std::endl;
 	}
+
 	return result;
 }

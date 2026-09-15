@@ -77,5 +77,6 @@ int main() {
 	} else {
 		std::cout << result << " Exception tests failed." << std::endl;
 	}
+
 	return result;
 }

@@ -216,6 +216,7 @@ int test_single_producer_single_consumer_threaded() {
 		for (int i = 0; i < messages; ++i) {
 			(void)producer.Write(std::to_string(i) + ",");
 		}
+
 		producer.Close();
 		producer_done.store(true);
 	});
@@ -230,8 +231,10 @@ int test_single_producer_single_consumer_threaded() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			collected.append(StormByte::String::FromByteVector(part));
 		}
@@ -259,6 +262,7 @@ int test_multiple_producers_single_consumer() {
 			for (int i = 0; i < chunks_per_producer; ++i) {
 				(void)prod_copy.Write(std::string(1, id));
 			}
+
 		completed_producers.fetch_add(1);
 	};
 
@@ -281,11 +285,14 @@ int test_multiple_producers_single_consumer() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres && !rem.empty()) collected.append(StormByte::String::FromByteVector(rem));
 				}
+
 				break;
 			}
+
 			if (!part.empty()) {
 				collected.append(StormByte::String::FromByteVector(part));
 			}
+
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		
@@ -332,6 +339,7 @@ int test_single_producer_multiple_consumers() {
 		for (int i = 0; i < total_bytes; ++i) {
 			(void)producer.Write("X");
 		}
+
 		producer.Close();
 	});
 
@@ -345,8 +353,10 @@ int test_single_producer_multiple_consumers() {
 					auto remres = cons.Extract(0, rem);
 					if (remres) counter.fetch_add(rem.size());
 				}
+
 				break;
 			}
+
 			if (part.empty() && cons.EoF()) break;
 			counter.fetch_add(part.size());
 		}
@@ -392,6 +402,7 @@ int test_multiple_producers_multiple_consumers() {
 			for (int i = 0; i < messages_per_producer; ++i) {
 				(void)prod_copy.Write(std::string(1, 'A' + p));
 			}
+
 			completed_producers.fetch_add(1);
 		});
 	}
@@ -411,8 +422,10 @@ int test_multiple_producers_multiple_consumers() {
 						auto remres = cons_copy.Extract(0, rem);
 						if (remres) local_consumed += rem.size();
 					}
+
 					break;
 				}
+
 				if (part.empty() && cons_copy.EoF()) break;
 				local_consumed += part.size();
 			}
@@ -515,6 +528,7 @@ int test_producer_consumer_stress_rapid_operations() {
 			(void)producer.Write("X");
 			write_count.fetch_add(1);
 		}
+
 		producer.Close();
 	});
 
@@ -528,8 +542,10 @@ int test_producer_consumer_stress_rapid_operations() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres) read_count.fetch_add(rem.size());
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			read_count.fetch_add(part.size());
 		}
@@ -565,6 +581,7 @@ int test_producer_consumer_pipeline_pattern() {
 		for (int i = 0; i < 100; ++i) {
 (void)stage1_producer.Write(std::to_string(i) + ",");
 		}
+
 		stage1_producer.Close();
 	});
 	
@@ -583,14 +600,17 @@ int test_producer_consumer_pipeline_pattern() {
 						(void)stage2_producer.Write(remstr);
 					}
 				}
+
 				break;
 			}
+
 			if (part.empty() && stage1_consumer.EoF()) break;
 
 			std::string str = StormByte::String::FromByteVector(part);
 			std::transform(str.begin(), str.end(), str.begin(), ::toupper);
 			(void)stage2_producer.Write(str);
 		}
+
 		stage2_producer.Close();
 	});
 	
@@ -606,11 +626,14 @@ int test_producer_consumer_pipeline_pattern() {
 					auto remres = stage2_consumer.Extract(0, rem);
 					if (remres && !rem.empty()) final_result.append(StormByte::String::FromByteVector(rem));
 				}
+
 				break;
 			}
+
 			if (part.empty() && stage2_consumer.EoF()) break;
 			final_result.append(StormByte::String::FromByteVector(part));
 		}
+
 		done.store(true);
 	});
 	
@@ -685,6 +708,7 @@ int test_consumer_waits_for_insufficient_data() {
 		} else {
 			result = StormByte::String::FromByteVector(data);
 		}
+
 		read_completed.store(true);
 	});
 	
@@ -724,6 +748,7 @@ int test_multiple_consumers_with_partial_data() {
 		} else {
 			results[id] = ""; // No data available (closed before this consumer could read)
 		}
+
 		reads_completed.fetch_add(1);
 	};
 	
@@ -758,6 +783,7 @@ int test_multiple_consumers_with_partial_data() {
 		total_received += res.size();
 		if (res.size() > 0) consumers_with_data++;
 	}
+
 	// With shared non-destructive read cursor, only the consumers that wake up
 	// before others advance the position will get data. Due to race conditions,
 	// the total may be less than 13 if consumers read overlapping data.
@@ -814,6 +840,7 @@ int test_producer_close_during_consumer_wait() {
 		} else {
 			result = StormByte::String::FromByteVector(data);
 		}
+
 		completed.store(true);
 	});
 	
@@ -844,6 +871,7 @@ int test_rapid_write_close_with_slow_consumer() {
 		for (int i = 0; i < 100; ++i) {
 			(void)producer.Write("X");
 		}
+
 		producer.Close();
 		producer_done.store(true);
 	});
@@ -860,8 +888,10 @@ int test_rapid_write_close_with_slow_consumer() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres) total_consumed.fetch_add(rem.size());
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			total_consumed.fetch_add(part.size());
 		}
@@ -929,6 +959,7 @@ int test_very_large_data_transfer() {
 			std::string chunk(chunk_size, 'A' + (i / chunk_size) % 26);
 			(void)producer.Write(chunk);
 		}
+
 		producer.Close();
 	});
 	
@@ -942,11 +973,14 @@ int test_very_large_data_transfer() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres) received_size += rem.size();
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			received_size += part.size();
 		}
+
 		transfer_complete.store(true);
 	});
 	
@@ -973,8 +1007,10 @@ int test_alternating_small_large_writes() {
 			} else {
 				(void)producer.Write(std::string(1000, 'Y')); // 1000 bytes
 			}
+
 			std::this_thread::sleep_for(std::chrono::microseconds(100));
 		}
+
 			producer.Close();
 	});
 	
@@ -988,11 +1024,14 @@ int test_alternating_small_large_writes() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres) total_received.fetch_add(rem.size());
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			total_received.fetch_add(part.size());
 		}
+
 		done.store(true);
 	});
 	
@@ -1039,6 +1078,7 @@ int test_multiple_sequential_read_blocks() {
 	for (int i = 0; i < 5; ++i) {
 		(void)producer.Write(std::to_string(1000 + i)); // "1000", "1001", etc
 	}
+
 	producer.Close();
 	
 	std::vector<std::string> results;
@@ -1051,6 +1091,7 @@ int test_multiple_sequential_read_blocks() {
 		results.push_back(StormByte::String::FromByteVector(data));
 		// No Seek in new API
 	}
+
 	ASSERT_EQUAL("got all results", results.size(), static_cast<size_t>(5));
 	RETURN_TEST("test_multiple_sequential_read_blocks", 0);
 }
@@ -1066,6 +1107,7 @@ int test_burst_writes_with_reserve() {
 		for (int i = 0; i < 1000; ++i) {
 			(void)producer.Write("0123456789");
 		}
+
 		producer.Close();
 	});
 	
@@ -1079,8 +1121,10 @@ int test_burst_writes_with_reserve() {
 					auto remres = consumer.Extract(0, rem);
 					if (remres) total.fetch_add(rem.size());
 				}
+
 				break;
 			}
+
 			if (part.empty() && consumer.EoF()) break;
 			total.fetch_add(part.size());
 		}
@@ -1147,6 +1191,7 @@ int test_producer_consumer_available_bytes_threaded() {
 			(void)producer.Write("CHUNK");
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 		}
+
 		producer_done.store(true);
 		producer.Close();
 	});
@@ -1165,6 +1210,7 @@ int test_producer_consumer_available_bytes_threaded() {
 				std::vector<std::byte> part;
 				auto res = consumer.Extract(10, part);
 			}
+
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
 	});
@@ -1299,6 +1345,7 @@ int test_empty_read_failure() {
 
 	RETURN_TEST("test_empty_read_failure", 0);
 }
+
 int test_producer_consumer_polymorphic_interface_abi() {
 	std::unique_ptr<WriteOnly> producer = std::make_unique<Producer>();
 	Producer& concrete_producer = static_cast<Producer&>(*producer);
@@ -1382,5 +1429,6 @@ int main() {
 	} else {
 		std::cout << result << " Producer/Consumer test(s) failed." << std::endl;
 	}
+
 	return result;
 }

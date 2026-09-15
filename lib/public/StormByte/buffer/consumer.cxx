@@ -25,60 +25,79 @@ Consumer::~Consumer() noexcept = default;
 std::size_t Consumer::AvailableBytes() const noexcept {
 	return m_buffer->AvailableBytes();
 }
+
 const DataType& Consumer::Data() const noexcept {
 	return m_buffer->Data();
 }
+
 bool Consumer::Empty() const noexcept {
 	return m_buffer->Empty();
 }
+
 bool Consumer::EoF() const noexcept {
 	return m_buffer->EoF();
 }
+
 bool Consumer::IsReadable() const noexcept {
 	return m_buffer->IsReadable();
 }
+
 std::size_t Consumer::Size() const noexcept {
 	return m_buffer->Size();
 }
+
 void Consumer::Clean() noexcept {
 	m_buffer->Clean();
 }
+
 void Consumer::Clear() noexcept {
 	m_buffer->Clear();
 }
+
 bool Consumer::Drop(const std::size_t& count) noexcept {
 	return m_buffer->Drop(count);
 }
+
 void Consumer::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
 	m_buffer->Seek(offset, mode);
 }
+
 bool Consumer::Extract(const std::size_t& count, DataType& out) noexcept {
 	return m_buffer->Extract(count, out);
 }
+
 bool Consumer::Extract(const std::size_t& count, WriteOnly& out) noexcept {
 	return m_buffer->Extract(count, out);
 }
+
 void Consumer::ExtractUntilEoF(DataType& out) noexcept {
 	m_buffer->ExtractUntilEoF(out);
 }
+
 void Consumer::ExtractUntilEoF(WriteOnly& out) noexcept {
 	m_buffer->ExtractUntilEoF(out);
 }
+
 bool Consumer::Read(const std::size_t& count, DataType& out) const noexcept {
 	return m_buffer->Read(count, out);
 }
+
 bool Consumer::Read(const std::size_t& count, WriteOnly& out) const noexcept {
 	return m_buffer->Read(count, out);
 }
+
 void Consumer::ReadUntilEoF(DataType& out) const noexcept {
 	m_buffer->ReadUntilEoF(out);
 }
+
 void Consumer::ReadUntilEoF(WriteOnly& out) const noexcept {
 	m_buffer->ReadUntilEoF(out);
 }
+
 bool Consumer::Peek(const std::size_t& count, DataType& out) const noexcept {
 	return m_buffer->Peek(count, out);
 }
+
 bool Consumer::Peek(const std::size_t& count, WriteOnly& out) const noexcept {
 	return m_buffer->Peek(count, out);
 }

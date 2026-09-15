@@ -33,14 +33,17 @@ bool Bridge::Flush() const noexcept {
 		return true;
 	return m_write_handler->Write(std::move(data));
 }
+
 bool Bridge::FlushAndClose() const noexcept {
 	const bool ok = Flush();
 	m_write_handler->Close();
 	return ok;
 }
+
 void Bridge::SetError() const noexcept {
 	m_write_handler->SetError();
 }
+
 // ---------------------------------------------------------------------------
 // Passthrough entry points
 // ---------------------------------------------------------------------------
@@ -52,14 +55,17 @@ bool Bridge::Passthrough(std::size_t bytes) const noexcept {
 		return false;
 	return PassthroughWrite(std::move(out));
 }
+
 bool Bridge::Passthrough(std::size_t bytes) noexcept {
 	DataType out;
 	if (!m_read_handler->Extract(bytes, out)) {
 		if (!m_read_handler->Read(bytes, out))
 			return false;
 	}
+
 	return PassthroughWrite(std::move(out));
 }
+
 // ---------------------------------------------------------------------------
 // Core chunking logic
 // ---------------------------------------------------------------------------
@@ -70,6 +76,7 @@ bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
 			return true;
 		return m_write_handler->Write(std::move(data));
 	}
+
 	// Merge previous leftovers + new data
 	DataType combined;
 	const DataType& existing = m_buffer.Data();
@@ -81,6 +88,7 @@ bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
 						std::make_move_iterator(data.begin()),
 						std::make_move_iterator(data.end()));
 	}
+
 	// Clear the internal buffer; we will put back only the final remainder
 	m_buffer.Clear();
 	if (combined.empty())
@@ -98,6 +106,7 @@ bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
 		if (ok)
 			pos += m_chunk_size;
 	}
+
 	// Store the unwritten tail (if any) back into the internal buffer
 	if (pos < combined.size()) {
 		DataType remainder(
@@ -106,5 +115,6 @@ bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
 		);
 		(void)m_buffer.Write(std::move(remainder));
 	}
+
 	return ok;
 }

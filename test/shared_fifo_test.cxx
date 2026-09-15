@@ -36,6 +36,7 @@ using StormByte::Buffer::WriteOnly;
 static std::string toString(const std::vector<std::byte>& v) {
 	return StormByte::String::FromByteVector(v);
 }
+
 int test_shared_fifo_write_span_basic() {
 	SharedFIFO fifo;
 	const char* msg = "SFPAN";
@@ -48,6 +49,7 @@ int test_shared_fifo_write_span_basic() {
 	ASSERT_EQUAL("shared_write_span content", StormByte::String::FromByteVector(read), std::string("SFPAN"));
 	RETURN_TEST("test_shared_fifo_write_span_basic", 0);
 }
+
 int test_shared_fifo_multiple_spans_eof() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGHIJ")); // 10 bytes
@@ -68,6 +70,7 @@ int test_shared_fifo_multiple_spans_eof() {
 	ASSERT_TRUE("sf eof after close and empty", fifo.EoF());
 	RETURN_TEST("test_shared_fifo_multiple_spans_eof", 0);
 }
+
 int test_shared_fifo_producer_consumer_blocking() {
 	SharedFIFO fifo;
 	std::atomic<bool> done{false};
@@ -91,8 +94,10 @@ int test_shared_fifo_producer_consumer_blocking() {
 					auto remres = fifo.Read(0, rem);
 					if (remres && !rem.empty()) collected.append(toString(rem));
 				}
+
 				break;
 			}
+
 			if (part.empty() && fifo.EoF()) break;
 			collected.append(toString(part));
 			// small delay to increase interleaving
@@ -105,6 +110,7 @@ int test_shared_fifo_producer_consumer_blocking() {
 	ASSERT_EQUAL("collected matches payload", collected, payload);
 	RETURN_TEST("test_shared_fifo_producer_consumer_blocking", 0);
 }
+
 int test_shared_fifo_extract_blocking_and_close() {
 	SharedFIFO fifo;
 	std::atomic<bool> woke{false};
@@ -126,6 +132,7 @@ int test_shared_fifo_extract_blocking_and_close() {
 	ASSERT_EQUAL("got error on read", extracted_size, 0);
 	RETURN_TEST("test_shared_fifo_extract_blocking_and_close", 0);
 }
+
 int test_shared_fifo_concurrent_seek_and_read() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("0123456789"));
@@ -169,6 +176,7 @@ int test_shared_fifo_concurrent_seek_and_read() {
 	ASSERT_TRUE("read_b digits", within_digits(read_b));
 	RETURN_TEST("test_shared_fifo_concurrent_seek_and_read", 0);
 }
+
 int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGH"));
@@ -195,6 +203,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 			while (!first_read_done.load()) {
 				std::this_thread::sleep_for(std::chrono::microseconds(100));
 			}
+
 			std::vector<std::byte> e;
 			auto eres = fifo.Extract(2, e); // Extract from position 3, gets "DE"
 			(void)eres;
@@ -206,6 +215,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	} catch (const std::system_error&) {
 		// ...existing code...
 	}
+
 	ASSERT_FALSE("reader had error", reader_failed2.load());
 	ASSERT_EQUAL("first read ABC", r_before, std::string("ABC"));
 	// After reading 3 (position at 3), Extract(2) removes from position 3, which is "DE"
@@ -213,6 +223,7 @@ int test_shared_fifo_extract_adjusts_read_position_concurrency() {
 	ASSERT_EQUAL("next read after adjust is FG", r_after, std::string("FG"));
 	RETURN_TEST("test_shared_fifo_extract_adjusts_read_position_concurrency", 0);
 }
+
 int test_shared_fifo_multi_producer_single_consumer_counts() {
 	SharedFIFO fifo;
 	const int chunks = 200;
@@ -221,12 +232,14 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
 		for (int i = 0; i < chunks; ++i) {
 			(void)fifo.Write(std::string("A"));
 		}
+
 		p1_done.store(true);
 	});
 	auto producerB = std::thread([&]() -> void {
 		for (int i = 0; i < chunks; ++i) {
 			(void)fifo.Write(std::string("B"));
 		}
+
 		p2_done.store(true);
 	});
 	std::string collected;
@@ -251,6 +264,7 @@ int test_shared_fifo_multi_producer_single_consumer_counts() {
 	ASSERT_EQUAL("total size", collected.size(), static_cast<size_t>(chunks * 2));
 	RETURN_TEST("test_shared_fifo_multi_producer_single_consumer_counts", 0);
 }
+
 int test_shared_fifo_multiple_consumers_total_coverage() {
 	SharedFIFO fifo;
 	const int total = 1000;
@@ -268,6 +282,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 			if (!res || (part.empty() && fifo.EoF())) break;
 			local += part.size();
 		}
+
 		c1.store(local);
 	});
 	auto consumer2 = std::thread([&]() -> void {
@@ -278,6 +293,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 			if (!res || (part.empty() && fifo.EoF())) break;
 			local += part.size();
 		}
+
 		c2.store(local);
 	});
 	producer.join();
@@ -286,6 +302,7 @@ int test_shared_fifo_multiple_consumers_total_coverage() {
 	ASSERT_EQUAL("sum of consumed", c1.load() + c2.load(), static_cast<size_t>(total));
 	RETURN_TEST("test_shared_fifo_multiple_consumers_total_coverage", 0);
 }
+
 int test_shared_fifo_close_suppresses_writes() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("ABC"));
@@ -299,6 +316,7 @@ int test_shared_fifo_close_suppresses_writes() {
 	ASSERT_EQUAL("content after close write blocked", toString(out), std::string("ABC"));
 	RETURN_TEST("test_shared_fifo_close_suppresses_writes", 0);
 }
+
 int test_shared_fifo_wrap_boundary_blocking() {
 	SharedFIFO fifo;
 	(void)fifo.Write("ABCDE");
@@ -323,6 +341,7 @@ int test_shared_fifo_wrap_boundary_blocking() {
 	ASSERT_EQUAL("wrap combined", toString(all).size(), static_cast<std::size_t>(5));
 	RETURN_TEST("test_shared_fifo_wrap_boundary_blocking", 0);
 }
+
 int test_shared_fifo_growth_under_contention() {
 	SharedFIFO fifo;
 	const int iters = 100;
@@ -331,6 +350,7 @@ int test_shared_fifo_growth_under_contention() {
 		for (int i = 0; i < iters; ++i) {
 			(void)fifo.Write(std::string(100 + (i % 50), 'Z'));
 		}
+
 		done.store(true);
 		fifo.Close();
 	});
@@ -345,8 +365,10 @@ int test_shared_fifo_growth_under_contention() {
 					auto remres = fifo.Extract(0, rem);
 					if (remres && !rem.empty()) consumed += rem.size();
 				}
+
 				break;
 			}
+
 			if (part.empty() && fifo.EoF()) break;
 			consumed += part.size();
 		}
@@ -359,6 +381,7 @@ int test_shared_fifo_growth_under_contention() {
 	ASSERT_EQUAL("growth contention total", consumed, expected);
 	RETURN_TEST("test_shared_fifo_growth_under_contention", 0);
 }
+
 int test_shared_fifo_read_insufficient_closed_returns_available() {
 	SharedFIFO fifo;
 	(void)fifo.Write("ABC");
@@ -372,6 +395,7 @@ int test_shared_fifo_read_insufficient_closed_returns_available() {
 	ASSERT_EQUAL("available unchanged", fifo.AvailableBytes(), static_cast<std::size_t>(3));
 	RETURN_TEST("test_shared_fifo_read_insufficient_closed_returns_available", 0);
 }
+
 int test_shared_fifo_extract_insufficient_closed_returns_available() {
 	SharedFIFO fifo;
 	(void)fifo.Write("HELLO");
@@ -388,6 +412,7 @@ int test_shared_fifo_extract_insufficient_closed_returns_available() {
 	ASSERT_EQUAL("content is HELLO", toString(all), std::string("HELLO"));
 	RETURN_TEST("test_shared_fifo_extract_insufficient_closed_returns_available", 0);
 }
+
 int test_shared_fifo_blocking_read_insufficient_not_closed() {
 	SharedFIFO fifo;
 	(void)fifo.Write("12");
@@ -414,6 +439,7 @@ int test_shared_fifo_blocking_read_insufficient_not_closed() {
 	ASSERT_TRUE("read returned error after close", read_got_error.load());
 	RETURN_TEST("test_shared_fifo_blocking_read_insufficient_not_closed", 0);
 }
+
 int test_shared_fifo_available_bytes_basic() {
 	SharedFIFO fifo;
 	// Empty buffer
@@ -434,6 +460,7 @@ int test_shared_fifo_available_bytes_basic() {
 	ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), static_cast<std::size_t>(6));
 	RETURN_TEST("test_shared_fifo_available_bytes_basic", 0);
 }
+
 int test_shared_fifo_available_bytes_concurrent() {
 	SharedFIFO fifo;
 	std::atomic<std::size_t> available_checks{0};
@@ -444,6 +471,7 @@ int test_shared_fifo_available_bytes_concurrent() {
 			(void)fifo.Write("DATA");
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
+
 		done.store(true);
 		fifo.Close();
 	});
@@ -456,6 +484,7 @@ int test_shared_fifo_available_bytes_concurrent() {
 				auto res = fifo.Extract(0, data);
 				available_checks.fetch_add(1);
 			}
+
 			std::this_thread::sleep_for(std::chrono::milliseconds(3));
 		}
 	});
@@ -466,6 +495,7 @@ int test_shared_fifo_available_bytes_concurrent() {
 	ASSERT_EQUAL("no bytes available", fifo.AvailableBytes(), static_cast<std::size_t>(0));
 	RETURN_TEST("test_shared_fifo_available_bytes_concurrent", 0);
 }
+
 int test_shared_fifo_read_closed_no_data_nonblocking() {
 	SharedFIFO fifo;
 	fifo.Close();
@@ -479,6 +509,7 @@ int test_shared_fifo_read_closed_no_data_nonblocking() {
 	ASSERT_FALSE("Read returns error when requesting > available on closed", result);
 	RETURN_TEST("test_shared_fifo_read_closed_no_data_nonblocking", 0);
 }
+
 int test_shared_fifo_extract_closed_no_data_nonblocking() {
 	SharedFIFO fifo;
 	fifo.Close();
@@ -489,6 +520,7 @@ int test_shared_fifo_extract_closed_no_data_nonblocking() {
 	ASSERT_FALSE("Extract returns error when requesting > available on closed", result);
 	RETURN_TEST("test_shared_fifo_extract_closed_no_data_nonblocking", 0);
 }
+
 int test_sharedfifo_equality() {
 	SharedFIFO sa;
 	SharedFIFO sb;
@@ -502,6 +534,7 @@ int test_sharedfifo_equality() {
 	ASSERT_TRUE("sharedfifo equal after both closed", sa == sb);
 	RETURN_TEST("test_sharedfifo_equality", 0);
 }
+
 int test_shared_fifo_write_whole_fifo() {
 	SharedFIFO shared;
 	FIFO src;
@@ -525,6 +558,7 @@ int test_shared_fifo_write_whole_fifo() {
 	ASSERT_EQUAL("shared fifo write whole rvalue content", toString(all2), std::string("TWO"));
 	RETURN_TEST("test_shared_fifo_write_whole_fifo", 0);
 }
+
 int test_shared_fifo_skip_basic() {
 	SharedFIFO sf;
 	(void)sf.Write(std::string("ABCDEFG"));
@@ -536,6 +570,7 @@ int test_shared_fifo_skip_basic() {
 	ASSERT_EQUAL("shared extract after skip content", toString(out), std::string("DEFG"));
 	RETURN_TEST("test_shared_fifo_skip_basic", 0);
 }
+
 int test_shared_fifo_skip_with_readpos() {
 	SharedFIFO sf;
 	(void)sf.Write(std::string("0123456789"));
@@ -552,6 +587,7 @@ int test_shared_fifo_skip_with_readpos() {
 	ASSERT_EQUAL("shared content after skip with readpos", toString(out), std::string("789"));
 	RETURN_TEST("test_shared_fifo_skip_with_readpos", 0);
 }
+
 int test_shared_fifo_peek_basic() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("HELLO"));
@@ -572,6 +608,7 @@ int test_shared_fifo_peek_basic() {
 	ASSERT_EQUAL("read content matches peek", toString(read1), std::string("HEL"));
 	RETURN_TEST("test_shared_fifo_peek_basic", 0);
 }
+
 int test_shared_fifo_peek_concurrent() {
 	SharedFIFO fifo;
 	// Write data first
@@ -588,6 +625,7 @@ int test_shared_fifo_peek_concurrent() {
 	ASSERT_EQUAL("concurrent read content", toString(read), std::string("DATA"));
 	RETURN_TEST("test_shared_fifo_peek_concurrent", 0);
 }
+
 int test_shared_fifo_peek_all_available() {
 	SharedFIFO fifo;
 	(void)fifo.Write(std::string("WORLD"));
@@ -603,6 +641,7 @@ int test_shared_fifo_peek_all_available() {
 	ASSERT_EQUAL("read all content", toString(read_all), std::string("WORLD"));
 	RETURN_TEST("test_shared_fifo_peek_all_available", 0);
 }
+
 int test_hexdump1() {
 	const std::string fn_name = "test_shared_hexdump";
 	// Test 1: 5-line hexdump like FIFO test
@@ -622,6 +661,7 @@ int test_hexdump1() {
 	ASSERT_EQUAL("test_shared_hexdump exact match", expected, dump);
 	RETURN_TEST(fn_name.c_str(), 0);
 }
+
 int test_hexdump2() {
 	const std::string fn_name = "test_shared_hexdump_offset";
 	// Test 2: hexdump starting at offset 5
@@ -642,6 +682,7 @@ int test_hexdump2() {
 	ASSERT_EQUAL("test_shared_hexdump_offset exact match", expected, dump);
 	RETURN_TEST(fn_name.c_str(), 0);
 }
+
 int test_hexdump3() {
 	const std::string fn_name = "test_shared_hexdump_mixed";
 	// Test 3: mixed printable and non-printable
@@ -668,6 +709,7 @@ int test_hexdump3() {
 	ASSERT_EQUAL("test_shared_hexdump_mixed exact match", expected, dump);
 	RETURN_TEST(fn_name.c_str(), 0);
 }
+
 int test_shared_fifo_polymorphic_interface_abi() {
 	std::unique_ptr<ReadWrite> fifo = std::make_unique<SharedFIFO>();
 	ReadOnly& reader = *fifo;
@@ -694,6 +736,7 @@ int test_shared_fifo_polymorphic_interface_abi() {
 	fifo.reset();
 	RETURN_TEST("test_shared_fifo_polymorphic_interface_abi", 0);
 }
+
 int main() {
 	int result = 0;
 	result += test_shared_fifo_producer_consumer_blocking();
@@ -730,5 +773,6 @@ int main() {
 	} else {
 		std::cout << result << " SharedFIFO tests failed." << std::endl;
 	}
+
 	return result;
 }

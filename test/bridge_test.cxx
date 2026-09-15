@@ -42,6 +42,7 @@ public:
 	std::size_t AvailableBytes() const noexcept override {
 		return m_source.AvailableBytes();
 	}
+
 	bool Empty() const noexcept override { return m_source.Empty(); }
 	bool EoF() const noexcept override { return m_source.EoF(); }
 	bool IsReadable() const noexcept override { return m_source.IsReadable(); }
@@ -51,6 +52,7 @@ public:
 			m_fail_read = false;
 			return false;
 		}
+
 		return m_source.Extract(bytes, out);
 	}
 
@@ -59,26 +61,32 @@ public:
 			m_fail_extract = false;
 			return false;
 		}
+
 		return m_source.Extract(bytes, out);
 	}
 
 	bool Peek(std::size_t bytes, DataType& out) const noexcept override {
 		return m_source.Peek(bytes, out);
 	}
+
 	void ReadUntilEoF(DataType& out) const noexcept override {
 		m_source.ReadUntilEoF(out);
 	}
+
 	void ExtractUntilEoF(DataType& out) noexcept override {
 		m_source.ExtractUntilEoF(out);
 	}
+
 	void Seek(std::ptrdiff_t offset, Position mode) const noexcept override {
 		m_source.Seek(offset, mode);
 	}
+
 	void Clean() noexcept override { m_source.Clean(); }
 
 	PointerType Clone() const noexcept override {
 		return MakePointer<FaultyReader>(m_source);
 	}
+
 	PointerType Move() noexcept override {
 		return MakePointer<FaultyReader>(m_source);
 	}
@@ -113,6 +121,7 @@ public:
 			++m_calls;
 			return m_target.Write(std::move(in));
 		}
+
 		return false;
 	}
 
@@ -138,6 +147,7 @@ public:
 	PointerType Clone() const noexcept override {
 		return MakePointer<FailingWriter>(m_target, m_succeed);
 	}
+
 	PointerType Move() noexcept override {
 		return MakePointer<FailingWriter>(m_target, m_succeed);
 	}
@@ -174,6 +184,7 @@ public:
 			m_called = true;
 			return m_target.Write(std::move(in));
 		}
+
 		return false;
 	}
 
@@ -199,6 +210,7 @@ public:
 	PointerType Clone() const noexcept override {
 		return MakePointer<FailingWriterOnce>(m_target);
 	}
+
 	PointerType Move() noexcept override {
 		return MakePointer<FailingWriterOnce>(m_target);
 	}
@@ -639,5 +651,6 @@ int main() {
 	} else {
 		std::cout << result << " Bridge tests failed." << std::endl;
 	}
+
 	return result;
 }

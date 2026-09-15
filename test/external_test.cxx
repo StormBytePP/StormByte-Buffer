@@ -118,5 +118,6 @@ int main() {
 	} else {
 		std::cout << result << " External tests failed." << std::endl;
 	}
+
 	return result;
 }

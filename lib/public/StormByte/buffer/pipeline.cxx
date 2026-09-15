@@ -44,6 +44,7 @@ struct Pipeline::Impl {
 			if (t.joinable())
 				t.join();
 		}
+
 		threads.clear();
 	}
 };
@@ -80,6 +81,7 @@ Pipeline& Pipeline::operator=(const Pipeline& other) {
 		m_impl = std::make_unique<Impl>();
 		m_impl->pipes = other.m_impl->pipes;
 	}
+
 	return *this;
 }
 
@@ -89,6 +91,7 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 			m_impl->WaitForCompletion();
 		m_impl = std::move(other.m_impl);
 	}
+
 	return *this;
 }
 
@@ -113,6 +116,7 @@ void Pipeline::SetError() const noexcept {
 		if (buf)
 			buf->SetError();
 	}
+
 	m_impl->final_producer.SetError();
 }
 
@@ -192,6 +196,7 @@ Consumer Pipeline::Process(Consumer buffer,
 					run_one_stage(i, input);
 				});
 		}
+
 		if (!async) {
 			// Parallel without Async → block until all stages complete
 			m_impl->WaitForCompletion();

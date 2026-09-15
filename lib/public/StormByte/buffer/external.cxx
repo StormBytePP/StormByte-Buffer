@@ -26,58 +26,75 @@ void ExternalReader::Seek(std::ptrdiff_t offset, Position mode) const noexcept {
 	(void)offset;
 	(void)mode;
 }
+
 void ExternalReader::Clean() noexcept {}
+
 ExternalBufferReader::~ExternalBufferReader() noexcept = default;
 ExternalReader::PointerType ExternalBufferReader::Clone() const noexcept {
 	return MakePointer<ExternalBufferReader>(*this);
 }
+
 ExternalReader::PointerType ExternalBufferReader::Move() noexcept {
 	return MakePointer<ExternalBufferReader>(std::move(*this));
 }
+
 ExternalWriter::~ExternalWriter() noexcept = default;
 ExternalBufferWriter::~ExternalBufferWriter() noexcept = default;
 ExternalWriter::PointerType ExternalBufferWriter::Clone() const noexcept {
 	return MakePointer<ExternalBufferWriter>(*this);
 }
+
 ExternalWriter::PointerType ExternalBufferWriter::Move() noexcept {
 	return MakePointer<ExternalBufferWriter>(std::move(*this));
 }
+
 // ---------------------------------------------------------------------------
 // ExternalBufferReader
 // ---------------------------------------------------------------------------
 std::size_t ExternalBufferReader::AvailableBytes() const noexcept {
 	return m_buffer.get().AvailableBytes();
 }
+
 bool ExternalBufferReader::Empty() const noexcept {
 	return m_buffer.get().Empty();
 }
+
 bool ExternalBufferReader::EoF() const noexcept {
 	return m_buffer.get().EoF();
 }
+
 bool ExternalBufferReader::IsReadable() const noexcept {
 	return m_buffer.get().IsReadable();
 }
+
 bool ExternalBufferReader::Read(std::size_t count, DataType& out) const noexcept {
 	return m_buffer.get().Read(count, out);
 }
+
 bool ExternalBufferReader::Extract(std::size_t count, DataType& out) noexcept {
 	return m_buffer.get().Extract(count, out);
 }
+
 bool ExternalBufferReader::Peek(std::size_t count, DataType& out) const noexcept {
 	return m_buffer.get().Peek(count, out);
 }
+
 void ExternalBufferReader::ReadUntilEoF(DataType& out) const noexcept {
 	m_buffer.get().ReadUntilEoF(out);
 }
+
 void ExternalBufferReader::ExtractUntilEoF(DataType& out) noexcept {
 	m_buffer.get().ExtractUntilEoF(out);
 }
+
 void ExternalBufferReader::Seek(std::ptrdiff_t offset, Position mode) const noexcept {
 	m_buffer.get().Seek(offset, mode);
 }
+
 void ExternalBufferReader::Clean() noexcept {
 	m_buffer.get().Clean();
 }
+
 // ---------------------------------------------------------------------------
 // ExternalWriter convenience
 // ---------------------------------------------------------------------------
@@ -89,10 +106,12 @@ bool ExternalWriter::Write(std::string_view sv) noexcept {
 		[](char c) noexcept { return static_cast<std::byte>(c); });
 	return Write(std::move(tmp));
 }
+
 bool ExternalWriter::Write(const char* s) noexcept {
 	if (!s) return Write(DataType{});
 	return Write(std::string_view(s));
 }
+
 bool ExternalWriter::Write(std::size_t count, std::string_view sv) noexcept {
 	const std::size_t to_write = (count == 0)
 		? sv.size()
@@ -104,27 +123,34 @@ bool ExternalWriter::Write(std::size_t count, std::string_view sv) noexcept {
 		[](char c) noexcept { return static_cast<std::byte>(c); });
 	return Write(std::move(tmp));
 }
+
 // ---------------------------------------------------------------------------
 // ExternalBufferWriter
 // ---------------------------------------------------------------------------
 bool ExternalBufferWriter::IsWritable() const noexcept {
 	return m_buffer.get().IsWritable();
 }
+
 bool ExternalBufferWriter::Write(const DataType& data) noexcept {
 	return m_buffer.get().Write(0, data);
 }
+
 bool ExternalBufferWriter::Write(DataType&& data) noexcept {
 	return m_buffer.get().Write(0, std::move(data));
 }
+
 bool ExternalBufferWriter::Write(std::size_t count, const DataType& data) noexcept {
 	return m_buffer.get().Write(count, data);
 }
+
 bool ExternalBufferWriter::Write(std::size_t count, DataType&& data) noexcept {
 	return m_buffer.get().Write(count, std::move(data));
 }
+
 void ExternalBufferWriter::Close() noexcept {
 	m_buffer.get().Close();
 }
+
 void ExternalBufferWriter::SetError() noexcept {
 	m_buffer.get().SetError();
 }

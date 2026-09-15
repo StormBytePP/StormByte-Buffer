@@ -25,21 +25,27 @@ Producer::~Producer() noexcept = default;
 void Producer::Close() noexcept {
 	m_buffer->Close();
 }
+
 void Producer::SetError() noexcept {
 	m_buffer->SetError();
 }
+
 bool Producer::IsWritable() const noexcept {
 	return m_buffer->IsWritable();
 }
+
 bool Producer::Write(const std::size_t& count, const DataType& data) noexcept {
 	return m_buffer->Write(count, data);
 }
+
 bool Producer::Write(const std::size_t& count, DataType&& data) noexcept {
 	return m_buffer->Write(count, std::move(data));
 }
+
 bool Producer::Write(const std::size_t& count, const ReadOnly& data) noexcept {
 	return m_buffer->Write(count, data);
 }
+
 bool Producer::Write(const std::size_t& count, ReadOnly&& data) noexcept {
 	return m_buffer->Write(count, std::move(data));
 }
