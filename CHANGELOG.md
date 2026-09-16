@@ -24,11 +24,19 @@ If you landed here from a release link and have not read the tree:
 
 - [ ] Replace `Sink::Bind` with `operator>>` / `operator<<`
 
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.2...HEAD
+
+## [1.1.2] - 2026-09-16
+
+### Deprecated
+
+- `Sink::Bind` (both overloads). See Unreleased TODO.
+
 ### Fixed
 
 - `Sink::Bind(key)` of a hopper this Sink already holds attaches the other Sink as a co-writer. `Sink::Eof` then closes that hopper only when the last writer closes, so extra producers can still `Push`. No new public methods.
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.1...HEAD
+[1.1.2]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.1...1.1.2
 
 ## [1.1.1] - 2026-09-15
 
