@@ -383,6 +383,27 @@ int test_sink_extra_writer_eof() {
 }
 
 /**
+ * @brief Re-Bind of the same producer does not add a phantom writer.
+ * @return 0 on success.
+ */
+int test_sink_rebind_same_writer_eof() {
+	Sink<int> src;
+	Sink<int> dest;
+
+	src.Bind(0, dest);
+	dest.Bind(0, src);
+
+	src.Push(0, 1);
+	ASSERT_EQUAL("test_sink_rebind_same_writer_eof queued", static_cast<std::size_t>(1), dest.Size(0));
+	ASSERT_EQUAL("test_sink_rebind_same_writer_eof pop", 1, dest.Pop());
+
+	src.Eof();
+	ASSERT_TRUE("test_sink_rebind_same_writer_eof dest eof", dest.EoF());
+
+	RETURN_TEST("test_sink_rebind_same_writer_eof", 0);
+}
+
+/**
  * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Push().
  * @return 0 on success.
  */
@@ -456,6 +477,7 @@ int main() {
 	failed += test_sink_concurrent_bind_and_eof();
 	failed += test_sink_eof_unblocks_waiters();
 	failed += test_sink_extra_writer_eof();
+	failed += test_sink_rebind_same_writer_eof();
 	failed += test_sink_concurrent_bind_and_notify();
 
 	if (failed != 0) {

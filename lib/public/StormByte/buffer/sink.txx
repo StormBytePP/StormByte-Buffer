@@ -143,6 +143,7 @@ namespace StormByte::Buffer {
 				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
 				const bool existed = m_buckets.contains(key);
 				auto hopper = Ensure(key);
+				const bool already_writer = existed && consumer.m_writers.contains(hopper);
 				if (existed)
 					consumer.m_writers.insert(hopper);
 				if (closed)
@@ -155,7 +156,7 @@ namespace StormByte::Buffer {
 				consumer.RebuildOrder();
 				consumer.m_wired.notify_all();
 				m_wired.notify_all();
-				return existed ? hopper : nullptr;
+				return (existed && !already_writer) ? hopper : nullptr;
 			}
 
 			/**

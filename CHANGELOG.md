@@ -35,6 +35,7 @@ If you landed here from a release link and have not read the tree:
 ### Fixed
 
 - `Sink::Bind(key)` of a hopper this Sink already holds attaches the other Sink as a co-writer. `Sink::Eof` then closes that hopper only when the last writer closes, so extra producers can still `Push`. No new public methods.
+- `Sink::Bind(key)` does not add a writer if the other Sink already writes that hopper. A second Bind of the same producer no longer leaves the hopper open after one `Eof`.
 
 [1.1.2]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.1...1.1.2
 
