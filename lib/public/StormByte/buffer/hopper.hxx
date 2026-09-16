@@ -27,6 +27,8 @@
 
 namespace StormByte::Buffer {
 
+	template<Type::MoveConstructible T> class Sink;
+
 	/**
 	 * @class Hopper
 	 * @brief Single-producer single-consumer (SPSC) typed item queue.
@@ -145,28 +147,9 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Marks end of production and wakes waiters.
 			 *
-			 * Force-closes regardless of writer count. Does not discard
-			 * already queued items. After Eof, Push does not enqueue.
-			 *
-			 * When several Sinks share this hopper via Bind, prefer
-			 * @ref CloseWriter so only the last writer closes.
+			 * Does not discard already queued items. After Eof, Push does not enqueue.
 			 */
 			void Eof() noexcept;
-
-			/**
-			 * @brief Registers an extra writer (Sink Bind of a shared hopper).
-			 *
-			 * The hopper starts with one writer. Each extra producer Bind
-			 * adds one. @ref CloseWriter then Eofs on the last writer.
-			 */
-			void AddWriter() noexcept;
-
-			/**
-			 * @brief Releases one writer. Last writer calls @ref Eof.
-			 *
-			 * Idempotent with @ref Eof: a hopper already closed stays closed.
-			 */
-			void CloseWriter() noexcept;
 
 			/**
 			 * @}
@@ -187,7 +170,7 @@ namespace StormByte::Buffer {
 			T Pop() noexcept;
 
 			/**
-			 * @brief Checks whether Eof was called (force or last writer).
+			 * @brief Checks whether Eof was called by a producer.
 			 * @return true if Eof was called. Note that queued items may still remain.
 			 */
 			bool EoF() const noexcept;
@@ -218,6 +201,11 @@ namespace StormByte::Buffer {
 			 */
 
 		private:
+			friend class Sink<T>;
+
+			void AddWriter() noexcept;
+			void CloseWriter() noexcept;
+
 			/**
 			 * @class Implementation
 			 * @brief Private implementation details of Hopper.

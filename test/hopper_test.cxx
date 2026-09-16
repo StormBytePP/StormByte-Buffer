@@ -239,29 +239,6 @@ int test_hopper_eof_behavior() {
 }
 
 /**
- * @brief Last CloseWriter Eofs; an extra writer can still Push after the first closes.
- * @return 0 on success.
- */
-int test_hopper_last_writer_eof() {
-	Hopper<int> hopper;
-	hopper.AddWriter();
-	ASSERT_FALSE("test_hopper_last_writer_eof initial", hopper.EoF());
-
-	hopper.CloseWriter();
-	ASSERT_FALSE("test_hopper_last_writer_eof first close", hopper.EoF());
-	hopper.Push(7);
-	ASSERT_EQUAL("test_hopper_last_writer_eof push after first close", static_cast<std::size_t>(1), hopper.Size());
-
-	hopper.CloseWriter();
-	ASSERT_TRUE("test_hopper_last_writer_eof last close", hopper.EoF());
-	hopper.Push(8);
-	ASSERT_EQUAL("test_hopper_last_writer_eof drop after last close", static_cast<std::size_t>(1), hopper.Size());
-	ASSERT_EQUAL("test_hopper_last_writer_eof remaining", 7, hopper.Pop());
-
-	RETURN_TEST("test_hopper_last_writer_eof", 0);
-}
-
-/**
  * @brief Tests Notify callback mechanism waking consumer condition variables on Push and Eof.
  * @return 0 on success.
  */
@@ -355,7 +332,6 @@ int main() {
 	failed += test_hopper_value_types();
 	failed += test_hopper_push_blocking_and_pop_unblock();
 	failed += test_hopper_eof_behavior();
-	failed += test_hopper_last_writer_eof();
 	failed += test_hopper_notify_condition_variable();
 	failed += test_hopper_spsc_stress();
 

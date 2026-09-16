@@ -86,22 +86,25 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Closes the Sink and CloseWriter on hoppers this Sink writes.
+			 * @brief Closes this Sink and returns hoppers it writes, for last-writer Eof.
+			 * @param cv Set to the consumer condition variable, if any.
+			 * @return Writer hoppers to CloseWriter (empty if already closed).
 			 */
-			void Eof() noexcept {
+			std::vector<std::shared_ptr<Hopper<T>>> Close(std::condition_variable*& cv) noexcept {
+				std::vector<std::shared_ptr<Hopper<T>>> writers;
 				{
 					std::lock_guard<std::mutex> lock(m_mutex);
 					const bool already = m_closed.exchange(true, std::memory_order_acq_rel);
 					if (!already) {
 						for (auto& hopper : m_order) {
 							if (m_writers.contains(hopper))
-								hopper->CloseWriter();
+								writers.push_back(hopper);
 						}
 					}
 					m_wired.notify_all();
+					cv = m_consumer.load(std::memory_order_acquire);
 				}
-				if (auto* cv = m_consumer.load(std::memory_order_acquire); cv)
-					cv->notify_all();
+				return writers;
 			}
 
 			/**
@@ -131,18 +134,17 @@ namespace StormByte::Buffer {
 			 * @brief Binds/creates hopper for key and shares with consumer Sink.
 			 * @param key Bucket key.
 			 * @param consumer Consumer Sink implementation reference.
+			 * @return Hopper when this Sink already held it (extra writer); empty otherwise.
 			 */
-			void Bind(int key, Implementation& consumer) {
+			std::shared_ptr<Hopper<T>> Bind(int key, Implementation& consumer) {
 				std::scoped_lock lock(m_mutex, consumer.m_mutex);
 				const bool closed = m_closed.load(std::memory_order_acquire)
 					|| consumer.m_closed.load(std::memory_order_acquire);
 				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
 				const bool existed = m_buckets.contains(key);
 				auto hopper = Ensure(key);
-				if (existed) {
-					hopper->AddWriter();
+				if (existed)
 					consumer.m_writers.insert(hopper);
-				}
 				if (closed)
 					hopper->Eof();
 				if (cv != nullptr)
@@ -153,6 +155,7 @@ namespace StormByte::Buffer {
 				consumer.RebuildOrder();
 				consumer.m_wired.notify_all();
 				m_wired.notify_all();
+				return existed ? hopper : nullptr;
 			}
 
 			/**
@@ -384,7 +387,12 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Eof() noexcept {
-		m_impl->Eof();
+		std::condition_variable* cv = nullptr;
+		const auto writers = m_impl->Close(cv);
+		for (const auto& hopper : writers)
+			hopper->CloseWriter();
+		if (cv)
+			cv->notify_all();
 	}
 
 	template<Type::MoveConstructible T>
@@ -394,7 +402,8 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Bind(int key, Sink& consumer) {
-		m_impl->Bind(key, *consumer.m_impl);
+		if (auto extra = m_impl->Bind(key, *consumer.m_impl))
+			extra->AddWriter();
 	}
 
 	template<Type::MoveConstructible T>

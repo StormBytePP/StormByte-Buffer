@@ -22,7 +22,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
-- `Hopper` / `Sink`: `Bind(key)` of a hopper this Sink already holds attaches the other Sink as a co-writer. `Sink::Eof` calls `Hopper::CloseWriter`; the hopper Eofs only when the last writer closes. Extra producers can still `Push` after the first writer finishes.
+- `Sink::Bind(key)` of a hopper this Sink already holds attaches the other Sink as a co-writer. `Sink::Eof` then closes that hopper only when the last writer closes, so extra producers can still `Push`. No new public methods.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.1...HEAD
 
