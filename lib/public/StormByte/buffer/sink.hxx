@@ -133,6 +133,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Shares all existing hoppers on this Sink with the consumer Sink.
 			 * @param consumer Target consumer Sink.
+			 * @deprecated Will be replaced by operator>> / operator<<.
 			 */
 			void Bind(Sink& consumer);
 
@@ -140,6 +141,7 @@ namespace StormByte::Buffer {
 			 * @brief Creates or retrieves the hopper for key and shares it with consumer.
 			 * @param key Bucket key identifier.
 			 * @param consumer Target consumer Sink.
+			 * @deprecated Will be replaced by operator>> / operator<<.
 			 *
 			 * This Sink has no hopper yet: creates it (this is the writer,
 			 * @p consumer is the reader). This Sink already has the hopper:
