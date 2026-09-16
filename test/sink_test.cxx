@@ -383,7 +383,12 @@ int test_sink_extra_writer_eof() {
 }
 
 /**
- * @brief Re-Bind of the same producer does not add a phantom writer.
+ * @brief Re-Bind of the same producer must not leave the consumer waiting.
+ *
+ * Multimedia wires demuxer >> remuxer twice (direct bind and Filters::Close).
+ * A phantom writer keeps Hopper::EoF false after the only producer Eofs;
+ * the remuxer Wait never returns. Fail on timeout, do not hang the suite.
+ *
  * @return 0 on success.
  */
 int test_sink_rebind_same_writer_eof() {
@@ -393,11 +398,26 @@ int test_sink_rebind_same_writer_eof() {
 	src.Bind(0, dest);
 	dest.Bind(0, src);
 
+	std::condition_variable cv;
+	std::mutex m;
+	dest.Notify(cv);
+
 	src.Push(0, 1);
-	ASSERT_EQUAL("test_sink_rebind_same_writer_eof queued", static_cast<std::size_t>(1), dest.Size(0));
 	ASSERT_EQUAL("test_sink_rebind_same_writer_eof pop", 1, dest.Pop());
 
+	std::atomic<bool> eof{false};
+	std::thread waiter([&]() {
+		std::unique_lock<std::mutex> lock(m);
+		eof.store(cv.wait_for(lock, std::chrono::seconds(1), [&]() {
+			return dest.EoF();
+		}), std::memory_order_release);
+	});
+
 	src.Eof();
+	waiter.join();
+
+	ASSERT_TRUE("test_sink_rebind_same_writer_eof dest eof within 1s (would hang remuxer)",
+		eof.load(std::memory_order_acquire));
 	ASSERT_TRUE("test_sink_rebind_same_writer_eof dest eof", dest.EoF());
 
 	RETURN_TEST("test_sink_rebind_same_writer_eof", 0);
