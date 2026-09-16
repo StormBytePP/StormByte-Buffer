@@ -145,9 +145,28 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Marks end of production and wakes waiters.
 			 *
-			 * Does not discard already queued items.
+			 * Force-closes regardless of writer count. Does not discard
+			 * already queued items. After Eof, Push does not enqueue.
+			 *
+			 * When several Sinks share this hopper via Bind, prefer
+			 * @ref CloseWriter so only the last writer closes.
 			 */
 			void Eof() noexcept;
+
+			/**
+			 * @brief Registers an extra writer (Sink Bind of a shared hopper).
+			 *
+			 * The hopper starts with one writer. Each extra producer Bind
+			 * adds one. @ref CloseWriter then Eofs on the last writer.
+			 */
+			void AddWriter() noexcept;
+
+			/**
+			 * @brief Releases one writer. Last writer calls @ref Eof.
+			 *
+			 * Idempotent with @ref Eof: a hopper already closed stays closed.
+			 */
+			void CloseWriter() noexcept;
 
 			/**
 			 * @}
@@ -168,7 +187,7 @@ namespace StormByte::Buffer {
 			T Pop() noexcept;
 
 			/**
-			 * @brief Checks whether Eof was called by the producer.
+			 * @brief Checks whether Eof was called (force or last writer).
 			 * @return true if Eof was called. Note that queued items may still remain.
 			 */
 			bool EoF() const noexcept;

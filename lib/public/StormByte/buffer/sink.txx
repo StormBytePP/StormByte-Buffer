@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -85,15 +86,18 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Closes the Sink and marks all hoppers Eof.
+			 * @brief Closes the Sink and CloseWriter on hoppers this Sink writes.
 			 */
 			void Eof() noexcept {
 				{
 					std::lock_guard<std::mutex> lock(m_mutex);
-					m_closed.store(true, std::memory_order_release);
-					const auto hoppers = m_order;
-					for (auto& hopper : hoppers)
-						hopper->Eof();
+					const bool already = m_closed.exchange(true, std::memory_order_acq_rel);
+					if (!already) {
+						for (auto& hopper : m_order) {
+							if (m_writers.contains(hopper))
+								hopper->CloseWriter();
+						}
+					}
 					m_wired.notify_all();
 				}
 				if (auto* cv = m_consumer.load(std::memory_order_acquire); cv)
@@ -133,7 +137,12 @@ namespace StormByte::Buffer {
 				const bool closed = m_closed.load(std::memory_order_acquire)
 					|| consumer.m_closed.load(std::memory_order_acquire);
 				std::condition_variable* cv = consumer.m_consumer.load(std::memory_order_acquire);
+				const bool existed = m_buckets.contains(key);
 				auto hopper = Ensure(key);
+				if (existed) {
+					hopper->AddWriter();
+					consumer.m_writers.insert(hopper);
+				}
 				if (closed)
 					hopper->Eof();
 				if (cv != nullptr)
@@ -313,6 +322,7 @@ namespace StormByte::Buffer {
 				if (cv != nullptr)
 					hopper->Notify(*cv);
 				m_buckets.emplace(key, hopper);
+				m_writers.insert(hopper);
 				RebuildOrder();
 				return hopper;
 			}
@@ -352,6 +362,7 @@ namespace StormByte::Buffer {
 			mutable std::mutex m_mutex;							///< Guards bucket map and order vector.
 			std::condition_variable m_wired;					///< Waits for bucket binding or closure.
 			std::map<int, std::shared_ptr<Hopper<T>>> m_buckets;///< Map of integer keys to Hopper buckets.
+			std::set<std::shared_ptr<Hopper<T>>> m_writers;	///< Hoppers this Sink writes (CloseWriter on Eof).
 			std::vector<std::shared_ptr<Hopper<T>>> m_order;	///< Order vector of hoppers for Pop.
 			std::atomic<std::size_t> m_rr;						///< Round-robin counter.
 			std::atomic<std::condition_variable*> m_consumer;	///< Registered consumer condition variable.

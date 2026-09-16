@@ -352,6 +352,37 @@ int test_sink_eof_unblocks_waiters() {
 }
 
 /**
+ * @brief Extra producer Bind: first writer Eof does not close; last writer does.
+ * @return 0 on success.
+ */
+int test_sink_extra_writer_eof() {
+	Sink<int> src;
+	Sink<int> dest;
+	Sink<int> extra;
+
+	src.Bind(0, dest);
+	dest.Bind(0, extra);
+
+	src.Push(0, 1);
+	extra.Push(0, 2);
+	ASSERT_EQUAL("test_sink_extra_writer_eof queued", static_cast<std::size_t>(2), dest.Size(0));
+
+	src.Eof();
+	ASSERT_FALSE("test_sink_extra_writer_eof dest open after first writer", dest.EoF());
+	extra.Push(0, 3);
+	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", static_cast<std::size_t>(3), dest.Size(0));
+
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 1", 1, dest.Pop());
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 2", 2, dest.Pop());
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 3", 3, dest.Pop());
+
+	extra.Eof();
+	ASSERT_TRUE("test_sink_extra_writer_eof dest eof after last writer", dest.EoF());
+
+	RETURN_TEST("test_sink_extra_writer_eof", 0);
+}
+
+/**
  * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Push().
  * @return 0 on success.
  */
@@ -424,6 +455,7 @@ int main() {
 	failed += test_sink_notify_condition_variable();
 	failed += test_sink_concurrent_bind_and_eof();
 	failed += test_sink_eof_unblocks_waiters();
+	failed += test_sink_extra_writer_eof();
 	failed += test_sink_concurrent_bind_and_notify();
 
 	if (failed != 0) {

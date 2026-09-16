@@ -38,9 +38,11 @@ namespace StormByte::Buffer {
 	 *
 	 * Key characteristics:
 	 * - Bind: Shares Hopper instances between producer and consumer sinks under specific keys.
+	 *   Bind(key) when this Sink already has that hopper attaches the other Sink as a
+	 *   co-writer: Hopper::CloseWriter Eofs only when the last writer closes.
 	 * - Drain: Terminal producer flag. Push to an un-bound key discards the item without waiting for Bind.
 	 * - Pop: Retrieves items across buckets using Round-Robin or custom Select chooser.
-	 * - EoF: Closes the Sink and marks all hoppers as end-of-file.
+	 * - EoF: Closes the Sink and CloseWriter on hoppers this Sink writes.
 	 *
 	 * @tparam T Item type stored in the hoppers (must be MoveConstructible).
 	 */
@@ -109,7 +111,11 @@ namespace StormByte::Buffer {
 			void Push(int key, T item) noexcept;
 
 			/**
-			 * @brief Closes the Sink and marks all hoppers as Eof.
+			 * @brief Closes the Sink and releases writer holds on its hoppers.
+			 *
+			 * Hoppers this Sink created (or attached to as a co-writer) get
+			 * @ref Hopper::CloseWriter. A hopper shared by several producers
+			 * Eofs when the last writer closes. Idempotent.
 			 *
 			 * Wakes Push and Pop waiters.
 			 */
@@ -134,6 +140,10 @@ namespace StormByte::Buffer {
 			 * @brief Creates or retrieves the hopper for key and shares it with consumer.
 			 * @param key Bucket key identifier.
 			 * @param consumer Target consumer Sink.
+			 *
+			 * This Sink has no hopper yet: creates it (this is the writer,
+			 * @p consumer is the reader). This Sink already has the hopper:
+			 * @p consumer is attached as a co-writer (extra producer).
 			 */
 			void Bind(int key, Sink& consumer);
 

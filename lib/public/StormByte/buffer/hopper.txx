@@ -45,14 +45,14 @@ namespace StormByte::Buffer {
 			 * @brief Constructs an unbounded Implementation instance.
 			 */
 			Implementation() noexcept
-			: m_eof(false), m_wake(nullptr), m_cap(0) {}
+			: m_eof(false), m_wake(nullptr), m_cap(0), m_writers(1) {}
 
 			/**
 			 * @brief Constructs a bounded Implementation instance.
 			 * @param capacity Maximum items allowed.
 			 */
 			explicit Implementation(std::size_t capacity) noexcept
-			: m_eof(false), m_wake(nullptr), m_cap(capacity) {}
+			: m_eof(false), m_wake(nullptr), m_cap(capacity), m_writers(1) {}
 
 			/**
 			 * @brief Destructor. Marks EoF and wakes waiting producers.
@@ -133,6 +133,28 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Registers an extra writer.
+			 */
+			void AddWriter() noexcept {
+				m_writers.fetch_add(1, std::memory_order_acq_rel);
+			}
+
+			/**
+			 * @brief Releases one writer. Last writer force-closes.
+			 */
+			void CloseWriter() noexcept {
+				unsigned prev = m_writers.load(std::memory_order_acquire);
+				while (prev > 0) {
+					if (m_writers.compare_exchange_weak(prev, prev - 1,
+							std::memory_order_acq_rel, std::memory_order_acquire)) {
+						if (prev == 1)
+							Eof();
+						return;
+					}
+				}
+			}
+
+			/**
 			 * @brief Pops next item from queue without waiting.
 			 * @return Next item, or default T if empty.
 			 */
@@ -191,6 +213,7 @@ namespace StormByte::Buffer {
 			std::atomic<bool> m_eof;						///< End of production flag.
 			std::atomic<std::condition_variable*> m_wake;	///< Consumer condition variable.
 			std::atomic<std::size_t> m_cap;					///< Capacity ceiling (0 = unbounded).
+			std::atomic<unsigned> m_writers;				///< Live writers; last CloseWriter Eofs.
 	};
 
 	template<Type::MoveConstructible T>
@@ -232,6 +255,16 @@ namespace StormByte::Buffer {
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Eof() noexcept {
 		m_impl->Eof();
+	}
+
+	template<Type::MoveConstructible T>
+	void Hopper<T>::AddWriter() noexcept {
+		m_impl->AddWriter();
+	}
+
+	template<Type::MoveConstructible T>
+	void Hopper<T>::CloseWriter() noexcept {
+		m_impl->CloseWriter();
 	}
 
 	template<Type::MoveConstructible T>
