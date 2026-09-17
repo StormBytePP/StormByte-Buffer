@@ -319,6 +319,65 @@ int test_hopper_spsc_stress() {
 }
 
 /**
+ * @brief Unnotify drops the consumer CV so a later Eof is safe after it dies.
+ *
+ * Bind-style share: the Hopper outlives the consumer. Notify does not own
+ * the CV. Without Unnotify, Eof would signal a destroyed object.
+ *
+ * @return 0 on success.
+ */
+int test_hopper_unnotify_before_cv_dies() {
+	Hopper<int> hopper;
+	auto wake = std::make_unique<std::condition_variable>();
+	hopper.Notify(*wake);
+	hopper.Push(1);
+	ASSERT_EQUAL("test_hopper_unnotify_before_cv_dies queued",
+		static_cast<std::size_t>(1), hopper.Size());
+
+	hopper.Unnotify();
+	hopper.Unnotify();
+	wake.reset();
+
+	hopper.Eof();
+	ASSERT_TRUE("test_hopper_unnotify_before_cv_dies eof", hopper.EoF());
+	ASSERT_EQUAL("test_hopper_unnotify_before_cv_dies pop", 1, hopper.Pop());
+	ASSERT_TRUE("test_hopper_unnotify_before_cv_dies empty", hopper.Empty());
+
+	RETURN_TEST("test_hopper_unnotify_before_cv_dies", 0);
+}
+
+/**
+ * @brief Notify after Unnotify attaches a new CV.
+ * @return 0 on success.
+ */
+int test_hopper_notify_after_unnotify() {
+	Hopper<int> hopper;
+	std::condition_variable first;
+	hopper.Notify(first);
+	hopper.Unnotify();
+
+	std::condition_variable cv;
+	std::mutex m;
+	hopper.Notify(cv);
+
+	std::atomic<int> received{-1};
+	std::thread consumer([&]() {
+		std::unique_lock<std::mutex> lock(m);
+		cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
+		received.store(hopper.Pop(), std::memory_order_release);
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	hopper.Push(7);
+	consumer.join();
+
+	ASSERT_EQUAL("test_hopper_notify_after_unnotify received", 7,
+		received.load(std::memory_order_acquire));
+
+	RETURN_TEST("test_hopper_notify_after_unnotify", 0);
+}
+
+/**
  * @brief Main entry point for Hopper tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -334,6 +393,8 @@ int main() {
 	failed += test_hopper_eof_behavior();
 	failed += test_hopper_notify_condition_variable();
 	failed += test_hopper_spsc_stress();
+	failed += test_hopper_unnotify_before_cv_dies();
+	failed += test_hopper_notify_after_unnotify();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;

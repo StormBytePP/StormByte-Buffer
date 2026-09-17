@@ -186,6 +186,15 @@ namespace StormByte::Buffer {
 					hopper->Notify(consumer);
 			}
 
+			void Unnotify() noexcept {
+				m_consumer.store(nullptr, std::memory_order_release);
+				const auto hoppers = Order();
+				for (auto& hopper : hoppers) {
+					if (hopper)
+						hopper->Unnotify();
+				}
+			}
+
 			/**
 			 * @brief Gets capacity of key hopper.
 			 * @param key Bucket key.
@@ -420,6 +429,11 @@ namespace StormByte::Buffer {
 	template<Type::MoveConstructible T>
 	void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
 		m_impl->Notify(consumer);
+	}
+
+	template<Type::MoveConstructible T>
+	void Sink<T>::Unnotify() noexcept {
+		m_impl->Unnotify();
 	}
 
 	template<Type::MoveConstructible T>

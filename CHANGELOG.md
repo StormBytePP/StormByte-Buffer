@@ -20,11 +20,30 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
 ### TODO
 
 - [ ] Replace `Sink::Bind` with `operator>>` / `operator<<`
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.2...HEAD
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.2.0...HEAD
+
+## [1.2.0] - 2026-09-17
+
+### Added
+
+- `Hopper::Unnotify` and `Sink::Unnotify`. `Notify(cv&)` does not own the
+  condition variable. After `Bind` the Hopper outlives the consumer; the
+  consumer must `Unnotify` before that CV is destroyed so a later producer
+  `Eof` does not signal a freed object. `SignalConsumer` is a no-op when
+  the pointer is null. `test_hopper_unnotify_before_cv_dies` and
+  `test_sink_unnotify_before_cv_dies` cover the tube teardown order.
+
+[1.2.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.2...1.2.0
 
 ## [1.1.2] - 2026-09-16
 

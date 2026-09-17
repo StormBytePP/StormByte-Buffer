@@ -188,12 +188,12 @@ namespace StormByte::Buffer {
 				return m_items.empty();
 			}
 
-			/**
-			 * @brief Registers consumer condition variable.
-			 * @param wake Condition variable reference.
-			 */
 			void Notify(std::condition_variable& wake) noexcept {
 				m_wake.store(&wake, std::memory_order_release);
+			}
+
+			void Unnotify() noexcept {
+				m_wake.store(nullptr, std::memory_order_release);
 			}
 
 		private:
@@ -287,4 +287,8 @@ namespace StormByte::Buffer {
 		m_impl->Notify(wake);
 	}
 
+	template<Type::MoveConstructible T>
+	void Hopper<T>::Unnotify() noexcept {
+		m_impl->Unnotify();
+	}
 }

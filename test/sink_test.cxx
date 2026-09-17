@@ -480,6 +480,37 @@ int test_sink_concurrent_bind_and_notify() {
 }
 
 /**
+ * @brief Consumer Unnotify then destroy its CV; producer Eof must not signal it.
+ *
+ * Same shape as Multimedia: Bind shares the hopper, consumer Step dies,
+ * producer CloseWriter / Eof runs later.
+ *
+ * @return 0 on success.
+ */
+int test_sink_unnotify_before_cv_dies() {
+	Sink<int> producer;
+	auto consumer = std::make_unique<Sink<int>>();
+	auto wake = std::make_unique<std::condition_variable>();
+
+	producer.Bind(0, *consumer);
+	consumer->Notify(*wake);
+	producer.Push(0, 42);
+	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies queued",
+		static_cast<std::size_t>(1), consumer->Size(0));
+	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies pop", 42, consumer->Pop());
+
+	consumer->Eof();
+	consumer->Unnotify();
+	wake.reset();
+	consumer.reset();
+
+	producer.Eof();
+	ASSERT_TRUE("test_sink_unnotify_before_cv_dies producer eof", producer.EoF());
+
+	RETURN_TEST("test_sink_unnotify_before_cv_dies", 0);
+}
+
+/**
  * @brief Main entry point for Sink tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
@@ -499,6 +530,7 @@ int main() {
 	failed += test_sink_extra_writer_eof();
 	failed += test_sink_rebind_same_writer_eof();
 	failed += test_sink_concurrent_bind_and_notify();
+	failed += test_sink_unnotify_before_cv_dies();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;

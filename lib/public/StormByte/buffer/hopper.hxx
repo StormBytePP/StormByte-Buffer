@@ -193,8 +193,21 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Registers the consumer condition variable to notify on Push or Eof.
 			 * @param wake Consumer condition variable reference. Not owned.
+			 *
+			 * The referent must outlive this Hopper, or the owner must call
+			 * @ref Unnotify before destroying @p wake. Bind shares the Hopper:
+			 * a producer Eof after the consumer died is the usual case.
 			 */
 			void Notify(std::condition_variable& wake) noexcept;
+
+			/**
+			 * @brief Drops the pointer set by @ref Notify.
+			 *
+			 * Safe to call more than once or when nothing was registered.
+			 * After this, Push and Eof do not signal a consumer CV; producers
+			 * blocked on a full bucket still wake on @c m_space.
+			 */
+			void Unnotify() noexcept;
 
 			/**
 			 * @}

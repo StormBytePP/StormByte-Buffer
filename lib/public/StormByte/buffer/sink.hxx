@@ -167,6 +167,14 @@ namespace StormByte::Buffer {
 			void Notify(std::condition_variable& consumer) noexcept;
 
 			/**
+			 * @brief Clears @ref Notify on this Sink and on every hopper.
+			 *
+			 * Call after Eof when the consumer condition variable is about
+			 * to die. Later Eof from a co-writer will not signal it.
+			 */
+			void Unnotify() noexcept;
+
+			/**
 			 * @}
 			 */
 
