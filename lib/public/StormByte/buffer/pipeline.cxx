@@ -17,24 +17,21 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-// ============================================================================
-// lib/public/StormByte/buffer/pipeline.cxx
-// ============================================================================
-#include <StormByte/buffer/pipeline.hxx>
-#include <StormByte/buffer/lockfree_ring.hxx>   // private header
-#include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/external.hxx>
+#include <StormByte/buffer/lockfree_ring.hxx>
+#include <StormByte/buffer/pipeline.hxx>
+#include <StormByte/buffer/producer.hxx>
+
 #include <thread>
 #include <vector>
+
 using namespace StormByte::Buffer;
-// ---------------------------------------------------------------------------
-// PIMPL
-// ---------------------------------------------------------------------------
+
 struct Pipeline::Impl {
-	std::vector<PipeFunction>                          pipes;          ///< Ordered list of stages.
-	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;  ///< Buffers between stages.
-	mutable Producer                                   final_producer; ///< Final public output.
-	mutable std::vector<std::thread>                   threads;        ///< Background workers.
+	std::vector<PipeFunction>                          pipes;
+	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;
+	mutable Producer                                   final_producer;
+	mutable std::vector<std::thread>                   threads;
 
 	/**
 	 * @brief Join any running background threads and clear the container.
@@ -48,10 +45,6 @@ struct Pipeline::Impl {
 		threads.clear();
 	}
 };
-
-// ---------------------------------------------------------------------------
-// Construction / destruction / assignment
-// ---------------------------------------------------------------------------
 
 Pipeline::Pipeline() noexcept
 	: m_impl(std::make_unique<Impl>())
@@ -95,10 +88,6 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 	return *this;
 }
 
-// ---------------------------------------------------------------------------
-// Stage management
-// ---------------------------------------------------------------------------
-
 void Pipeline::AddPipe(const PipeFunction& pipe) {
 	m_impl->pipes.push_back(pipe);
 }
@@ -106,10 +95,6 @@ void Pipeline::AddPipe(const PipeFunction& pipe) {
 void Pipeline::AddPipe(PipeFunction&& pipe) {
 	m_impl->pipes.push_back(std::move(pipe));
 }
-
-// ---------------------------------------------------------------------------
-// Error propagation
-// ---------------------------------------------------------------------------
 
 void Pipeline::SetError() const noexcept {
 	for (auto& buf : m_impl->intermediates) {
@@ -120,31 +105,26 @@ void Pipeline::SetError() const noexcept {
 	m_impl->final_producer.SetError();
 }
 
-// ---------------------------------------------------------------------------
-// Execution
-// ---------------------------------------------------------------------------
-
 Consumer Pipeline::Process(Consumer buffer,
 						const ExecutionMode& mode,
 						std::shared_ptr<Logger::Log> log) const noexcept
 {
-	// Ensure any previous run has finished
 	m_impl->WaitForCompletion();
 
 	if (m_impl->pipes.empty()) {
-		// Empty pipeline → pure passthrough
 		return buffer;
 	}
 
+	const std::shared_ptr<Logger::Log> stage_log =
+		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
+
 	const std::size_t num_stages = m_impl->pipes.size();
 
-	// One LockFreeRing between each pair of consecutive stages (SPSC)
 	m_impl->intermediates.clear();
 	m_impl->intermediates.reserve(num_stages > 1 ? num_stages - 1 : 0);
 	for (std::size_t i = 0; i + 1 < num_stages; ++i)
 		m_impl->intermediates.emplace_back(std::make_unique<LockFreeRing>());
 
-	// Final public output (Ring-backed Producer)
 	m_impl->final_producer = Producer();
 	m_impl->threads.clear();
 
@@ -156,22 +136,18 @@ Consumer Pipeline::Process(Consumer buffer,
 	 * @param i     Stage index in @c pipes.
 	 * @param input Original input Consumer (used only when @p i == 0).
 	 */
-	auto run_one_stage = [this, log, num_stages](std::size_t i, Consumer& input) {
-		// Input: first stage ← original Consumer; others ← previous LockFreeRing
+	auto run_one_stage = [this, stage_log, num_stages](std::size_t i, Consumer& input) {
 		ExternalBufferReader in_adapter =
 			(i == 0)
 				? ExternalBufferReader(static_cast<ReadOnly&>(input))
 				: ExternalBufferReader(*m_impl->intermediates[i - 1]);
 
 		if (i + 1 == num_stages) {
-			// Last stage writes into the public final Producer
 			ExternalBufferWriter out_adapter(m_impl->final_producer);
-			m_impl->pipes[i](in_adapter, out_adapter, log);
-			// Stage is expected to call out.Close() or out.SetError()
+			m_impl->pipes[i](in_adapter, out_adapter, stage_log);
 		} else {
-			// Intermediate stage writes into the next LockFreeRing
 			ExternalBufferWriter out_adapter(*m_impl->intermediates[i]);
-			m_impl->pipes[i](in_adapter, out_adapter, log);
+			m_impl->pipes[i](in_adapter, out_adapter, stage_log);
 		}
 	};
 
@@ -185,10 +161,7 @@ Consumer Pipeline::Process(Consumer buffer,
 		};
 
 	if (parallel) {
-		// One thread per stage (pipeline parallelism).
-		// Each intermediate remains SPSC: stage i is the sole writer of
-		// intermediates[i], stage i+1 the sole reader.
-		Consumer input = buffer; // shared handle to the same Ring
+		Consumer input = buffer;
 		m_impl->threads.reserve(num_stages);
 		for (std::size_t i = 0; i < num_stages; ++i) {
 			m_impl->threads.emplace_back(
@@ -198,18 +171,13 @@ Consumer Pipeline::Process(Consumer buffer,
 		}
 
 		if (!async) {
-			// Parallel without Async → block until all stages complete
 			m_impl->WaitForCompletion();
 		}
 	} else if (async) {
-		// Single background worker; stages run in order; non-blocking return
 		m_impl->threads.emplace_back(std::move(run_stages_sequential));
 	} else {
-		// Sync (0): sequential on the caller’s thread
 		run_stages_sequential();
 	}
 
-	// Final Consumer is available immediately when Async is set, or after
-	// completion when Process blocks (Sync / Parallel-only).
 	return m_impl->final_producer.Consumer();
 }

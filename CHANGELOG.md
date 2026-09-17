@@ -42,6 +42,17 @@ If you landed here from a release link and have not read the tree:
   `[[deprecated]]` wrapper for one or two releases.
 - `Hopper::operator<<` / `Hopper::operator>>` and `item >> hopper`. Same
   as `Push` / `Pop`. Those methods stay.
+- `Pipeline::Process` scopes a non-null logger with `Scope("Buffer/Pipeline")`
+  before handing it to stages. `%c` identifies this module without using the
+  thread-local component stack. Nested `log->Scope("Decode")` inside a stage
+  becomes `Buffer/Pipeline/Decode` (or `Multimedia/Buffer/Pipeline/Decode`
+  if the caller already scoped a parent). Pass the application or parent-module
+  logger; do not pre-scope `Buffer/Pipeline`.
+
+### Changed
+
+- Optional Logger pin is [1.2.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.2.0)
+  (`Scope` and hierarchical components).
 
 ### Tests
 

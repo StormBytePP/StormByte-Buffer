@@ -71,12 +71,21 @@ namespace StormByte::Buffer {
 	 *            std::shared_ptr<Logger::Log> log);
 	 * @endcode
 	 *
+	 * When @p log is not null, @ref Process passes
+	 * @c log->Scope("Buffer/Pipeline") so @c %c identifies this module
+	 * without touching the thread-local component stack. Nested
+	 * @c log->Scope("Decode") inside a stage becomes
+	 * @c Buffer/Pipeline/Decode (or @c Multimedia/Buffer/Pipeline/Decode
+	 * if the caller already scoped the parent module).
+	 *
 	 * @par Best practices
 	 * - Always call @c out.Close() (or @c out.SetError()) at the end of every stage.
 	 * - Prefer @c Async | Parallel for multi-stage streaming production workloads.
 	 * - Use @c Sync for deterministic debugging.
 	 * - The returned @ref Consumer is the only synchronization point the caller needs
 	 *   (wait on @ref Consumer::EoF() / @ref Consumer::IsWritable() as appropriate).
+	 * - Pass the application or parent-module logger to @ref Process; do not
+	 *   pre-scope @c Buffer/Pipeline or the path will be duplicated.
 	 *
 	 * @see ExternalReader, ExternalWriter, Producer, Consumer, LockFreeRing, ExecutionMode
 	 */
@@ -91,7 +100,9 @@ namespace StormByte::Buffer {
 			 *
 			 * @param in Abstract reader for the stage input.
 			 * @param out Abstract writer for the stage output.
-			 * @param log Optional logger (may be null).
+			 * @param log Optional logger (may be null). When set, this is
+			 *            already @c Scope("Buffer/Pipeline") relative to the
+			 *            logger passed to @ref Process.
 			 */
 			using PipeFunction = std::function<void(
 				ExternalReader&,
@@ -181,7 +192,8 @@ namespace StormByte::Buffer {
 			 * @param buffer Input @ref Consumer for the first stage.
 			 * @param mode Bitmask of @ref ExecutionMode flags
 			 *              (@c Sync, @c Async, @c Parallel, or combinations).
-			 * @param log Optional logger passed to every stage (may be null).
+			 * @param log Optional logger (may be null). When set, every stage
+			 *            receives @c log->Scope("Buffer/Pipeline").
 			 * @return @ref Consumer of the final stage.
 			 *         When @c Async is set, the Consumer is available immediately
 			 *         while background work continues; otherwise @ref Process
