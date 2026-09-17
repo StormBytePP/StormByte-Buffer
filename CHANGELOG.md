@@ -26,6 +26,10 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
+### Deprecated
+
+- `Sink::Bind` remains available as a `[[deprecated]]` wrapper around `To` / `>>` / `<<`. It will be removed in a later minor.
+
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.2.0...HEAD
 
 ## [1.2.0] - 2026-09-17
