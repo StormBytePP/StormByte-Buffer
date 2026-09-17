@@ -598,5 +598,6 @@ int main() {
 		return 1;
 	}
 
+	std::cout << "Sink tests passed!" << std::endl;
 	return 0;
 }

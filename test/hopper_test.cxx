@@ -481,5 +481,6 @@ int main() {
 		return 1;
 	}
 
+	std::cout << "Hopper tests passed!" << std::endl;
 	return 0;
 }
