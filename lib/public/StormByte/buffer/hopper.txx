@@ -30,7 +30,6 @@
 #include <utility>
 
 namespace StormByte::Buffer {
-
 	/**
 	 * @class Hopper<T>::Implementation
 	 * @brief Internal implementation of Hopper queue details.
@@ -253,6 +252,12 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	Hopper<T>& Hopper<T>::operator<<(T item) noexcept {
+		Push(std::move(item));
+		return *this;
+	}
+
+	template<Type::MoveConstructible T>
 	void Hopper<T>::Eof() noexcept {
 		m_impl->Eof();
 	}
@@ -270,6 +275,12 @@ namespace StormByte::Buffer {
 	template<Type::MoveConstructible T>
 	T Hopper<T>::Pop() noexcept {
 		return m_impl->Pop();
+	}
+
+	template<Type::MoveConstructible T>
+	Hopper<T>& Hopper<T>::operator>>(T& item) noexcept {
+		item = Pop();
+		return *this;
 	}
 
 	template<Type::MoveConstructible T>

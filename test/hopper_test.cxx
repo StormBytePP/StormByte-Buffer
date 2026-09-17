@@ -56,6 +56,10 @@ class NonNullableSmartPointer {
 static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
 static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
 
+/* -------------------------------------------------------------------------- */
+/* Construction / capacity                                                    */
+/* -------------------------------------------------------------------------- */
+
 /**
  * @brief Tests default construction of Hopper (unbounded capacity, empty, size 0).
  * @return 0 on success.
@@ -109,6 +113,10 @@ int test_hopper_dynamic_capacity() {
 
 	RETURN_TEST("test_hopper_dynamic_capacity", 0);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Item types                                                                 */
+/* -------------------------------------------------------------------------- */
 
 /**
  * @brief Tests smart pointer discard semantics (null pointers are discarded without enqueuing).
@@ -176,6 +184,10 @@ int test_hopper_value_types() {
 	RETURN_TEST("test_hopper_value_types", 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Push / Pop / Eof                                                           */
+/* -------------------------------------------------------------------------- */
+
 /**
  * @brief Tests Push blocking when capacity ceiling is reached, and unblocking on Pop.
  * @return 0 on success.
@@ -238,6 +250,64 @@ int test_hopper_eof_behavior() {
 	RETURN_TEST("test_hopper_eof_behavior", 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Item stream operators (Push/Pop stay; these are the same edges)            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief hopper << item and hopper >> item match Push/Pop.
+ * @return 0 on success.
+ */
+int test_hopper_stream_members() {
+	Hopper<int> hopper;
+	hopper << 1;
+	hopper << 2;
+	ASSERT_EQUAL("test_hopper_stream_members size", static_cast<std::size_t>(2), hopper.Size());
+
+	int a = 0;
+	int b = 0;
+	hopper >> a;
+	hopper >> b;
+	ASSERT_EQUAL("test_hopper_stream_members pop 1", 1, a);
+	ASSERT_EQUAL("test_hopper_stream_members pop 2", 2, b);
+	ASSERT_TRUE("test_hopper_stream_members empty", hopper.Empty());
+
+	int dry = 7;
+	hopper >> dry;
+	ASSERT_EQUAL("test_hopper_stream_members dry pop", 0, dry);
+
+	RETURN_TEST("test_hopper_stream_members", 0);
+}
+
+/**
+ * @brief item >> hopper (lvalue and rvalue) enqueues.
+ * @return 0 on success.
+ */
+int test_hopper_stream_item_into() {
+	Hopper<int> hopper;
+	int live = 11;
+	live >> hopper;
+	12 >> hopper;
+	ASSERT_EQUAL("test_hopper_stream_item_into size", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_stream_item_into pop 1", 11, hopper.Pop());
+	ASSERT_EQUAL("test_hopper_stream_item_into pop 2", 12, hopper.Pop());
+
+	Hopper<std::unique_ptr<int>> ptrs;
+	std::unique_ptr<int> empty;
+	empty >> ptrs;
+	ASSERT_TRUE("test_hopper_stream_item_into null discarded", ptrs.Empty());
+	std::make_unique<int>(9) >> ptrs;
+	auto got = ptrs.Pop();
+	ASSERT_TRUE("test_hopper_stream_item_into ptr valid", static_cast<bool>(got));
+	ASSERT_EQUAL("test_hopper_stream_item_into ptr value", 9, *got);
+
+	RETURN_TEST("test_hopper_stream_item_into", 0);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notify / Unnotify                                                          */
+/* -------------------------------------------------------------------------- */
+
 /**
  * @brief Tests Notify callback mechanism waking consumer condition variables on Push and Eof.
  * @return 0 on success.
@@ -266,63 +336,10 @@ int test_hopper_notify_condition_variable() {
 }
 
 /**
- * @brief Multi-threaded SPSC stress test transferring items through a Hopper.
- * @return 0 on success.
- */
-int test_hopper_spsc_stress() {
-	constexpr int item_count = 1000;
-	Hopper<int> hopper(64);
-
-	std::condition_variable cv;
-	std::mutex m;
-	hopper.Notify(cv);
-
-	std::thread producer([&]() {
-		for (int i = 0; i < item_count; ++i) {
-			hopper.Push(i);
-		}
-
-		hopper.Eof();
-	});
-
-	std::vector<int> received;
-	received.reserve(item_count);
-
-	std::thread consumer([&]() {
-		while (true) {
-			{
-				std::unique_lock<std::mutex> lock(m);
-				cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
-			}
-
-			while (!hopper.Empty()) {
-				received.push_back(hopper.Pop());
-			}
-
-			if (hopper.EoF() && hopper.Empty()) {
-				break;
-			}
-		}
-	});
-
-	producer.join();
-	consumer.join();
-
-	ASSERT_EQUAL("test_hopper_spsc_stress count", static_cast<std::size_t>(item_count), received.size());
-	for (int i = 0; i < item_count; ++i) {
-		if (received[static_cast<std::size_t>(i)] != i) {
-			ASSERT_EQUAL("test_hopper_spsc_stress item mismatch", i, received[static_cast<std::size_t>(i)]);
-		}
-	}
-
-	RETURN_TEST("test_hopper_spsc_stress", 0);
-}
-
-/**
  * @brief Unnotify drops the consumer CV so a later Eof is safe after it dies.
  *
- * Bind-style share: the Hopper outlives the consumer. Notify does not own
- * the CV. Without Unnotify, Eof would signal a destroyed object.
+ * Sink wiring shares the Hopper. Notify does not own the CV. Without
+ * Unnotify, Eof would signal a destroyed object.
  *
  * @return 0 on success.
  */
@@ -377,24 +394,87 @@ int test_hopper_notify_after_unnotify() {
 	RETURN_TEST("test_hopper_notify_after_unnotify", 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Stress                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Multi-threaded SPSC stress test transferring items through a Hopper.
+ * @return 0 on success.
+ */
+int test_hopper_spsc_stress() {
+	constexpr int item_count = 1000;
+	Hopper<int> hopper(64);
+
+	std::condition_variable cv;
+	std::mutex m;
+	hopper.Notify(cv);
+
+	std::thread producer([&]() {
+		for (int i = 0; i < item_count; ++i)
+			hopper << i;
+		hopper.Eof();
+	});
+
+	std::vector<int> received;
+	received.reserve(item_count);
+
+	std::thread consumer([&]() {
+		while (true) {
+			{
+				std::unique_lock<std::mutex> lock(m);
+				cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
+			}
+
+			while (!hopper.Empty()) {
+				int item = 0;
+				hopper >> item;
+				received.push_back(item);
+			}
+
+			if (hopper.EoF() && hopper.Empty())
+				break;
+		}
+	});
+
+	producer.join();
+	consumer.join();
+
+	ASSERT_EQUAL("test_hopper_spsc_stress count", static_cast<std::size_t>(item_count), received.size());
+	for (int i = 0; i < item_count; ++i) {
+		if (received[static_cast<std::size_t>(i)] != i)
+			ASSERT_EQUAL("test_hopper_spsc_stress item mismatch", i, received[static_cast<std::size_t>(i)]);
+	}
+
+	RETURN_TEST("test_hopper_spsc_stress", 0);
+}
+
 /**
  * @brief Main entry point for Hopper tests.
  * @return 0 on all tests passing, non-zero on failure.
  */
 int main() {
 	int failed = 0;
+
 	failed += test_hopper_default_constructor();
 	failed += test_hopper_bounded_constructor();
 	failed += test_hopper_dynamic_capacity();
+
 	failed += test_hopper_smart_pointer_discard();
 	failed += test_hopper_non_nullable_smart_pointer();
 	failed += test_hopper_value_types();
+
 	failed += test_hopper_push_blocking_and_pop_unblock();
 	failed += test_hopper_eof_behavior();
+
+	failed += test_hopper_stream_members();
+	failed += test_hopper_stream_item_into();
+
 	failed += test_hopper_notify_condition_variable();
-	failed += test_hopper_spsc_stress();
 	failed += test_hopper_unnotify_before_cv_dies();
 	failed += test_hopper_notify_after_unnotify();
+
+	failed += test_hopper_spsc_stress();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;

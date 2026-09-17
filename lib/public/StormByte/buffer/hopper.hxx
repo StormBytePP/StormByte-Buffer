@@ -24,9 +24,9 @@
 #include <condition_variable>
 #include <cstddef>
 #include <memory>
+#include <utility>
 
 namespace StormByte::Buffer {
-
 	template<Type::MoveConstructible T> class Sink;
 
 	/**
@@ -42,6 +42,7 @@ namespace StormByte::Buffer {
 	 * - EoF handling: Marking Eof signals end of production; queued items can still be drained via Pop.
 	 * - Consumer notification: Points to a consumer condition variable via Notify to signal when
 	 *   items or EoF are available.
+	 * - Item flow: @c hopper << item and @c item >> hopper enqueue; @c hopper >> item dequeues.
 	 * - Non-copyable, non-movable: Shared via std::shared_ptr.
 	 *
 	 * @tparam T Item type stored in the queue (must be MoveConstructible).
@@ -145,6 +146,13 @@ namespace StormByte::Buffer {
 			void Push(T item) noexcept;
 
 			/**
+			 * @brief Write: @p item flows into this Hopper.
+			 * @param item Unit. Moved. Empty smart pointers are discarded.
+			 * @return *this.
+			 */
+			Hopper& operator<<(T item) noexcept;
+
+			/**
 			 * @brief Marks end of production and wakes waiters.
 			 *
 			 * Does not discard already queued items. After Eof, Push does not enqueue.
@@ -168,6 +176,13 @@ namespace StormByte::Buffer {
 			 * Wakes one producer blocked in Push if space becomes available.
 			 */
 			T Pop() noexcept;
+
+			/**
+			 * @brief Pop one unit from this Hopper into @p item.
+			 * @param item Destination. Becomes default T if the bucket is dry.
+			 * @return *this.
+			 */
+			Hopper& operator>>(T& item) noexcept;
 
 			/**
 			 * @brief Checks whether Eof was called by a producer.
@@ -195,7 +210,7 @@ namespace StormByte::Buffer {
 			 * @param wake Consumer condition variable reference. Not owned.
 			 *
 			 * The referent must outlive this Hopper, or the owner must call
-			 * @ref Unnotify before destroying @p wake. Bind shares the Hopper:
+			 * @ref Unnotify before destroying @p wake. Sink wiring shares the Hopper:
 			 * a producer Eof after the consumer died is the usual case.
 			 */
 			void Notify(std::condition_variable& wake) noexcept;
@@ -213,6 +228,31 @@ namespace StormByte::Buffer {
 			 * @}
 			 */
 
+			/**
+			 * @brief Write: lvalue @p item flows into @p hopper.
+			 * @param item Unit. Moved. Empty smart pointers are discarded.
+			 * @param hopper Destination hopper.
+			 * @return @p hopper.
+			 *
+			 * Namespace declaration required by GCC next to the friend
+			 * (GCC will not define a friend-only operator out of line).
+			 */
+			friend Hopper& operator>>(T& item, Hopper& hopper) noexcept {
+				hopper << std::move(item);
+				return hopper;
+			}
+
+			/**
+			 * @brief Write: rvalue @p item flows into @p hopper.
+			 * @param item Unit. Empty smart pointers are discarded.
+			 * @param hopper Destination hopper.
+			 * @return @p hopper.
+			 */
+			friend Hopper& operator>>(T&& item, Hopper& hopper) noexcept {
+				hopper << std::move(item);
+				return hopper;
+			}
+
 		private:
 			friend class Sink<T>;
 
@@ -227,7 +267,6 @@ namespace StormByte::Buffer {
 
 			std::unique_ptr<Implementation> m_impl;	///< Pointer to private implementation.
 	};
-
 }
 
 #include <StormByte/buffer/hopper.txx>

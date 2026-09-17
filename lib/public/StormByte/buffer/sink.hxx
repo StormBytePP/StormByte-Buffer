@@ -28,7 +28,6 @@
 #include <memory>
 
 namespace StormByte::Buffer {
-
 	/**
 	 * @class Sink
 	 * @brief Set of Hopper buckets keyed by an integer.
@@ -37,11 +36,15 @@ namespace StormByte::Buffer {
 	 * channels, tracks, sessions, etc.). Sink does not interpret the integer key.
 	 *
 	 * Key characteristics:
-	 * - Bind: Shares Hopper instances between producer and consumer sinks under specific keys.
-	 *   Bind(key) when this Sink already has that hopper attaches the other Sink as a
-	 *   co-writer: Eof on this Sink then only closes the hopper when the last writer closes.
-	 * - Drain: Terminal producer flag. Push to an un-bound key discards the item without waiting for Bind.
-	 * - Pop: Retrieves items across buckets using Round-Robin or custom Select chooser.
+	 * - Wiring: @c producer >> consumer shares every existing hopper.
+	 *   @c producer.To(key) >> consumer creates or shares one key. When this
+	 *   Sink already holds that hopper, dest is a co-writer: Eof on this Sink
+	 *   then only closes the hopper when the last writer closes.
+	 *   @c consumer << producer and @c consumer << producer.To(key) are the
+	 *   same edges. @ref Bind remains for one or two releases and is deprecated.
+	 * - Drain: Terminal producer flag. Push to an un-wired key discards the item
+	 *   without waiting for a consumer.
+	 * - Pop: Retrieves items across buckets using Round-Robin or custom Select.
 	 * - EoF: Closes the Sink and CloseWriter on hoppers this Sink writes.
 	 *
 	 * @tparam T Item type stored in the hoppers (must be MoveConstructible).
@@ -131,26 +134,82 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
+			 * @class Lane
+			 * @brief One-key redirect: @c from.To(key) >> dest.
+			 */
+			class Lane {
+				public:
+					/**
+					 * @brief Wire this key onto @p dest.
+					 * @param dest Consumer (or extra writer) Sink.
+					 * @return @p dest.
+					 *
+					 * This Sink has no hopper yet: this is the writer, dest is
+					 * the reader. This Sink already has the hopper: dest is a
+					 * co-writer.
+					 */
+					Sink& operator>>(Sink& dest) noexcept;
+
+				private:
+					friend class Sink;
+					Lane(Sink& from, int key) noexcept;
+					Sink* m_from;
+					int m_key;
+			};
+
+			/**
+			 * @brief Redirect of one hopper key.
+			 * @param key Bucket key.
+			 * @return Lane for @c >> dest.
+			 */
+			Lane To(int key) noexcept;
+
+			/**
+			 * @brief Share every existing hopper with @p dest.
+			 * @param dest Consumer Sink.
+			 * @return @p dest.
+			 *
+			 * Zero buckets: no-op. Does not create keys.
+			 */
+			Sink& operator>>(Sink& dest) noexcept;
+
+			/**
+			 * @brief Same as @p src >> *this (all hoppers).
+			 * @param src Producer Sink.
+			 * @return *this.
+			 */
+			Sink& operator<<(Sink& src) noexcept;
+
+			/**
+			 * @brief Same as @p lane >> *this.
+			 * @param lane @ref To result from the producer.
+			 * @return *this.
+			 */
+			Sink& operator<<(Lane lane) noexcept;
+
+			/**
 			 * @brief Shares all existing hoppers on this Sink with the consumer Sink.
 			 * @param consumer Target consumer Sink.
-			 * @deprecated Will be replaced by operator>> / operator<<.
+			 * @deprecated Use @c *this >> consumer. Kept for one or two releases.
 			 */
+			[[deprecated("use producer >> consumer")]]
 			void Bind(Sink& consumer);
 
 			/**
 			 * @brief Creates or retrieves the hopper for key and shares it with consumer.
 			 * @param key Bucket key identifier.
 			 * @param consumer Target consumer Sink.
-			 * @deprecated Will be replaced by operator>> / operator<<.
+			 * @deprecated Use @c To(key) >> consumer. Kept for one or two releases.
 			 *
 			 * This Sink has no hopper yet: creates it (this is the writer,
 			 * @p consumer is the reader). This Sink already has the hopper:
 			 * @p consumer is attached as a co-writer (extra producer).
 			 */
+			[[deprecated("use producer.To(key) >> consumer")]]
 			void Bind(int key, Sink& consumer);
 
 			/**
-			 * @brief Marks Sink as a terminal producer (un-bound Push calls drop instead of waiting).
+			 * @brief Marks Sink as a terminal producer (un-wired Push calls drop instead of waiting).
 			 */
 			void Drain() noexcept;
 
@@ -244,9 +303,9 @@ namespace StormByte::Buffer {
 			 * Contract details for EoF():
 			 * - With zero hoppers: EoF() returns true only if this Sink is closed (via Eof() or destruction).
 			 * - With hoppers: EoF() returns true when all hoppers are empty and Hopper::EoF() is true,
-			 *   even if this Sink itself did not call Eof() (because Bind shares the Hopper and the producer
-			 *   closed it from the other Sink).
-			 * - Performing a Bind of a new key after EoF() returned true may cause EoF() to return false again
+			 *   even if this Sink itself did not call Eof() (because wiring shares the Hopper and the
+			 *   producer closed it from the other Sink).
+			 * - Wiring a new key after EoF() returned true may cause EoF() to return false again
 			 *   if new work becomes available.
 			 * - EoF() does not mean "this object called Eof()", but "no items remain and none can enter current buckets".
 			 */
@@ -271,7 +330,6 @@ namespace StormByte::Buffer {
 
 			std::unique_ptr<Implementation> m_impl;	///< Pointer to private implementation.
 	};
-
 }
 
 #include <StormByte/buffer/sink.txx>

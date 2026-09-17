@@ -33,7 +33,6 @@
 #include <vector>
 
 namespace StormByte::Buffer {
-
 	/**
 	 * @class Sink<T>::Implementation
 	 * @brief Internal implementation class for Sink.
@@ -108,7 +107,7 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Binds all existing hoppers to consumer Sink.
+			 * @brief Shares all existing hoppers with consumer.
 			 * @param consumer Consumer Sink implementation reference.
 			 */
 			void Bind(Implementation& consumer) {
@@ -131,7 +130,7 @@ namespace StormByte::Buffer {
 			}
 
 			/**
-			 * @brief Binds/creates hopper for key and shares with consumer Sink.
+			 * @brief Creates or shares the hopper for key with consumer.
 			 * @param key Bucket key.
 			 * @param consumer Consumer Sink implementation reference.
 			 * @return Hopper when this Sink already held it (extra writer); empty otherwise.
@@ -186,6 +185,9 @@ namespace StormByte::Buffer {
 					hopper->Notify(consumer);
 			}
 
+			/**
+			 * @brief Drops the consumer condition variable on this Sink and its hoppers.
+			 */
 			void Unnotify() noexcept {
 				m_consumer.store(nullptr, std::memory_order_release);
 				const auto hoppers = Order();
@@ -406,14 +408,47 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	Sink<T>::Lane::Lane(Sink& from, int key) noexcept
+	: m_from(&from), m_key(key) {}
+
+	template<Type::MoveConstructible T>
+	typename Sink<T>::Lane Sink<T>::To(int key) noexcept {
+		return Lane(*this, key);
+	}
+
+	template<Type::MoveConstructible T>
+	Sink<T>& Sink<T>::Lane::operator>>(Sink& dest) noexcept {
+		if (auto extra = m_from->m_impl->Bind(m_key, *dest.m_impl))
+			extra->AddWriter();
+		return dest;
+	}
+
+	template<Type::MoveConstructible T>
+	Sink<T>& Sink<T>::operator>>(Sink& dest) noexcept {
+		m_impl->Bind(*dest.m_impl);
+		return dest;
+	}
+
+	template<Type::MoveConstructible T>
+	Sink<T>& Sink<T>::operator<<(Sink& src) noexcept {
+		src >> *this;
+		return *this;
+	}
+
+	template<Type::MoveConstructible T>
+	Sink<T>& Sink<T>::operator<<(Lane lane) noexcept {
+		lane >> *this;
+		return *this;
+	}
+
+	template<Type::MoveConstructible T>
 	void Sink<T>::Bind(Sink& consumer) {
-		m_impl->Bind(*consumer.m_impl);
+		*this >> consumer;
 	}
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Bind(int key, Sink& consumer) {
-		if (auto extra = m_impl->Bind(key, *consumer.m_impl))
-			extra->AddWriter();
+		To(key) >> consumer;
 	}
 
 	template<Type::MoveConstructible T>
@@ -475,5 +510,4 @@ namespace StormByte::Buffer {
 	bool Sink<T>::Ready() const noexcept {
 		return m_impl->Ready();
 	}
-
 }

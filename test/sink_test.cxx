@@ -20,6 +20,7 @@
 #include <StormByte/buffer/sink.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -56,6 +57,10 @@ class NonNullableSmartPointer {
 static_assert(StormByte::Type::SmartPointer<NonNullableSmartPointer>);
 static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
 
+/* -------------------------------------------------------------------------- */
+/* Construction                                                               */
+/* -------------------------------------------------------------------------- */
+
 /**
  * @brief Tests default construction of Sink (zero buckets, EoF false, Ready false).
  * @return 0 on success.
@@ -72,48 +77,214 @@ int test_sink_default_constructor() {
 	RETURN_TEST("test_sink_default_constructor", 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Wiring (To / >> / <<)                                                      */
+/* -------------------------------------------------------------------------- */
+
 /**
- * @brief Tests Bind and Push/Pop flow across multiple integer key buckets.
+ * @brief To(key) >> consumer and Push/Pop across keys.
  * @return 0 on success.
  */
-int test_sink_bind_and_push_pop() {
+int test_sink_wire_and_push_pop() {
 	Sink<std::shared_ptr<std::string>> producer;
 	Sink<std::shared_ptr<std::string>> consumer;
 
-	producer.Bind(10, consumer);
-	producer.Bind(20, consumer);
+	producer.To(10) >> consumer;
+	producer.To(20) >> consumer;
 
 	producer.Capacity(10, 5);
-	ASSERT_EQUAL("test_sink_bind_and_push_pop capacity key 10", static_cast<std::size_t>(5), producer.Capacity(10));
+	ASSERT_EQUAL("test_sink_wire_and_push_pop capacity key 10", static_cast<std::size_t>(5), producer.Capacity(10));
 
 	producer.Push(10, std::make_shared<std::string>("String-10"));
 	producer.Push(20, std::make_shared<std::string>("String-20"));
 
-	ASSERT_EQUAL("test_sink_bind_and_push_pop size key 10", static_cast<std::size_t>(1), consumer.Size(10));
-	ASSERT_EQUAL("test_sink_bind_and_push_pop size key 20", static_cast<std::size_t>(1), consumer.Size(20));
-	ASSERT_TRUE("test_sink_bind_and_push_pop consumer ready", consumer.Ready());
+	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 10", static_cast<std::size_t>(1), consumer.Size(10));
+	ASSERT_EQUAL("test_sink_wire_and_push_pop size key 20", static_cast<std::size_t>(1), consumer.Size(20));
+	ASSERT_TRUE("test_sink_wire_and_push_pop consumer ready", consumer.Ready());
 
 	auto item1 = consumer.Pop();
 	auto item2 = consumer.Pop();
 
-	ASSERT_TRUE("test_sink_bind_and_push_pop item1 valid", static_cast<bool>(item1));
-	ASSERT_TRUE("test_sink_bind_and_push_pop item2 valid", static_cast<bool>(item2));
+	ASSERT_TRUE("test_sink_wire_and_push_pop item1 valid", static_cast<bool>(item1));
+	ASSERT_TRUE("test_sink_wire_and_push_pop item2 valid", static_cast<bool>(item2));
 
 	producer.Eof();
-	ASSERT_TRUE("test_sink_bind_and_push_pop consumer eof", consumer.EoF());
+	ASSERT_TRUE("test_sink_wire_and_push_pop consumer eof", consumer.EoF());
 
-	RETURN_TEST("test_sink_bind_and_push_pop", 0);
+	RETURN_TEST("test_sink_wire_and_push_pop", 0);
 }
 
 /**
- * @brief Tests smart pointer-like values without nullability pass through Sink normally.
+ * @brief producer >> consumer shares every existing hopper.
+ * @return 0 on success.
+ */
+int test_sink_wire_all_hoppers() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> dummy;
+
+	producer.To(1) >> dummy;
+	producer.To(2) >> dummy;
+	producer >> consumer;
+
+	producer.Push(1, 100);
+	producer.Push(2, 200);
+
+	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 1", static_cast<std::size_t>(1), consumer.Size(1));
+	ASSERT_EQUAL("test_sink_wire_all_hoppers consumer size key 2", static_cast<std::size_t>(1), consumer.Size(2));
+
+	int val1 = consumer.Pop();
+	int val2 = consumer.Pop();
+	bool correct_set = (val1 == 100 && val2 == 200) || (val1 == 200 && val2 == 100);
+	ASSERT_TRUE("test_sink_wire_all_hoppers popped values", correct_set);
+
+	RETURN_TEST("test_sink_wire_all_hoppers", 0);
+}
+
+/**
+ * @brief consumer << producer and consumer << producer.To(key).
+ * @return 0 on success.
+ */
+int test_sink_stream_operators() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	Sink<int> extra;
+
+	producer.To(1) >> consumer;
+	consumer << producer.To(2);
+	producer.Push(1, 10);
+	producer.Push(2, 20);
+	ASSERT_EQUAL("test_sink_stream_operators size 1", static_cast<std::size_t>(1), consumer.Size(1));
+	ASSERT_EQUAL("test_sink_stream_operators size 2", static_cast<std::size_t>(1), consumer.Size(2));
+
+	producer.To(1) >> extra;
+	extra.Push(1, 11);
+	ASSERT_EQUAL("test_sink_stream_operators co-writer queued", static_cast<std::size_t>(2), consumer.Size(1));
+
+	producer.Eof();
+	ASSERT_FALSE("test_sink_stream_operators open while extra writer", consumer.EoF());
+	extra.Eof();
+
+	std::vector<int> got;
+	got.push_back(consumer.Pop());
+	got.push_back(consumer.Pop());
+	got.push_back(consumer.Pop());
+	std::sort(got.begin(), got.end());
+	ASSERT_EQUAL("test_sink_stream_operators pop a", 10, got[0]);
+	ASSERT_EQUAL("test_sink_stream_operators pop b", 11, got[1]);
+	ASSERT_EQUAL("test_sink_stream_operators pop c", 20, got[2]);
+	ASSERT_TRUE("test_sink_stream_operators eof after last writer", consumer.EoF());
+
+	Sink<int> left;
+	Sink<int> dummy;
+	left.To(3) >> dummy;
+	left.Push(3, 30);
+	Sink<int> all;
+	all << left;
+	ASSERT_EQUAL("test_sink_stream_operators bind-all size", static_cast<std::size_t>(1), all.Size(3));
+	ASSERT_EQUAL("test_sink_stream_operators bind-all pop", 30, all.Pop());
+
+	RETURN_TEST("test_sink_stream_operators", 0);
+}
+
+/**
+ * @brief Wire after Eof: new hoppers are born with EoF.
+ * @return 0 on success.
+ */
+int test_sink_wire_after_eof() {
+	Sink<int> producer;
+	Sink<int> consumer;
+
+	producer.Eof();
+	ASSERT_TRUE("test_sink_wire_after_eof producer eof with zero buckets", producer.EoF());
+
+	producer.To(50) >> consumer;
+	ASSERT_TRUE("test_sink_wire_after_eof consumer born eof", consumer.EoF());
+	ASSERT_TRUE("test_sink_wire_after_eof consumer ready on eof", consumer.Ready());
+
+	RETURN_TEST("test_sink_wire_after_eof", 0);
+}
+
+/**
+ * @brief Extra writer: first Eof does not close; last writer does.
+ * @return 0 on success.
+ */
+int test_sink_extra_writer_eof() {
+	Sink<int> src;
+	Sink<int> dest;
+	Sink<int> extra;
+
+	src.To(0) >> dest;
+	dest.To(0) >> extra;
+
+	src.Push(0, 1);
+	extra.Push(0, 2);
+	ASSERT_EQUAL("test_sink_extra_writer_eof queued", static_cast<std::size_t>(2), dest.Size(0));
+
+	src.Eof();
+	ASSERT_FALSE("test_sink_extra_writer_eof dest open after first writer", dest.EoF());
+	extra.Push(0, 3);
+	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", static_cast<std::size_t>(3), dest.Size(0));
+
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 1", 1, dest.Pop());
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 2", 2, dest.Pop());
+	ASSERT_EQUAL("test_sink_extra_writer_eof pop 3", 3, dest.Pop());
+
+	extra.Eof();
+	ASSERT_TRUE("test_sink_extra_writer_eof dest eof after last writer", dest.EoF());
+
+	RETURN_TEST("test_sink_extra_writer_eof", 0);
+}
+
+/**
+ * @brief Re-wire of the same producer must not leave a phantom writer.
+ * @return 0 on success.
+ */
+int test_sink_rewire_same_writer_eof() {
+	Sink<int> src;
+	Sink<int> dest;
+
+	src.To(0) >> dest;
+	dest.To(0) >> src;
+
+	std::condition_variable cv;
+	std::mutex m;
+	dest.Notify(cv);
+
+	src.Push(0, 1);
+	ASSERT_EQUAL("test_sink_rewire_same_writer_eof pop", 1, dest.Pop());
+
+	std::atomic<bool> eof{false};
+	std::thread waiter([&]() {
+		std::unique_lock<std::mutex> lock(m);
+		eof.store(cv.wait_for(lock, std::chrono::seconds(1), [&]() {
+			return dest.EoF();
+		}), std::memory_order_release);
+	});
+
+	src.Eof();
+	waiter.join();
+
+	ASSERT_TRUE("test_sink_rewire_same_writer_eof dest eof within 1s (would hang remuxer)",
+		eof.load(std::memory_order_acquire));
+	ASSERT_TRUE("test_sink_rewire_same_writer_eof dest eof", dest.EoF());
+
+	RETURN_TEST("test_sink_rewire_same_writer_eof", 0);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Item types / Drain / Pop                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Smart pointer-like values without nullability pass through Sink.
  * @return 0 on success.
  */
 int test_sink_non_nullable_smart_pointer() {
 	Sink<NonNullableSmartPointer> producer;
 	Sink<NonNullableSmartPointer> consumer;
 
-	producer.Bind(1, consumer);
+	producer.To(1) >> consumer;
 	producer.Push(1, NonNullableSmartPointer(789));
 
 	ASSERT_EQUAL("test_sink_non_nullable_smart_pointer size", static_cast<std::size_t>(1), consumer.Size(1));
@@ -125,7 +296,7 @@ int test_sink_non_nullable_smart_pointer() {
 }
 
 /**
- * @brief Tests Sink Drain mode where Push to un-bound keys discards items without waiting.
+ * @brief Drain: Push to an un-wired key discards.
  * @return 0 on success.
  */
 int test_sink_drain_mode() {
@@ -138,7 +309,7 @@ int test_sink_drain_mode() {
 	ASSERT_EQUAL("test_sink_drain_mode size 0 for un-bound key", static_cast<std::size_t>(0), producer.Size(100));
 
 	Sink<int> consumer;
-	producer.Bind(100, consumer);
+	producer.To(100) >> consumer;
 
 	producer.Push(100, 8888);
 	ASSERT_EQUAL("test_sink_drain_mode size 1 for bound key", static_cast<std::size_t>(1), consumer.Size(100));
@@ -148,62 +319,15 @@ int test_sink_drain_mode() {
 }
 
 /**
- * @brief Tests Bind(Sink& consumer) sharing all existing hoppers.
- * @return 0 on success.
- */
-int test_sink_bind_all_hoppers() {
-	Sink<int> producer;
-	Sink<int> consumer;
-
-	Sink<int> dummy_consumer;
-	producer.Bind(1, dummy_consumer);
-	producer.Bind(2, dummy_consumer);
-
-	producer.Bind(consumer);
-
-	producer.Push(1, 100);
-	producer.Push(2, 200);
-
-	ASSERT_EQUAL("test_sink_bind_all_hoppers consumer size key 1", static_cast<std::size_t>(1), consumer.Size(1));
-	ASSERT_EQUAL("test_sink_bind_all_hoppers consumer size key 2", static_cast<std::size_t>(1), consumer.Size(2));
-
-	int val1 = consumer.Pop();
-	int val2 = consumer.Pop();
-
-	bool correct_set = (val1 == 100 && val2 == 200) || (val1 == 200 && val2 == 100);
-	ASSERT_TRUE("test_sink_bind_all_hoppers popped values", correct_set);
-
-	RETURN_TEST("test_sink_bind_all_hoppers", 0);
-}
-
-/**
- * @brief Tests Bind after Eof where newly created/bound hoppers are born with EoF = true.
- * @return 0 on success.
- */
-int test_sink_bind_after_eof() {
-	Sink<int> producer;
-	Sink<int> consumer;
-
-	producer.Eof();
-	ASSERT_TRUE("test_sink_bind_after_eof producer eof with zero buckets", producer.EoF());
-
-	producer.Bind(50, consumer);
-	ASSERT_TRUE("test_sink_bind_after_eof consumer born eof", consumer.EoF());
-	ASSERT_TRUE("test_sink_bind_after_eof consumer ready on eof", consumer.Ready());
-
-	RETURN_TEST("test_sink_bind_after_eof", 0);
-}
-
-/**
- * @brief Tests Pop with custom Select chooser callback.
+ * @brief Pop with custom Select chooser.
  * @return 0 on success.
  */
 int test_sink_pop_custom_select() {
 	Sink<int> producer;
 	Sink<int> consumer;
 
-	producer.Bind(1, consumer);
-	producer.Bind(2, consumer);
+	producer.To(1) >> consumer;
+	producer.To(2) >> consumer;
 
 	producer.Push(1, 111);
 	producer.Push(2, 222);
@@ -222,10 +346,10 @@ int test_sink_pop_custom_select() {
 }
 
 /**
- * @brief Tests Push waiting on wiring condition variable until Bind or Eof occurs.
+ * @brief Push waits until the key is wired or Eof.
  * @return 0 on success.
  */
-int test_sink_push_waiting_for_bind() {
+int test_sink_push_waiting_for_wire() {
 	Sink<int> producer;
 	Sink<int> consumer;
 
@@ -237,85 +361,19 @@ int test_sink_push_waiting_for_bind() {
 	});
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("test_sink_push_waiting_for_bind push waiting", push_done.load(std::memory_order_acquire));
+	ASSERT_FALSE("test_sink_push_waiting_for_wire push waiting", push_done.load(std::memory_order_acquire));
 
-	producer.Bind(7, consumer);
+	producer.To(7) >> consumer;
 	push_thread.join();
 
-	ASSERT_TRUE("test_sink_push_waiting_for_bind push resumed", push_done.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_sink_push_waiting_for_bind popped val", 777, consumer.Pop());
+	ASSERT_TRUE("test_sink_push_waiting_for_wire push resumed", push_done.load(std::memory_order_acquire));
+	ASSERT_EQUAL("test_sink_push_waiting_for_wire popped val", 777, consumer.Pop());
 
-	RETURN_TEST("test_sink_push_waiting_for_bind", 0);
+	RETURN_TEST("test_sink_push_waiting_for_wire", 0);
 }
 
 /**
- * @brief Tests Notify callback on Sink condition variable.
- * @return 0 on success.
- */
-int test_sink_notify_condition_variable() {
-	Sink<int> producer;
-	Sink<int> consumer;
-	producer.Bind(1, consumer);
-
-	std::condition_variable cv;
-	std::mutex m;
-
-	consumer.Notify(cv);
-
-	std::atomic<int> read_val{-1};
-	std::thread consumer_thread([&]() {
-		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return consumer.Ready(); });
-		read_val.store(consumer.Pop(), std::memory_order_release);
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	producer.Push(1, 555);
-	consumer_thread.join();
-
-	ASSERT_EQUAL("test_sink_notify_condition_variable read value", 555, read_val.load(std::memory_order_acquire));
-
-	RETURN_TEST("test_sink_notify_condition_variable", 0);
-}
-
-/**
- * @brief Tests race condition between concurrent Bind(key) loop and Eof().
- * @return 0 on success.
- */
-int test_sink_concurrent_bind_and_eof() {
-	Sink<int> producer;
-	Sink<int> consumer;
-
-	std::atomic<bool> stop_binding{false};
-	std::atomic<int> max_key{100};
-	std::thread bind_thread([&]() {
-		int key = 100;
-		while (!stop_binding.load(std::memory_order_acquire)) {
-			producer.Bind(key, consumer);
-			max_key.store(key, std::memory_order_release);
-			++key;
-			std::this_thread::yield();
-		}
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(5));
-	producer.Eof();
-	stop_binding.store(true, std::memory_order_release);
-	bind_thread.join();
-
-	ASSERT_TRUE("test_sink_concurrent_bind_and_eof consumer eof", consumer.EoF());
-
-	const int last_key = max_key.load(std::memory_order_acquire);
-	for (int k = 100; k <= last_key + 10; ++k) {
-		producer.Push(k, 9999);
-		ASSERT_EQUAL("test_sink_concurrent_bind_and_eof size after push post eof", static_cast<std::size_t>(0), consumer.Size(k));
-	}
-
-	RETURN_TEST("test_sink_concurrent_bind_and_eof", 0);
-}
-
-/**
- * @brief Tests that calling Eof unblocks threads waiting in Push and Pop.
+ * @brief Eof unblocks threads waiting in Push and Pop.
  * @return 0 on success.
  */
 int test_sink_eof_unblocks_waiters() {
@@ -351,83 +409,112 @@ int test_sink_eof_unblocks_waiters() {
 	RETURN_TEST("test_sink_eof_unblocks_waiters", 0);
 }
 
-/**
- * @brief Extra producer Bind: first writer Eof does not close; last writer does.
- * @return 0 on success.
- */
-int test_sink_extra_writer_eof() {
-	Sink<int> src;
-	Sink<int> dest;
-	Sink<int> extra;
-
-	src.Bind(0, dest);
-	dest.Bind(0, extra);
-
-	src.Push(0, 1);
-	extra.Push(0, 2);
-	ASSERT_EQUAL("test_sink_extra_writer_eof queued", static_cast<std::size_t>(2), dest.Size(0));
-
-	src.Eof();
-	ASSERT_FALSE("test_sink_extra_writer_eof dest open after first writer", dest.EoF());
-	extra.Push(0, 3);
-	ASSERT_EQUAL("test_sink_extra_writer_eof extra push after first eof", static_cast<std::size_t>(3), dest.Size(0));
-
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 1", 1, dest.Pop());
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 2", 2, dest.Pop());
-	ASSERT_EQUAL("test_sink_extra_writer_eof pop 3", 3, dest.Pop());
-
-	extra.Eof();
-	ASSERT_TRUE("test_sink_extra_writer_eof dest eof after last writer", dest.EoF());
-
-	RETURN_TEST("test_sink_extra_writer_eof", 0);
-}
+/* -------------------------------------------------------------------------- */
+/* Notify / Unnotify                                                          */
+/* -------------------------------------------------------------------------- */
 
 /**
- * @brief Re-Bind of the same producer must not leave the consumer waiting.
- *
- * Multimedia wires demuxer >> remuxer twice (direct bind and Filters::Close).
- * A phantom writer keeps Hopper::EoF false after the only producer Eofs;
- * the remuxer Wait never returns. Fail on timeout, do not hang the suite.
- *
+ * @brief Notify wakes the consumer CV on Push.
  * @return 0 on success.
  */
-int test_sink_rebind_same_writer_eof() {
-	Sink<int> src;
-	Sink<int> dest;
-
-	src.Bind(0, dest);
-	dest.Bind(0, src);
+int test_sink_notify_condition_variable() {
+	Sink<int> producer;
+	Sink<int> consumer;
+	producer.To(1) >> consumer;
 
 	std::condition_variable cv;
 	std::mutex m;
-	dest.Notify(cv);
 
-	src.Push(0, 1);
-	ASSERT_EQUAL("test_sink_rebind_same_writer_eof pop", 1, dest.Pop());
+	consumer.Notify(cv);
 
-	std::atomic<bool> eof{false};
-	std::thread waiter([&]() {
+	std::atomic<int> read_val{-1};
+	std::thread consumer_thread([&]() {
 		std::unique_lock<std::mutex> lock(m);
-		eof.store(cv.wait_for(lock, std::chrono::seconds(1), [&]() {
-			return dest.EoF();
-		}), std::memory_order_release);
+		cv.wait(lock, [&]() { return consumer.Ready(); });
+		read_val.store(consumer.Pop(), std::memory_order_release);
 	});
 
-	src.Eof();
-	waiter.join();
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	producer.Push(1, 555);
+	consumer_thread.join();
 
-	ASSERT_TRUE("test_sink_rebind_same_writer_eof dest eof within 1s (would hang remuxer)",
-		eof.load(std::memory_order_acquire));
-	ASSERT_TRUE("test_sink_rebind_same_writer_eof dest eof", dest.EoF());
+	ASSERT_EQUAL("test_sink_notify_condition_variable read value", 555, read_val.load(std::memory_order_acquire));
 
-	RETURN_TEST("test_sink_rebind_same_writer_eof", 0);
+	RETURN_TEST("test_sink_notify_condition_variable", 0);
 }
 
 /**
- * @brief Tests race condition between concurrent Bind(key) loop and Notify() + Push().
+ * @brief Consumer Unnotify then destroy its CV; producer Eof must not signal it.
  * @return 0 on success.
  */
-int test_sink_concurrent_bind_and_notify() {
+int test_sink_unnotify_before_cv_dies() {
+	Sink<int> producer;
+	auto consumer = std::make_unique<Sink<int>>();
+	auto wake = std::make_unique<std::condition_variable>();
+
+	producer.To(0) >> *consumer;
+	consumer->Notify(*wake);
+	producer.Push(0, 42);
+	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies queued",
+		static_cast<std::size_t>(1), consumer->Size(0));
+	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies pop", 42, consumer->Pop());
+
+	consumer->Eof();
+	consumer->Unnotify();
+	wake.reset();
+	consumer.reset();
+
+	producer.Eof();
+	ASSERT_TRUE("test_sink_unnotify_before_cv_dies producer eof", producer.EoF());
+
+	RETURN_TEST("test_sink_unnotify_before_cv_dies", 0);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Concurrency                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Concurrent To(key) >> consumer loop versus Eof.
+ * @return 0 on success.
+ */
+int test_sink_concurrent_wire_and_eof() {
+	Sink<int> producer;
+	Sink<int> consumer;
+
+	std::atomic<bool> stop_binding{false};
+	std::atomic<int> max_key{100};
+	std::thread bind_thread([&]() {
+		int key = 100;
+		while (!stop_binding.load(std::memory_order_acquire)) {
+			producer.To(key) >> consumer;
+			max_key.store(key, std::memory_order_release);
+			++key;
+			std::this_thread::yield();
+		}
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	producer.Eof();
+	stop_binding.store(true, std::memory_order_release);
+	bind_thread.join();
+
+	ASSERT_TRUE("test_sink_concurrent_wire_and_eof consumer eof", consumer.EoF());
+
+	const int last_key = max_key.load(std::memory_order_acquire);
+	for (int k = 100; k <= last_key + 10; ++k) {
+		producer.Push(k, 9999);
+		ASSERT_EQUAL("test_sink_concurrent_wire_and_eof size after push post eof", static_cast<std::size_t>(0), consumer.Size(k));
+	}
+
+	RETURN_TEST("test_sink_concurrent_wire_and_eof", 0);
+}
+
+/**
+ * @brief Concurrent To(key) >> consumer versus Notify + Push.
+ * @return 0 on success.
+ */
+int test_sink_concurrent_wire_and_notify() {
 	Sink<int> producer;
 	Sink<int> consumer;
 
@@ -439,7 +526,7 @@ int test_sink_concurrent_bind_and_notify() {
 	std::thread bind_thread([&]() {
 		int key = 200;
 		while (!stop_binding.load(std::memory_order_acquire)) {
-			producer.Bind(key, consumer);
+			producer.To(key) >> consumer;
 			max_key.store(key, std::memory_order_release);
 			++key;
 			std::this_thread::yield();
@@ -461,7 +548,6 @@ int test_sink_concurrent_bind_and_notify() {
 				received_val.store(val, std::memory_order_release);
 				return true;
 			}
-
 			return false;
 		});
 		woken.store(ok, std::memory_order_release);
@@ -471,43 +557,12 @@ int test_sink_concurrent_bind_and_notify() {
 	producer.Push(200, 7777);
 
 	wait_thread.join();
-	ASSERT_TRUE("test_sink_concurrent_bind_and_notify woken by push", woken.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_sink_concurrent_bind_and_notify received item", 7777, received_val.load(std::memory_order_acquire));
+	ASSERT_TRUE("test_sink_concurrent_wire_and_notify woken by push", woken.load(std::memory_order_acquire));
+	ASSERT_EQUAL("test_sink_concurrent_wire_and_notify received item", 7777, received_val.load(std::memory_order_acquire));
 
 	producer.Eof();
 
-	RETURN_TEST("test_sink_concurrent_bind_and_notify", 0);
-}
-
-/**
- * @brief Consumer Unnotify then destroy its CV; producer Eof must not signal it.
- *
- * Same shape as Multimedia: Bind shares the hopper, consumer Step dies,
- * producer CloseWriter / Eof runs later.
- *
- * @return 0 on success.
- */
-int test_sink_unnotify_before_cv_dies() {
-	Sink<int> producer;
-	auto consumer = std::make_unique<Sink<int>>();
-	auto wake = std::make_unique<std::condition_variable>();
-
-	producer.Bind(0, *consumer);
-	consumer->Notify(*wake);
-	producer.Push(0, 42);
-	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies queued",
-		static_cast<std::size_t>(1), consumer->Size(0));
-	ASSERT_EQUAL("test_sink_unnotify_before_cv_dies pop", 42, consumer->Pop());
-
-	consumer->Eof();
-	consumer->Unnotify();
-	wake.reset();
-	consumer.reset();
-
-	producer.Eof();
-	ASSERT_TRUE("test_sink_unnotify_before_cv_dies producer eof", producer.EoF());
-
-	RETURN_TEST("test_sink_unnotify_before_cv_dies", 0);
+	RETURN_TEST("test_sink_concurrent_wire_and_notify", 0);
 }
 
 /**
@@ -516,21 +571,27 @@ int test_sink_unnotify_before_cv_dies() {
  */
 int main() {
 	int failed = 0;
+
 	failed += test_sink_default_constructor();
-	failed += test_sink_bind_and_push_pop();
+
+	failed += test_sink_wire_and_push_pop();
+	failed += test_sink_wire_all_hoppers();
+	failed += test_sink_stream_operators();
+	failed += test_sink_wire_after_eof();
+	failed += test_sink_extra_writer_eof();
+	failed += test_sink_rewire_same_writer_eof();
+
 	failed += test_sink_non_nullable_smart_pointer();
 	failed += test_sink_drain_mode();
-	failed += test_sink_bind_all_hoppers();
-	failed += test_sink_bind_after_eof();
 	failed += test_sink_pop_custom_select();
-	failed += test_sink_push_waiting_for_bind();
-	failed += test_sink_notify_condition_variable();
-	failed += test_sink_concurrent_bind_and_eof();
+	failed += test_sink_push_waiting_for_wire();
 	failed += test_sink_eof_unblocks_waiters();
-	failed += test_sink_extra_writer_eof();
-	failed += test_sink_rebind_same_writer_eof();
-	failed += test_sink_concurrent_bind_and_notify();
+
+	failed += test_sink_notify_condition_variable();
 	failed += test_sink_unnotify_before_cv_dies();
+
+	failed += test_sink_concurrent_wire_and_eof();
+	failed += test_sink_concurrent_wire_and_notify();
 
 	if (failed != 0) {
 		std::cerr << failed << " test(s) failed." << std::endl;

@@ -26,10 +26,6 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
-### TODO
-
-- [ ] Replace `Sink::Bind` with `operator>>` / `operator<<`
-
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.2.0...HEAD
 
 ## [1.2.0] - 2026-09-17
@@ -37,11 +33,22 @@ If you landed here from a release link and have not read the tree:
 ### Added
 
 - `Hopper::Unnotify` and `Sink::Unnotify`. `Notify(cv&)` does not own the
-  condition variable. After `Bind` the Hopper outlives the consumer; the
+  condition variable. After wiring, the Hopper outlives the consumer; the
   consumer must `Unnotify` before that CV is destroyed so a later producer
   `Eof` does not signal a freed object. `SignalConsumer` is a no-op when
-  the pointer is null. `test_hopper_unnotify_before_cv_dies` and
-  `test_sink_unnotify_before_cv_dies` cover the tube teardown order.
+  the pointer is null.
+- `Sink::To(key)`, `Sink::operator>>` and `Sink::operator<<`. Same wiring
+  as `Bind` / `Bind(key)` (writer, reader, co-writer). `Bind` stays as a
+  `[[deprecated]]` wrapper for one or two releases.
+- `Hopper::operator<<` / `Hopper::operator>>` and `item >> hopper`. Same
+  as `Push` / `Pop`. Those methods stay.
+
+### Tests
+
+- `test_hopper_unnotify_before_cv_dies`, `test_hopper_notify_after_unnotify`,
+  `test_hopper_stream_members`, `test_hopper_stream_item_into`.
+- `test_sink_unnotify_before_cv_dies`, `test_sink_stream_operators`.
+  Existing Sink tests use `To` / `>>` / `<<` instead of `Bind`.
 
 [1.2.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.1.2...1.2.0
 
