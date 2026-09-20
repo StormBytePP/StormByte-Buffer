@@ -61,6 +61,20 @@ static_assert(!StormByte::Type::NullablePointer<NonNullableSmartPointer>);
 /* -------------------------------------------------------------------------- */
 
 /**
+ * @brief Tests bounded construction and capacity query.
+ * @return 0 on success.
+ */
+int test_hopper_bounded_constructor() {
+	Hopper<int> hopper(5);
+	ASSERT_EQUAL("test_hopper_bounded_constructor capacity", static_cast<std::size_t>(5), hopper.Capacity());
+	ASSERT_EQUAL("test_hopper_bounded_constructor size", static_cast<std::size_t>(0), hopper.Size());
+	ASSERT_TRUE("test_hopper_bounded_constructor empty", hopper.Empty());
+	ASSERT_FALSE("test_hopper_bounded_constructor full", hopper.Full());
+
+	RETURN_TEST("test_hopper_bounded_constructor", 0);
+}
+
+/**
  * @brief Tests default construction of Hopper (unbounded capacity, empty, size 0).
  * @return 0 on success.
  */
@@ -73,20 +87,6 @@ int test_hopper_default_constructor() {
 	ASSERT_FALSE("test_hopper_default_constructor eof", hopper.EoF());
 
 	RETURN_TEST("test_hopper_default_constructor", 0);
-}
-
-/**
- * @brief Tests bounded construction and capacity query.
- * @return 0 on success.
- */
-int test_hopper_bounded_constructor() {
-	Hopper<int> hopper(5);
-	ASSERT_EQUAL("test_hopper_bounded_constructor capacity", static_cast<std::size_t>(5), hopper.Capacity());
-	ASSERT_EQUAL("test_hopper_bounded_constructor size", static_cast<std::size_t>(0), hopper.Size());
-	ASSERT_TRUE("test_hopper_bounded_constructor empty", hopper.Empty());
-	ASSERT_FALSE("test_hopper_bounded_constructor full", hopper.Full());
-
-	RETURN_TEST("test_hopper_bounded_constructor", 0);
 }
 
 /**
@@ -115,8 +115,78 @@ int test_hopper_dynamic_capacity() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Item stream operators                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief item >> hopper (lvalue and rvalue) enqueues.
+ * @return 0 on success.
+ */
+int test_hopper_stream_item_into() {
+	Hopper<int> hopper;
+	int live = 11;
+	live >> hopper;
+	12 >> hopper;
+	ASSERT_EQUAL("test_hopper_stream_item_into size", static_cast<std::size_t>(2), hopper.Size());
+	ASSERT_EQUAL("test_hopper_stream_item_into pop 1", 11, hopper.Pop());
+	ASSERT_EQUAL("test_hopper_stream_item_into pop 2", 12, hopper.Pop());
+
+	Hopper<std::unique_ptr<int>> ptrs;
+	std::unique_ptr<int> empty;
+	empty >> ptrs;
+	ASSERT_TRUE("test_hopper_stream_item_into null discarded", ptrs.Empty());
+	std::make_unique<int>(9) >> ptrs;
+	auto got = ptrs.Pop();
+	ASSERT_TRUE("test_hopper_stream_item_into ptr valid", static_cast<bool>(got));
+	ASSERT_EQUAL("test_hopper_stream_item_into ptr value", 9, *got);
+
+	RETURN_TEST("test_hopper_stream_item_into", 0);
+}
+
+/**
+ * @brief hopper << item and hopper >> item match Push/Pop.
+ * @return 0 on success.
+ */
+int test_hopper_stream_members() {
+	Hopper<int> hopper;
+	hopper << 1;
+	hopper << 2;
+	ASSERT_EQUAL("test_hopper_stream_members size", static_cast<std::size_t>(2), hopper.Size());
+
+	int a = 0;
+	int b = 0;
+	hopper >> a;
+	hopper >> b;
+	ASSERT_EQUAL("test_hopper_stream_members pop 1", 1, a);
+	ASSERT_EQUAL("test_hopper_stream_members pop 2", 2, b);
+	ASSERT_TRUE("test_hopper_stream_members empty", hopper.Empty());
+
+	int dry = 7;
+	hopper >> dry;
+	ASSERT_EQUAL("test_hopper_stream_members dry pop", 0, dry);
+
+	RETURN_TEST("test_hopper_stream_members", 0);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Item types                                                                 */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Tests smart pointer-like types without nullability are enqueued normally.
+ * @return 0 on success.
+ */
+int test_hopper_non_nullable_smart_pointer() {
+	Hopper<NonNullableSmartPointer> hopper;
+	hopper.Push(NonNullableSmartPointer(456));
+
+	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer size", static_cast<std::size_t>(1), hopper.Size());
+	auto popped = hopper.Pop();
+	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer value", 456, *popped);
+	ASSERT_TRUE("test_hopper_non_nullable_smart_pointer empty", hopper.Empty());
+
+	RETURN_TEST("test_hopper_non_nullable_smart_pointer", 0);
+}
 
 /**
  * @brief Tests smart pointer discard semantics (null pointers are discarded without enqueuing).
@@ -149,22 +219,6 @@ int test_hopper_smart_pointer_discard() {
 }
 
 /**
- * @brief Tests smart pointer-like types without nullability are enqueued normally.
- * @return 0 on success.
- */
-int test_hopper_non_nullable_smart_pointer() {
-	Hopper<NonNullableSmartPointer> hopper;
-	hopper.Push(NonNullableSmartPointer(456));
-
-	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer size", static_cast<std::size_t>(1), hopper.Size());
-	auto popped = hopper.Pop();
-	ASSERT_EQUAL("test_hopper_non_nullable_smart_pointer value", 456, *popped);
-	ASSERT_TRUE("test_hopper_non_nullable_smart_pointer empty", hopper.Empty());
-
-	RETURN_TEST("test_hopper_non_nullable_smart_pointer", 0);
-}
-
-/**
  * @brief Tests non-smart-pointer types (int, std::string) are always enqueued.
  * @return 0 on success.
  */
@@ -185,128 +239,39 @@ int test_hopper_value_types() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Push / Pop / Eof                                                           */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @brief Tests Push blocking when capacity ceiling is reached, and unblocking on Pop.
- * @return 0 on success.
- */
-int test_hopper_push_blocking_and_pop_unblock() {
-	Hopper<int> hopper(2);
-	hopper.Push(1);
-	hopper.Push(2);
-
-	std::atomic<bool> push_completed{false};
-
-	std::thread producer([&]() {
-		hopper.Push(3);
-		push_completed.store(true, std::memory_order_release);
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("test_hopper_push_blocking_and_pop_unblock blocked push", push_completed.load(std::memory_order_acquire));
-
-	int popped = hopper.Pop();
-	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock popped 1", 1, popped);
-
-	producer.join();
-	ASSERT_TRUE("test_hopper_push_blocking_and_pop_unblock push resumed", push_completed.load(std::memory_order_acquire));
-	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock size 2", static_cast<std::size_t>(2), hopper.Size());
-
-	RETURN_TEST("test_hopper_push_blocking_and_pop_unblock", 0);
-}
-
-/**
- * @brief Tests Eof marking, waking blocked Push threads and ignoring subsequent Push.
- * @return 0 on success.
- */
-int test_hopper_eof_behavior() {
-	Hopper<int> hopper(1);
-	hopper.Push(10);
-
-	std::atomic<bool> push_unblocked{false};
-
-	std::thread producer([&]() {
-		hopper.Push(20);
-		push_unblocked.store(true, std::memory_order_release);
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("test_hopper_eof_behavior producer blocked", push_unblocked.load(std::memory_order_acquire));
-
-	hopper.Eof();
-	producer.join();
-
-	ASSERT_TRUE("test_hopper_eof_behavior eof unblocked producer", push_unblocked.load(std::memory_order_acquire));
-	ASSERT_TRUE("test_hopper_eof_behavior eof flag set", hopper.EoF());
-
-	hopper.Push(30);
-	ASSERT_EQUAL("test_hopper_eof_behavior size 1", static_cast<std::size_t>(1), hopper.Size());
-	ASSERT_EQUAL("test_hopper_eof_behavior pop remaining item", 10, hopper.Pop());
-	ASSERT_TRUE("test_hopper_eof_behavior empty", hopper.Empty());
-	ASSERT_TRUE("test_hopper_eof_behavior eof remains true", hopper.EoF());
-
-	RETURN_TEST("test_hopper_eof_behavior", 0);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Item stream operators (Push/Pop stay; these are the same edges)            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @brief hopper << item and hopper >> item match Push/Pop.
- * @return 0 on success.
- */
-int test_hopper_stream_members() {
-	Hopper<int> hopper;
-	hopper << 1;
-	hopper << 2;
-	ASSERT_EQUAL("test_hopper_stream_members size", static_cast<std::size_t>(2), hopper.Size());
-
-	int a = 0;
-	int b = 0;
-	hopper >> a;
-	hopper >> b;
-	ASSERT_EQUAL("test_hopper_stream_members pop 1", 1, a);
-	ASSERT_EQUAL("test_hopper_stream_members pop 2", 2, b);
-	ASSERT_TRUE("test_hopper_stream_members empty", hopper.Empty());
-
-	int dry = 7;
-	hopper >> dry;
-	ASSERT_EQUAL("test_hopper_stream_members dry pop", 0, dry);
-
-	RETURN_TEST("test_hopper_stream_members", 0);
-}
-
-/**
- * @brief item >> hopper (lvalue and rvalue) enqueues.
- * @return 0 on success.
- */
-int test_hopper_stream_item_into() {
-	Hopper<int> hopper;
-	int live = 11;
-	live >> hopper;
-	12 >> hopper;
-	ASSERT_EQUAL("test_hopper_stream_item_into size", static_cast<std::size_t>(2), hopper.Size());
-	ASSERT_EQUAL("test_hopper_stream_item_into pop 1", 11, hopper.Pop());
-	ASSERT_EQUAL("test_hopper_stream_item_into pop 2", 12, hopper.Pop());
-
-	Hopper<std::unique_ptr<int>> ptrs;
-	std::unique_ptr<int> empty;
-	empty >> ptrs;
-	ASSERT_TRUE("test_hopper_stream_item_into null discarded", ptrs.Empty());
-	std::make_unique<int>(9) >> ptrs;
-	auto got = ptrs.Pop();
-	ASSERT_TRUE("test_hopper_stream_item_into ptr valid", static_cast<bool>(got));
-	ASSERT_EQUAL("test_hopper_stream_item_into ptr value", 9, *got);
-
-	RETURN_TEST("test_hopper_stream_item_into", 0);
-}
-
-/* -------------------------------------------------------------------------- */
 /* Notify / Unnotify                                                          */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Notify after Unnotify attaches a new CV.
+ * @return 0 on success.
+ */
+int test_hopper_notify_after_unnotify() {
+	Hopper<int> hopper;
+	std::condition_variable first;
+	hopper.Notify(first);
+	hopper.Unnotify();
+
+	std::condition_variable cv;
+	std::mutex m;
+	hopper.Notify(cv);
+
+	std::atomic<int> received{-1};
+	std::thread consumer([&]() {
+		std::unique_lock<std::mutex> lock(m);
+		cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
+		received.store(hopper.Pop(), std::memory_order_release);
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	hopper.Push(7);
+	consumer.join();
+
+	ASSERT_EQUAL("test_hopper_notify_after_unnotify received", 7,
+		received.load(std::memory_order_acquire));
+
+	RETURN_TEST("test_hopper_notify_after_unnotify", 0);
+}
 
 /**
  * @brief Tests Notify callback mechanism waking consumer condition variables on Push and Eof.
@@ -363,35 +328,129 @@ int test_hopper_unnotify_before_cv_dies() {
 	RETURN_TEST("test_hopper_unnotify_before_cv_dies", 0);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Push / Pop / Eof                                                           */
+/* -------------------------------------------------------------------------- */
+
 /**
- * @brief Notify after Unnotify attaches a new CV.
+ * @brief Tests Eof marking, waking blocked Push threads and ignoring subsequent Push.
  * @return 0 on success.
  */
-int test_hopper_notify_after_unnotify() {
-	Hopper<int> hopper;
-	std::condition_variable first;
-	hopper.Notify(first);
-	hopper.Unnotify();
+int test_hopper_eof_behavior() {
+	Hopper<int> hopper(1);
+	hopper.Push(10);
 
-	std::condition_variable cv;
-	std::mutex m;
-	hopper.Notify(cv);
+	std::atomic<bool> push_unblocked{false};
 
-	std::atomic<int> received{-1};
-	std::thread consumer([&]() {
-		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [&]() { return !hopper.Empty() || hopper.EoF(); });
-		received.store(hopper.Pop(), std::memory_order_release);
+	std::thread producer([&]() {
+		hopper.Push(20);
+		push_unblocked.store(true, std::memory_order_release);
 	});
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	hopper.Push(7);
-	consumer.join();
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	ASSERT_FALSE("test_hopper_eof_behavior producer blocked", push_unblocked.load(std::memory_order_acquire));
 
-	ASSERT_EQUAL("test_hopper_notify_after_unnotify received", 7,
-		received.load(std::memory_order_acquire));
+	hopper.Eof();
+	producer.join();
 
-	RETURN_TEST("test_hopper_notify_after_unnotify", 0);
+	ASSERT_TRUE("test_hopper_eof_behavior eof unblocked producer", push_unblocked.load(std::memory_order_acquire));
+	ASSERT_TRUE("test_hopper_eof_behavior eof flag set", hopper.EoF());
+
+	hopper.Push(30);
+	ASSERT_EQUAL("test_hopper_eof_behavior size 1", static_cast<std::size_t>(1), hopper.Size());
+	ASSERT_EQUAL("test_hopper_eof_behavior pop remaining item", 10, hopper.Pop());
+	ASSERT_TRUE("test_hopper_eof_behavior empty", hopper.Empty());
+	ASSERT_TRUE("test_hopper_eof_behavior eof remains true", hopper.EoF());
+
+	RETURN_TEST("test_hopper_eof_behavior", 0);
+}
+
+/**
+ * @brief Tests Push blocking when capacity ceiling is reached, and unblocking on Pop.
+ * @return 0 on success.
+ */
+int test_hopper_push_blocking_and_pop_unblock() {
+	Hopper<int> hopper(2);
+	hopper.Push(1);
+	hopper.Push(2);
+
+	std::atomic<bool> push_completed{false};
+
+	std::thread producer([&]() {
+		hopper.Push(3);
+		push_completed.store(true, std::memory_order_release);
+	});
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	ASSERT_FALSE("test_hopper_push_blocking_and_pop_unblock blocked push", push_completed.load(std::memory_order_acquire));
+
+	int popped = hopper.Pop();
+	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock popped 1", 1, popped);
+
+	producer.join();
+	ASSERT_TRUE("test_hopper_push_blocking_and_pop_unblock push resumed", push_completed.load(std::memory_order_acquire));
+	ASSERT_EQUAL("test_hopper_push_blocking_and_pop_unblock size 2", static_cast<std::size_t>(2), hopper.Size());
+
+	RETURN_TEST("test_hopper_push_blocking_and_pop_unblock", 0);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Query                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Front copies the next item and does not dequeue.
+ * @return 0 on success.
+ */
+int test_hopper_front_peek() {
+	Hopper<int> hopper;
+	ASSERT_EQUAL("test_hopper_front_peek empty", 0, hopper.Front());
+	ASSERT_TRUE("test_hopper_front_peek still empty", hopper.Empty());
+
+	hopper.Push(10);
+	hopper.Push(20);
+	ASSERT_EQUAL("test_hopper_front_peek first", 10, hopper.Front());
+	ASSERT_EQUAL("test_hopper_front_peek first again", 10, hopper.Front());
+	ASSERT_EQUAL("test_hopper_front_peek size after peek", static_cast<std::size_t>(2), hopper.Size());
+
+	ASSERT_EQUAL("test_hopper_front_peek pop", 10, hopper.Pop());
+	ASSERT_EQUAL("test_hopper_front_peek second", 20, hopper.Front());
+	ASSERT_EQUAL("test_hopper_front_peek size after pop", static_cast<std::size_t>(1), hopper.Size());
+
+	Hopper<std::shared_ptr<std::string>> shared;
+	shared.Push(std::make_shared<std::string>("peek"));
+	auto a = shared.Front();
+	auto b = shared.Front();
+	ASSERT_TRUE("test_hopper_front_peek shared a", static_cast<bool>(a));
+	ASSERT_TRUE("test_hopper_front_peek shared b", static_cast<bool>(b));
+	ASSERT_EQUAL("test_hopper_front_peek shared value", std::string("peek"), *a);
+	ASSERT_EQUAL("test_hopper_front_peek shared same ptr", a.get(), b.get());
+	ASSERT_EQUAL("test_hopper_front_peek shared size", static_cast<std::size_t>(1), shared.Size());
+
+	RETURN_TEST("test_hopper_front_peek", 0);
+}
+
+/**
+ * @brief Writers starts at 1. Ready is false when empty and not EoF.
+ * @return 0 on success.
+ */
+int test_hopper_writers_and_ready() {
+	Hopper<int> hopper;
+	ASSERT_EQUAL("test_hopper_writers_and_ready writers", 1u, hopper.Writers());
+	ASSERT_FALSE("test_hopper_writers_and_ready ready empty", hopper.Ready());
+
+	hopper.Push(1);
+	ASSERT_TRUE("test_hopper_writers_and_ready ready with item", hopper.Ready());
+	ASSERT_EQUAL("test_hopper_writers_and_ready writers unchanged", 1u, hopper.Writers());
+
+	ASSERT_EQUAL("test_hopper_writers_and_ready pop", 1, hopper.Pop());
+	ASSERT_FALSE("test_hopper_writers_and_ready ready after drain", hopper.Ready());
+
+	hopper.Eof();
+	ASSERT_TRUE("test_hopper_writers_and_ready ready on eof", hopper.Ready());
+	ASSERT_TRUE("test_hopper_writers_and_ready eof", hopper.EoF());
+
+	RETURN_TEST("test_hopper_writers_and_ready", 0);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -456,24 +515,34 @@ int test_hopper_spsc_stress() {
 int main() {
 	int failed = 0;
 
-	failed += test_hopper_default_constructor();
+	// Construction / capacity
 	failed += test_hopper_bounded_constructor();
+	failed += test_hopper_default_constructor();
 	failed += test_hopper_dynamic_capacity();
 
-	failed += test_hopper_smart_pointer_discard();
+	// Item stream operators
+	failed += test_hopper_stream_item_into();
+	failed += test_hopper_stream_members();
+
+	// Item types
 	failed += test_hopper_non_nullable_smart_pointer();
+	failed += test_hopper_smart_pointer_discard();
 	failed += test_hopper_value_types();
 
-	failed += test_hopper_push_blocking_and_pop_unblock();
-	failed += test_hopper_eof_behavior();
-
-	failed += test_hopper_stream_members();
-	failed += test_hopper_stream_item_into();
-
+	// Notify / Unnotify
+	failed += test_hopper_notify_after_unnotify();
 	failed += test_hopper_notify_condition_variable();
 	failed += test_hopper_unnotify_before_cv_dies();
-	failed += test_hopper_notify_after_unnotify();
 
+	// Push / Pop / Eof
+	failed += test_hopper_eof_behavior();
+	failed += test_hopper_push_blocking_and_pop_unblock();
+
+	// Query
+	failed += test_hopper_front_peek();
+	failed += test_hopper_writers_and_ready();
+
+	// Stress
 	failed += test_hopper_spsc_stress();
 
 	if (failed != 0) {

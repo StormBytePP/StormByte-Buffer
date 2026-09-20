@@ -22,6 +22,7 @@
 #include <StormByte/type_traits.hxx>
 
 #include <atomic>
+#include <concepts>
 #include <condition_variable>
 #include <cstddef>
 #include <memory>
@@ -99,6 +100,14 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Live writer count.
+			 * @return Writers still open.
+			 */
+			unsigned Writers() const noexcept {
+				return m_writers.load(std::memory_order_acquire);
+			}
+
+			/**
 			 * @brief Enqueues an item, waiting if full.
 			 * @param item Item to enqueue.
 			 */
@@ -171,6 +180,17 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Copy of front item. Does not dequeue.
+			 * @return Front or default T.
+			 */
+			T Front() const noexcept requires std::copy_constructible<T> {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				if (m_items.empty())
+					return T{};
+				return m_items.front();
+			}
+
+			/**
 			 * @brief Checks if Eof was signaled.
 			 * @return true if Eof set.
 			 */
@@ -185,6 +205,14 @@ namespace StormByte::Buffer {
 			bool Empty() const noexcept {
 				std::lock_guard<std::mutex> lock(m_mutex);
 				return m_items.empty();
+			}
+
+			/**
+			 * @brief Item ready or production finished.
+			 * @return true if !Empty() or EoF().
+			 */
+			bool Ready() const noexcept {
+				return !Empty() || EoF();
 			}
 
 			void Notify(std::condition_variable& wake) noexcept {
@@ -247,6 +275,11 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	unsigned Hopper<T>::Writers() const noexcept {
+		return m_impl->Writers();
+	}
+
+	template<Type::MoveConstructible T>
 	void Hopper<T>::Push(T item) noexcept {
 		m_impl->Push(std::move(item));
 	}
@@ -278,6 +311,11 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	T Hopper<T>::Front() const noexcept requires std::copy_constructible<T> {
+		return m_impl->Front();
+	}
+
+	template<Type::MoveConstructible T>
 	Hopper<T>& Hopper<T>::operator>>(T& item) noexcept {
 		item = Pop();
 		return *this;
@@ -291,6 +329,11 @@ namespace StormByte::Buffer {
 	template<Type::MoveConstructible T>
 	bool Hopper<T>::Empty() const noexcept {
 		return m_impl->Empty();
+	}
+
+	template<Type::MoveConstructible T>
+	bool Hopper<T>::Ready() const noexcept {
+		return m_impl->Ready();
 	}
 
 	template<Type::MoveConstructible T>

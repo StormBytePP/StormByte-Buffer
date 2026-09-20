@@ -21,6 +21,7 @@
 
 #include <StormByte/type_traits.hxx>
 
+#include <concepts>
 #include <condition_variable>
 #include <cstddef>
 #include <memory>
@@ -43,6 +44,7 @@ namespace StormByte::Buffer {
 	 * - Consumer notification: Points to a consumer condition variable via Notify to signal when
 	 *   items or EoF are available.
 	 * - Item flow: @c hopper << item and @c item >> hopper enqueue; @c hopper >> item dequeues.
+	 * - Query: Size, Capacity, Full, Empty, EoF, Ready, Writers, Front (peek, copy).
 	 * - Non-copyable, non-movable: Shared via std::shared_ptr.
 	 *
 	 * @tparam T Item type stored in the queue (must be MoveConstructible).
@@ -128,6 +130,12 @@ namespace StormByte::Buffer {
 			bool Full() const noexcept;
 
 			/**
+			 * @brief Live writers attached to this hopper.
+			 * @return Writer count. Last @ref CloseWriter sets Eof.
+			 */
+			unsigned Writers() const noexcept;
+
+			/**
 			 * @}
 			 */
 
@@ -178,6 +186,15 @@ namespace StormByte::Buffer {
 			T Pop() noexcept;
 
 			/**
+			 * @brief Copy of the next item without dequeuing.
+			 * @return Front item, or default T if empty.
+			 *
+			 * Does not block and does not wake producers. Requires T copy-constructible
+			 * (shared_ptr Packet/Frame). Not a deep copy of the payload.
+			 */
+			T Front() const noexcept requires std::copy_constructible<T>;
+
+			/**
 			 * @brief Pop one unit from this Hopper into @p item.
 			 * @param item Destination. Becomes default T if the bucket is dry.
 			 * @return *this.
@@ -195,6 +212,12 @@ namespace StormByte::Buffer {
 			 * @return true if empty.
 			 */
 			bool Empty() const noexcept;
+
+			/**
+			 * @brief Whether Pop can return an item or production is finished.
+			 * @return true if !Empty() or EoF().
+			 */
+			bool Ready() const noexcept;
 
 			/**
 			 * @}

@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace StormByte::Buffer {
 	/**
@@ -44,7 +45,9 @@ namespace StormByte::Buffer {
 	 *   same edges. @ref Bind remains for one or two releases and is deprecated.
 	 * - Drain: Terminal producer flag. Push to an un-wired key discards the item
 	 *   without waiting for a consumer.
-	 * - Pop: Retrieves items across buckets using Round-Robin or custom Select.
+	 * - Pop: Retrieves items across buckets using Round-Robin, custom Select,
+	 *   or a single key (@ref Pop(int)).
+	 * - Query: @ref Keys, @ref Contains, per-key Size/Capacity/Full/Empty/EoF/Ready/Front.
 	 * - EoF: Closes the Sink and CloseWriter on hoppers this Sink writes.
 	 *
 	 * @tparam T Item type stored in the hoppers (must be MoveConstructible).
@@ -243,6 +246,27 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
+			 * @brief Keys of hoppers currently wired on this Sink.
+			 * @return Keys in ascending order. Empty if none.
+			 *
+			 * Snapshot. Does not create buckets. Sink does not interpret keys.
+			 */
+			std::vector<int> Keys() const noexcept;
+
+			/**
+			 * @brief Number of hoppers wired on this Sink.
+			 * @return @ref Keys size.
+			 */
+			std::size_t Buckets() const noexcept;
+
+			/**
+			 * @brief Whether hopper @p key exists on this Sink.
+			 * @param key Bucket key identifier.
+			 * @return true if the key is wired.
+			 */
+			bool Contains(int key) const noexcept;
+
+			/**
 			 * @brief Gets capacity ceiling of bucket key.
 			 * @param key Bucket key identifier.
 			 * @return Hopper capacity, or 0 if key bucket does not exist.
@@ -259,7 +283,7 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Gets pending item count in bucket key.
 			 * @param key Bucket key identifier.
-			 * @return Item count, or 0 if bucket does not exist.
+			 * @return Item count, or 0 if key bucket does not exist.
 			 */
 			std::size_t Size(int key) const noexcept;
 
@@ -269,6 +293,38 @@ namespace StormByte::Buffer {
 			 * @return true if full, or false if key does not exist.
 			 */
 			bool Full(int key) const noexcept;
+
+			/**
+			 * @brief Whether bucket @p key has no pending items.
+			 * @param key Bucket key identifier.
+			 * @return true if the key is missing or the hopper is empty.
+			 */
+			bool Empty(int key) const noexcept;
+
+			/**
+			 * @brief Whether producers marked Eof on bucket @p key.
+			 * @param key Bucket key identifier.
+			 * @return Hopper EoF, or false if the key does not exist.
+			 */
+			bool EoF(int key) const noexcept;
+
+			/**
+			 * @brief Whether @ref Pop(int) on @p key can return an item or that hopper is finished.
+			 * @param key Bucket key identifier.
+			 * @return true if the hopper has an item or is EoF. false if missing.
+			 */
+			bool Ready(int key) const noexcept;
+
+			/**
+			 * @brief Copy of the next item in bucket @p key without dequeuing.
+			 * @param key Bucket key identifier.
+			 * @return Front item, or default T if the key is missing or the hopper is empty.
+			 *
+			 * Does not block and does not wake producers. Requires
+			 * @ref Type::CopyConstructible. Not a deep copy of the payload.
+			 * Does not read any other key.
+			 */
+			T Front(int key) const noexcept requires Type::CopyConstructible<T>;
 
 			/**
 			 * @}
@@ -295,6 +351,19 @@ namespace StormByte::Buffer {
 			 * Blocks while zero buckets exist and Sink is not closed.
 			 */
 			T Pop(const Select& select) noexcept;
+
+			/**
+			 * @brief Pops one item from bucket @p key only.
+			 * @param key Bucket key identifier.
+			 * @return Next item of that hopper, or default T if the key is
+			 *         missing, the hopper is empty, or the Sink is closed.
+			 *
+			 * Waits until the key exists or the Sink is closed. Does not
+			 * wait for an item: an empty hopper returns default T (same as
+			 * @ref Hopper::Pop). Does not read any other key. Sink does not
+			 * interpret @p key.
+			 */
+			T Pop(int key) noexcept;
 
 			/**
 			 * @brief Checks if the Sink is finished.

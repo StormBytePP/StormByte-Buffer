@@ -198,6 +198,37 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Snapshot of wired keys in map order.
+			 * @return Keys, empty if none.
+			 */
+			std::vector<int> Keys() const noexcept {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				std::vector<int> keys;
+				keys.reserve(m_buckets.size());
+				for (const auto& [key, hopper] : m_buckets)
+					keys.push_back(key);
+				return keys;
+			}
+
+			/**
+			 * @brief Number of wired hoppers.
+			 * @return Bucket count.
+			 */
+			std::size_t Buckets() const noexcept {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				return m_buckets.size();
+			}
+
+			/**
+			 * @brief Whether key is wired.
+			 * @param key Bucket key.
+			 * @return true if present.
+			 */
+			bool Contains(int key) const noexcept {
+				return static_cast<bool>(Bucket(key));
+			}
+
+			/**
 			 * @brief Gets capacity of key hopper.
 			 * @param key Bucket key.
 			 * @return Capacity value.
@@ -246,6 +277,54 @@ namespace StormByte::Buffer {
 			}
 
 			/**
+			 * @brief Whether key hopper has no items.
+			 * @param key Bucket key.
+			 * @return true if missing or empty.
+			 */
+			bool Empty(int key) const noexcept {
+				const auto hopper = Bucket(key);
+				if (!hopper)
+					return true;
+				return hopper->Empty();
+			}
+
+			/**
+			 * @brief Whether producers marked Eof on key hopper.
+			 * @param key Bucket key.
+			 * @return Hopper EoF, or false if missing.
+			 */
+			bool EoF(int key) const noexcept {
+				const auto hopper = Bucket(key);
+				if (!hopper)
+					return false;
+				return hopper->EoF();
+			}
+
+			/**
+			 * @brief Whether key hopper has an item or is finished.
+			 * @param key Bucket key.
+			 * @return false if missing.
+			 */
+			bool Ready(int key) const noexcept {
+				const auto hopper = Bucket(key);
+				if (!hopper)
+					return false;
+				return !hopper->Empty() || hopper->EoF();
+			}
+
+			/**
+			 * @brief Copy of front item of key hopper. Does not dequeue.
+			 * @param key Bucket key.
+			 * @return Front or default T.
+			 */
+			T Front(int key) const noexcept requires Type::CopyConstructible<T> {
+				const auto hopper = Bucket(key);
+				if (!hopper)
+					return T{};
+				return hopper->Front();
+			}
+
+			/**
 			 * @brief Pops item using default selection.
 			 * @return Popped item or default T.
 			 */
@@ -285,6 +364,27 @@ namespace StormByte::Buffer {
 						return hopper->Pop();
 				}
 				return T{};
+			}
+
+			/**
+			 * @brief Pops from one key only.
+			 * @param key Bucket key.
+			 * @return Item or default T.
+			 */
+			T Pop(int key) noexcept {
+				std::shared_ptr<Hopper<T>> hopper;
+				{
+					std::unique_lock<std::mutex> lock(m_mutex);
+					m_wired.wait(lock, [this, key] {
+						return m_closed.load(std::memory_order_acquire)
+							|| m_buckets.contains(key);
+					});
+					auto found = m_buckets.find(key);
+					if (found == m_buckets.end() || !found->second)
+						return T{};
+					hopper = found->second;
+				}
+				return hopper->Pop();
 			}
 
 			/**
@@ -472,6 +572,21 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	std::vector<int> Sink<T>::Keys() const noexcept {
+		return m_impl->Keys();
+	}
+
+	template<Type::MoveConstructible T>
+	std::size_t Sink<T>::Buckets() const noexcept {
+		return m_impl->Buckets();
+	}
+
+	template<Type::MoveConstructible T>
+	bool Sink<T>::Contains(int key) const noexcept {
+		return m_impl->Contains(key);
+	}
+
+	template<Type::MoveConstructible T>
 	std::size_t Sink<T>::Capacity(int key) const noexcept {
 		return m_impl->Capacity(key);
 	}
@@ -492,6 +607,26 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
+	bool Sink<T>::Empty(int key) const noexcept {
+		return m_impl->Empty(key);
+	}
+
+	template<Type::MoveConstructible T>
+	bool Sink<T>::EoF(int key) const noexcept {
+		return m_impl->EoF(key);
+	}
+
+	template<Type::MoveConstructible T>
+	bool Sink<T>::Ready(int key) const noexcept {
+		return m_impl->Ready(key);
+	}
+
+	template<Type::MoveConstructible T>
+	T Sink<T>::Front(int key) const noexcept requires Type::CopyConstructible<T> {
+		return m_impl->Front(key);
+	}
+
+	template<Type::MoveConstructible T>
 	T Sink<T>::Pop() noexcept {
 		return m_impl->Pop();
 	}
@@ -499,6 +634,11 @@ namespace StormByte::Buffer {
 	template<Type::MoveConstructible T>
 	T Sink<T>::Pop(const Select& select) noexcept {
 		return m_impl->Pop(select);
+	}
+
+	template<Type::MoveConstructible T>
+	T Sink<T>::Pop(int key) noexcept {
+		return m_impl->Pop(key);
 	}
 
 	template<Type::MoveConstructible T>

@@ -22,6 +22,10 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
+- `Sink::Keys`, `Sink::Buckets`, `Sink::Contains`, `Sink::Empty(key)`, `Sink::EoF(key)` and `Sink::Ready(key)`. Query only. Missing key: `Empty` is true, `EoF`/`Ready`/`Contains` are false, `Buckets` is the wired count.
+- `Sink::Pop(int key)`. Reads that hopper only. Waits until the key is wired or the Sink is closed. Empty hopper returns default `T` (same as `Hopper::Pop`). Does not interpret the key.
+- `Hopper::Writers`, `Hopper::Ready` and `Hopper::Front`. `Front` copies the next item and does not dequeue; requires `std::copy_constructible<T>` (`shared_ptr` Packet/Frame). Not a deep copy of the payload. `Writers` is the live writer count (starts at 1).
+
 ### Changed
 
 ### Fixed
@@ -29,6 +33,12 @@ If you landed here from a release link and have not read the tree:
 ### Deprecated
 
 - `Sink::Bind` remains available as a `[[deprecated]]` wrapper around `To` / `>>` / `<<`. It will be removed in a later minor.
+
+### Tests
+
+- `test_hopper_front_peek`, `test_hopper_writers_and_ready`.
+- `test_sink_pop_key`, `test_sink_query_unwired`, `test_sink_query_wired`.
+- Hopper and Sink test files ordered by section name, then by test name.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.2.0...HEAD
 
