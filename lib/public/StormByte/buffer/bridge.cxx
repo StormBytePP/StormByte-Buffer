@@ -76,3 +76,7 @@ void Bridge::SetError() noexcept {
 bool Bridge::Passthrough(const std::size_t bytes) noexcept {
 	return m_io && m_io->Passthrough(bytes);
 }
+
+bool Bridge::Drain(const std::size_t high_water, const std::size_t chunk_min, const std::size_t chunk_max) noexcept {
+	return m_io && m_io->Drain(high_water, chunk_min, chunk_max);
+}

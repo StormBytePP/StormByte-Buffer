@@ -62,8 +62,8 @@ namespace StormByte {
 		 *
 		 * Pairings: ExternalReader/Writer, IO::BufferedReader/Writer, or mixed.
 		 * Holds references only. Tips must outlive the Bridge and every
-		 * Passthrough. Does not Open or Seek. No local cache. No configured
-		 * chunk: @c Passthrough(n) is the unit.
+		 * Passthrough or Drain. Does not Open or Seek. No local cache.
+		 * No configured chunk: @c Passthrough(n) is the unit.
 		 *
 		 * External sources are consumed with Extract (Read only if Extract
 		 * fails). IO sources use Read, which already consumes. Writers are
@@ -74,6 +74,10 @@ namespace StormByte {
 		 * what is available on the source now. A short read at EoF is
 		 * success and marks EoF; it is not Failed.
 		 *
+		 * @c Drain keeps calling Passthrough until the source is EoF.
+		 * @p high_water is backpressure on the sink so a large origin is
+		 * not materialised in RAM. It is not a MaxWait policy.
+		 *
 		 * @ref Flush is a no-op on an External sink and @c Flush on an
 		 * IO writer. The destructor Flushes.
 		 *
@@ -81,11 +85,6 @@ namespace StormByte {
 		 */
 		class STORMBYTE_BUFFER_PUBLIC Bridge {
 			public:
-				/**
-				 * @name Lifecycle
-				 * @{
-				 */
-
 				/**
 				 * @brief Buffer → buffer. Tips not owned.
 				 * @param in Source.
@@ -114,9 +113,6 @@ namespace StormByte {
 				 */
 				Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept;
 
-				/**
-				 * @brief Copy constructor is deleted.
-				 */
 				Bridge(const Bridge&) = delete;
 
 				/**
@@ -130,10 +126,6 @@ namespace StormByte {
 				 */
 				~Bridge() noexcept;
 
-				/**
-				 * @brief Copy assignment is deleted.
-				 * @return *this.
-				 */
 				Bridge& operator=(const Bridge&) = delete;
 
 				/**
@@ -142,10 +134,6 @@ namespace StormByte {
 				 * @return *this.
 				 */
 				Bridge& operator=(Bridge&& other) noexcept;
-
-				/**
-				 * @}
-				 */
 
 				/**
 				 * @brief Whether the source reports end-of-stream.
@@ -188,6 +176,23 @@ namespace StormByte {
 				 * @return @c true on success.
 				 */
 				bool Passthrough(std::size_t bytes) noexcept;
+
+				/**
+				 * @brief Pump until EoF under a sink occupancy cap.
+				 * @param high_water Maximum @c Occupied() / Dirty allowed on the sink.
+				 *        0 returns false and does nothing.
+				 * @param chunk_min Smallest atomic Passthrough. Must be greater than 0.
+				 *        Clamped up if @p chunk_max is smaller.
+				 * @param chunk_max Largest Passthrough per iteration. 0 means @p chunk_min.
+				 * @return @c true only if every byte read was written and the source is EoF.
+				 *
+				 * @details Backpressure: if the sink is already at @p high_water, Drain
+				 * waits for a consumer to free space. It never Extracts more than
+				 * @c high_water - Occupied. A single-thread FIFO that nobody reads
+				 * will wait forever. Prefer SharedFIFO or Producer/Consumer.
+				 * MaxWait belongs to the IO leaf, not to Drain.
+				 */
+				bool Drain(std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept;
 
 			private:
 				std::unique_ptr<IO::Backend::Bridge> m_io;	///< Pump.

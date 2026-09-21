@@ -20,11 +20,13 @@
 #include <StormByte/buffer/bridge.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/string.hxx>
 #include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -42,6 +44,7 @@ using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
+using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::BufferedFileWriter;
 using StormByte::Buffer::IO::State;
@@ -785,15 +788,165 @@ int test_io_to_buf_nul_and_binary() {
 	ExternalBufferWriter out(dst);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out);
-	ASSERT_TRUE(fn, bridge.Passthrough(16));
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
 	ASSERT_EQUAL(fn, Slurp(File("nul.bin")), FifoText(dst));
 	in.Close();
 	RETURN_TEST(fn, 0);
 }
 
 // -------------------
-// main
+// Drain
 // -------------------
+
+int test_drain_high_water_zero_is_noop() {
+	const std::string fn = "test_drain_high_water_zero_is_noop";
+	FIFO src = FromText("ABCDE");
+	src.Close();
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Drain(0, 1, 4));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), src.AvailableBytes());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_ext_to_ext() {
+	const std::string fn = "test_drain_ext_to_ext";
+	const std::string text = "The quick brown fox jumps over the lazy dog.";
+	FIFO src = FromText(text);
+	src.Close();
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Drain(64, 1, 8));
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	ASSERT_TRUE(fn, bridge.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_io_to_io() {
+	const std::string fn = "test_drain_io_to_io";
+	const auto out_path = Scratch("dio2io");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Drain(16, 1, 3));
+	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_buf_to_io() {
+	const std::string fn = "test_drain_buf_to_io";
+	const auto out_path = Scratch("db2io");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("HELLO");
+	src.Close();
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Drain(8, 1, 2));
+	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_io_to_buf() {
+	const std::string fn = "test_drain_io_to_buf";
+	FIFO dst;
+	BufferedFileReader in(File("five.bin"));
+	ExternalBufferWriter out(dst);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Drain(16, 1, 4));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), FifoText(dst));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_io_to_buf_pattern() {
+	const std::string fn = "test_drain_io_to_buf_pattern";
+	FIFO dst;
+	BufferedFileReader in(File("pattern_256.bin"));
+	ExternalBufferWriter out(dst);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Drain(256, 16, 64));
+	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), FifoText(dst));
+	in.Close();
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_writer_failure() {
+	const std::string fn = "test_drain_writer_failure";
+	FIFO src = FromText("ABCDEFGH");
+	src.Close();
+	FIFO dst;
+	ExternalBufferReader in(src);
+	FailingWriter out(dst, 0);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Drain(16, 1, 4));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_unopened_io_fails() {
+	const std::string fn = "test_drain_unopened_io_fails";
+	const auto out_path = Scratch("dunopen");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Drain(16, 1, 4));
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_drain_backpressure_shared_fifo() {
+	const std::string fn = "test_drain_backpressure_shared_fifo";
+	const std::string text = "ABCDEFGHIJKLMNOP";
+	FIFO src = FromText(text);
+	src.Close();
+	SharedFIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+
+	std::atomic<bool> stop {false};
+	DataType collected;
+	std::thread consumer([&] {
+		while (!stop.load() || dst.AvailableBytes() > 0) {
+			if (dst.AvailableBytes() == 0) {
+				std::this_thread::yield();
+				continue;
+			}
+			DataType chunk;
+			const std::size_t n = std::min<std::size_t>(2, dst.AvailableBytes());
+			if (dst.Extract(n, chunk))
+				collected.insert(collected.end(), chunk.begin(), chunk.end());
+		}
+	});
+
+	ASSERT_TRUE(fn, bridge.Drain(4, 1, 2));
+	stop.store(true);
+	consumer.join();
+	ASSERT_EQUAL(fn, text, StormByte::String::FromByteVector(collected));
+	RETURN_TEST(fn, 0);
+}
 
 int main() {
 	int result = 0;
@@ -847,6 +1000,19 @@ int main() {
 	result += test_io_to_buf_splits();
 	result += test_io_to_buf_reader_not_open();
 	result += test_io_to_buf_nul_and_binary();
+
+	// -------------------
+	// Drain
+	// -------------------
+	result += test_drain_high_water_zero_is_noop();
+	result += test_drain_ext_to_ext();
+	result += test_drain_io_to_io();
+	result += test_drain_buf_to_io();
+	result += test_drain_io_to_buf();
+	result += test_drain_io_to_buf_pattern();
+	result += test_drain_writer_failure();
+	result += test_drain_unopened_io_fails();
+	result += test_drain_backpressure_shared_fifo();
 
 	if (result == 0)
 		std::cout << "Bridge tests passed!" << std::endl;

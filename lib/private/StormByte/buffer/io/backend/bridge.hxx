@@ -54,15 +54,10 @@ namespace StormByte {
 				 *
 				 * Holds non-owning pointers to one source and one sink.
 				 * @c Passthrough is blocking and transactional. No local cache.
-				 * External sources are Extracted.
+				 * External sources are Extracted. @c Drain applies sink backpressure.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE Bridge {
 					public:
-						/**
-						 * @name Lifecycle
-						 * @{
-						 */
-
 						/**
 						 * @brief Buffer → buffer.
 						 * @param in Source.
@@ -91,36 +86,11 @@ namespace StormByte {
 						 */
 						Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept;
 
-						/**
-						 * @brief Copy constructor is deleted.
-						 */
 						Bridge(const Bridge&) = delete;
-
-						/**
-						 * @brief Move constructor is deleted. The public Bridge moves the unique_ptr.
-						 */
 						Bridge(Bridge&&) = delete;
-
-						/**
-						 * @brief Destructor. Does not Flush; the public Bridge does.
-						 */
 						~Bridge() = default;
-
-						/**
-						 * @brief Copy assignment is deleted.
-						 * @return *this.
-						 */
 						Bridge& operator=(const Bridge&) = delete;
-
-						/**
-						 * @brief Move assignment is deleted.
-						 * @return *this.
-						 */
 						Bridge& operator=(Bridge&&) = delete;
-
-						/**
-						 * @}
-						 */
 
 						/**
 						 * @brief Whether the source reports end-of-stream.
@@ -164,12 +134,27 @@ namespace StormByte {
 						 */
 						bool Passthrough(std::size_t bytes) noexcept;
 
+						/**
+						 * @brief Pump until EoF under a sink occupancy cap.
+						 * @param high_water Maximum Occupied/Dirty. 0 is a no-op false.
+						 * @param chunk_min Smallest atomic Passthrough.
+						 * @param chunk_max Largest Passthrough per iteration.
+						 * @return @c true only when the source is EoF and every write succeeded.
+						 */
+						bool Drain(std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept;
+
 					private:
 						/**
 						 * @brief Bytes available on the source now.
 						 * @return 0 if unknown.
 						 */
 						std::size_t AvailableNow() const noexcept;
+
+						/**
+						 * @brief Occupancy of the sink right now.
+						 * @return External Occupied or IO Dirty.
+						 */
+						std::size_t OccupiedNow() const noexcept;
 
 						/**
 						 * @brief Pull @p n bytes into @p dest without committing the sink.

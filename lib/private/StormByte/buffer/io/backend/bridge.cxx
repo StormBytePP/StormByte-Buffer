@@ -19,6 +19,9 @@
 
 #include <StormByte/buffer/io/backend/bridge.hxx>
 
+#include <algorithm>
+#include <thread>
+
 using namespace StormByte::Buffer;
 
 IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out) noexcept:
@@ -87,6 +90,14 @@ std::size_t IO::Backend::Bridge::AvailableNow() const noexcept {
 		static_cast<void>(m_io_in->Peek(0, peek));
 		return peek.AvailableBytes();
 	}
+	return 0;
+}
+
+std::size_t IO::Backend::Bridge::OccupiedNow() const noexcept {
+	if (m_ext_out)
+		return m_ext_out->Occupied();
+	if (m_io_out)
+		return m_io_out->Dirty();
 	return 0;
 }
 
@@ -168,4 +179,69 @@ bool IO::Backend::Bridge::Passthrough(const std::size_t bytes) noexcept {
 	if (!Pull(want, work))
 		return false;
 	return Push(work);
+}
+
+bool IO::Backend::Bridge::Drain(const std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept {
+	if (high_water == 0)
+		return false;
+	if (chunk_min == 0)
+		chunk_min = 1;
+	if (chunk_max == 0 || chunk_max < chunk_min)
+		chunk_max = chunk_min;
+
+	if (!m_ext_in && !m_io_in)
+		return false;
+	if (!m_ext_out && !m_io_out)
+		return false;
+
+	for (;;) {
+		if (!IsReadable())
+			return false;
+		if (!IsWritable())
+			return false;
+
+		if (EoF() && AvailableNow() == 0)
+			return Flush();
+
+		std::size_t occupied = OccupiedNow();
+		while (occupied >= high_water) {
+			if (!IsWritable() || !IsReadable())
+				return false;
+			if (m_io_out && m_io_out->Flush().status != IO::Status::Ok)
+				return false;
+			std::this_thread::yield();
+			occupied = OccupiedNow();
+		}
+
+		const std::size_t room = high_water - occupied;
+		if (room == 0)
+			continue;
+
+		if (room < chunk_min) {
+			std::this_thread::yield();
+			continue;
+		}
+
+		std::size_t want = std::min(chunk_max, room);
+		const std::size_t avail = AvailableNow();
+		if (avail == 0) {
+			if (EoF())
+				return Flush();
+			if (m_io_in)
+				want = std::min(want, chunk_min);
+			else {
+				std::this_thread::yield();
+				continue;
+			}
+		} else {
+			want = std::min(want, avail);
+			if (want < chunk_min && !EoF() && !m_io_in) {
+				std::this_thread::yield();
+				continue;
+			}
+		}
+
+		if (!Passthrough(want))
+			return false;
+	}
 }
