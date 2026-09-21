@@ -52,9 +52,18 @@ BufferedRead::operator bool() const noexcept {
 	return m_io && static_cast<bool>(*m_io);
 }
 
-IO::Result BufferedRead::Open() {
+IO::State BufferedRead::State() const noexcept {
+	return m_io ? m_io->State() : IO::State::Unavailable;
+}
+
+void BufferedRead::SetState(const IO::State state) noexcept {
+	if (m_io)
+		m_io->SetState(state);
+}
+
+bool BufferedRead::Open() {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return false;
 	return m_io->Open();
 }
 
@@ -64,9 +73,9 @@ IO::Result BufferedRead::Close() {
 	return m_io->Close();
 }
 
-IO::Result BufferedRead::Rewind() {
+bool BufferedRead::Rewind() {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return false;
 	return m_io->Rewind();
 }
 

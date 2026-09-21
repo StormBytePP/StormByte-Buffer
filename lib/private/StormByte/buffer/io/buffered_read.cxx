@@ -25,7 +25,8 @@ IO::BufferedRead::BufferedRead(Buffer::BufferedRead& owner, const std::size_t re
 		const std::size_t max_memory):
 	m_owner(&owner),
 	m_read_ahead(read_ahead),
-	m_max_memory(max_memory) {
+	m_max_memory(max_memory),
+	m_state(State::Unavailable) {
 	StartWorker();
 }
 
@@ -41,35 +42,63 @@ IO::BufferedRead::operator bool() const noexcept {
 	return IsReadable();
 }
 
-IO::Result IO::BufferedRead::Open() {
+IO::State IO::BufferedRead::State() const noexcept {
 	std::lock_guard lock(m_mutex);
-	if (m_open)
-		return { Status::Ok, 0 };
+	return m_state;
+}
+
+void IO::BufferedRead::SetState(const enum State state) noexcept {
+	std::lock_guard lock(m_mutex);
+	m_state = state;
+}
+
+bool IO::BufferedRead::Open() {
 	if (!m_owner)
-		return { Status::Failed, 0 };
+		return false;
+
+	bool already = false;
+	{
+		std::lock_guard lock(m_mutex);
+		already = m_open;
+	}
+
 	const Result opened = m_owner->OriginOpen();
+
+	std::lock_guard lock(m_mutex);
+	if (already)
+		return false;
+
 	if (opened.status != Status::Ok) {
 		m_failed = true;
 		m_open = false;
-		return { Status::Failed, 0 };
+		return false;
 	}
+
 	m_open = true;
 	m_failed = false;
 	m_origin_exhausted = false;
 	m_tell = 0;
 	DropWindow();
-	return { Status::Ok, 0 };
+	return m_state == State::Idle;
 }
 
 IO::Result IO::BufferedRead::Close() {
 	FlushPrefetch();
-	std::lock_guard lock(m_mutex);
-	if (!m_open)
-		return { Status::Ok, 0 };
-	if (m_owner)
+
+	bool was_open = false;
+	{
+		std::lock_guard lock(m_mutex);
+		was_open = m_open;
+	}
+
+	if (was_open && m_owner)
 		static_cast<void>(m_owner->OriginClose());
+
+	std::lock_guard lock(m_mutex);
 	m_open = false;
+	m_failed = false;
 	m_origin_exhausted = true;
+	m_state = State::Unavailable;
 	DropWindow();
 	return { Status::Ok, 0 };
 }
@@ -79,19 +108,18 @@ void IO::BufferedRead::Shutdown() {
 	StopWorker();
 	std::lock_guard lock(m_mutex);
 	m_open = false;
+	m_state = State::Unavailable;
 	m_origin_exhausted = true;
 	DropWindow();
 }
 
-IO::Result IO::BufferedRead::Rewind() {
+bool IO::BufferedRead::Rewind() {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open)
-			return { Status::Failed, 0 };
+			return false;
 	}
-	const Result closed = Close();
-	if (closed.status == Status::Failed)
-		return closed;
+	static_cast<void>(Close());
 	return Open();
 }
 
@@ -102,7 +130,9 @@ bool IO::BufferedRead::IsOpen() const noexcept {
 
 bool IO::BufferedRead::IsReadable() const noexcept {
 	std::lock_guard lock(m_mutex);
-	return m_open && !m_failed && !(m_origin_exhausted && m_window.AvailableBytes() == 0);
+	if (m_state != State::Idle || !m_open || m_failed)
+		return false;
+	return !(m_origin_exhausted && m_window.AvailableBytes() == 0);
 }
 
 bool IO::BufferedRead::EoF() const noexcept {
@@ -122,30 +152,40 @@ IO::Result IO::BufferedRead::Peek(const std::size_t n, FIFO& dest) const {
 
 IO::Result IO::BufferedRead::Seek(const std::ptrdiff_t offset, const Position mode) const {
 	FlushPrefetch();
-	std::lock_guard lock(m_mutex);
-	if (!m_open || m_failed || !m_owner || !m_owner->OriginCanSeek())
-		return { Status::Failed, 0 };
 
-	std::size_t target = m_tell;
-	if (mode == Position::Absolute) {
-		if (offset < 0)
+	Buffer::BufferedRead* owner = nullptr;
+	{
+		std::lock_guard lock(m_mutex);
+		if (!m_open || m_failed || m_state != State::Idle || !m_owner || !m_owner->OriginCanSeek())
 			return { Status::Failed, 0 };
-		target = static_cast<std::size_t>(offset);
-	} else {
-		if (offset < 0) {
-			const auto back = static_cast<std::size_t>(-offset);
-			if (back > m_tell)
+		owner = m_owner;
+	}
+
+	std::size_t target = 0;
+	{
+		std::lock_guard lock(m_mutex);
+		target = m_tell;
+		if (mode == Position::Absolute) {
+			if (offset < 0)
 				return { Status::Failed, 0 };
-			target = m_tell - back;
+			target = static_cast<std::size_t>(offset);
 		} else {
-			target = m_tell + static_cast<std::size_t>(offset);
+			if (offset < 0) {
+				const auto back = static_cast<std::size_t>(-offset);
+				if (back > m_tell)
+					return { Status::Failed, 0 };
+				target = m_tell - back;
+			} else {
+				target = m_tell + static_cast<std::size_t>(offset);
+			}
 		}
 	}
 
-	const Result seeked = m_owner->OriginSeek(static_cast<std::ptrdiff_t>(target), Position::Absolute);
+	const Result seeked = owner->OriginSeek(static_cast<std::ptrdiff_t>(target), Position::Absolute);
 	if (seeked.status != Status::Ok)
 		return { Status::Failed, 0 };
 
+	std::lock_guard lock(m_mutex);
 	m_tell = target;
 	m_origin_exhausted = false;
 	const std::size_t win_end = m_window_origin + m_window.AvailableBytes();
@@ -210,7 +250,7 @@ void IO::BufferedRead::StopWorker() {
 
 void IO::BufferedRead::RequestPrefetch() const {
 	std::lock_guard lock(m_mutex);
-	if (!m_open || m_failed || m_max_memory == 0 || m_read_ahead == 0 || m_origin_exhausted)
+	if (!m_open || m_failed || m_state != State::Idle || m_max_memory == 0 || m_read_ahead == 0 || m_origin_exhausted)
 		return;
 	m_prefetch_target = m_read_ahead;
 	m_prefetch_run = true;
@@ -242,7 +282,7 @@ void IO::BufferedRead::Worker() {
 		while (!m_stop.load() && !m_cancel_prefetch.load()) {
 			{
 				std::lock_guard inner(m_mutex);
-				if (!m_open || m_origin_exhausted || m_window.AvailableBytes() >= target)
+				if (!m_open || m_origin_exhausted || m_state != State::Idle || m_window.AvailableBytes() >= target)
 					break;
 			}
 			if (!m_owner)
@@ -251,11 +291,11 @@ void IO::BufferedRead::Worker() {
 			constexpr std::size_t batch = 4096;
 			const Result pulled = m_owner->OriginPull(batch, chunk);
 			std::lock_guard inner(m_mutex);
-			if (pulled.status == Status::Failed) {
+			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
 				m_failed = true;
 				break;
 			}
-			if (pulled.count > 0 && pulled.status != Status::Failed)
+			if (pulled.count > 0)
 				static_cast<void>(m_window.Write(pulled.count, std::move(chunk)));
 			if (pulled.status == Status::End)
 				m_origin_exhausted = true;
@@ -279,35 +319,47 @@ IO::Result IO::BufferedRead::PullIntoWindow(const std::size_t n) const {
 	if (!m_owner)
 		return { Status::Failed, 0 };
 	std::size_t need = n;
-	while (need > 0 && !m_origin_exhausted) {
+	while (need > 0) {
+		{
+			std::lock_guard lock(m_mutex);
+			if (m_origin_exhausted)
+				break;
+		}
 		FIFO chunk;
 		const Result pulled = m_owner->OriginPull(need, chunk);
-		if (pulled.status == Status::Failed)
-			return { Status::Failed, 0 };
-		if (pulled.count > 0)
-			static_cast<void>(m_window.Write(pulled.count, std::move(chunk)));
-		if (pulled.count >= need)
-			need = 0;
-		else
-			need -= pulled.count;
-		if (pulled.status == Status::End) {
-			m_origin_exhausted = true;
-			break;
+		if (pulled.status == Status::Failed || pulled.status == Status::Error)
+			return { pulled.status, 0 };
+		{
+			std::lock_guard lock(m_mutex);
+			if (pulled.count > 0)
+				static_cast<void>(m_window.Write(pulled.count, std::move(chunk)));
+			if (pulled.count >= need)
+				need = 0;
+			else
+				need -= pulled.count;
+			if (pulled.status == Status::End) {
+				m_origin_exhausted = true;
+				break;
+			}
 		}
 		if (pulled.count == 0)
 			break;
 	}
+	std::lock_guard lock(m_mutex);
 	return { m_origin_exhausted ? Status::End : Status::Ok, m_window.AvailableBytes() };
 }
 
 IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool consume) const {
 	FlushPrefetch();
 
-	std::unique_lock lock(m_mutex);
-	if (!m_open || m_failed || !m_owner)
-		return { Status::Failed, 0 };
+	{
+		std::lock_guard lock(m_mutex);
+		if (!m_open || m_failed || m_state != State::Idle || !m_owner)
+			return { Status::Failed, 0 };
+	}
 
 	if (n == 0) {
+		std::unique_lock lock(m_mutex);
 		FIFO out;
 		if (m_window.AvailableBytes() > 0) {
 			if (consume)
@@ -323,26 +375,36 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 			m_window_origin = m_tell;
 			TrimWindow();
 		}
+		const bool ended = count == 0 && m_origin_exhausted;
 		lock.unlock();
 		RequestPrefetch();
-		if (count == 0 && m_origin_exhausted)
+		if (ended)
 			return { Status::End, 0 };
 		return { Status::Ok, count };
 	}
 
-	while (m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed) {
-		lock.unlock();
-		const Result pulled = [&] {
-			std::lock_guard inner(m_mutex);
-			return PullIntoWindow(n - m_window.AvailableBytes());
-		}();
-		lock.lock();
-		if (pulled.status == Status::Failed) {
+	for (;;) {
+		bool need_pull = false;
+		{
+			std::lock_guard lock(m_mutex);
+			need_pull = m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed;
+		}
+		if (!need_pull)
+			break;
+		std::size_t missing = 0;
+		{
+			std::lock_guard lock(m_mutex);
+			missing = n - m_window.AvailableBytes();
+		}
+		const Result pulled = PullIntoWindow(missing);
+		if (pulled.status == Status::Failed || pulled.status == Status::Error) {
+			std::lock_guard lock(m_mutex);
 			m_failed = true;
-			return { Status::Failed, 0 };
+			return { pulled.status, 0 };
 		}
 	}
 
+	std::unique_lock lock(m_mutex);
 	const std::size_t available = m_window.AvailableBytes();
 	const std::size_t take = available < n ? available : n;
 	FIFO out;

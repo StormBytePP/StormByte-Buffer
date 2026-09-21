@@ -21,6 +21,7 @@
 #include <StormByte/buffer/fifo.hxx>
 
 #include <ios>
+#include <system_error>
 #include <utility>
 
 using namespace StormByte::Buffer;
@@ -38,10 +39,13 @@ BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	other.m_size.reset();
 }
 
-BufferedFileReader::~BufferedFileReader() noexcept = default;
+BufferedFileReader::~BufferedFileReader() noexcept {
+	static_cast<void>(Close());
+}
 
 BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) noexcept {
 	if (this != &other) {
+		static_cast<void>(Close());
 		BufferedRead::operator=(std::move(other));
 		m_path = std::move(other.m_path);
 		m_file = std::move(other.m_file);
@@ -58,18 +62,42 @@ const std::filesystem::path& BufferedFileReader::Path() const noexcept {
 IO::Result BufferedFileReader::OriginOpen() {
 	std::lock_guard lock(m_file_mutex);
 	if (m_file.is_open())
-		return { IO::Status::Ok, 0 };
+		return { IO::Status::Failed, 0 };
 
 	std::error_code ec;
-	const auto size = std::filesystem::file_size(m_path, ec);
-	if (ec)
+	const auto st = std::filesystem::status(m_path, ec);
+	if (ec) {
+		if (ec == std::errc::no_such_file_or_directory)
+			SetState(IO::State::Missing);
+		else
+			SetState(IO::State::Permission);
 		return { IO::Status::Failed, 0 };
+	}
+
+	if (std::filesystem::is_directory(st)) {
+		SetState(IO::State::Directory);
+		return { IO::Status::Failed, 0 };
+	}
+
+	if (!std::filesystem::is_regular_file(st)) {
+		SetState(IO::State::Permission);
+		return { IO::Status::Failed, 0 };
+	}
+
+	const auto size = std::filesystem::file_size(m_path, ec);
+	if (ec) {
+		SetState(IO::State::Permission);
+		return { IO::Status::Failed, 0 };
+	}
 
 	m_file.open(m_path, std::ios::in | std::ios::binary);
-	if (!m_file)
+	if (!m_file) {
+		SetState(IO::State::Permission);
 		return { IO::Status::Failed, 0 };
+	}
 
 	m_size = static_cast<std::size_t>(size);
+	SetState(IO::State::Idle);
 	return { IO::Status::Ok, 0 };
 }
 
@@ -78,6 +106,7 @@ IO::Result BufferedFileReader::OriginClose() {
 	if (m_file.is_open())
 		m_file.close();
 	m_size.reset();
+	SetState(IO::State::Unavailable);
 	return { IO::Status::Ok, 0 };
 }
 
@@ -91,12 +120,16 @@ IO::Result BufferedFileReader::OriginPull(const std::size_t n, FIFO& dest) {
 	DataType chunk(n);
 	m_file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(n));
 	const auto got = static_cast<std::size_t>(m_file.gcount());
-	if (m_file.bad())
-		return { IO::Status::Failed, 0 };
+	if (m_file.bad()) {
+		SetState(IO::State::Fault);
+		return { IO::Status::Error, 0 };
+	}
 
 	chunk.resize(got);
-	if (got > 0 && !dest.Write(got, std::move(chunk)))
-		return { IO::Status::Failed, 0 };
+	if (got > 0 && !dest.Write(got, std::move(chunk))) {
+		SetState(IO::State::Fault);
+		return { IO::Status::Error, 0 };
+	}
 
 	if (got < n || m_file.eof())
 		return { IO::Status::End, got };

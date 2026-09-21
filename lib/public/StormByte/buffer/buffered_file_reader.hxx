@@ -44,18 +44,10 @@ namespace StormByte {
 		 * @class BufferedFileReader
 		 * @brief @ref BufferedRead leaf over a filesystem file.
 		 *
-		 * Binary `ifstream` only. No extra cache: @ref OriginPull copies at most
-		 * the requested count into the FIFO the base passes. Prefetch and
-		 * @ref MaxMemory stay in @ref BufferedRead.
+		 * Binary `ifstream` only. Hooks call @ref SetState.
+		 * Does not open in the constructor.
 		 *
-		 * Does not call @ref Open from the constructor. After construction
-		 * call @ref BufferedRead::Open.
-		 *
-		 * Seekable and sized while the file is open. @c OriginPull is
-		 * serialised with a mutex because the base prefetch thread and a
-		 * synchronous @c Read may both call it.
-		 *
-		 * @see BufferedRead
+		 * @see BufferedRead, IO::State
 		 */
 		class STORMBYTE_BUFFER_PUBLIC BufferedFileReader: public BufferedRead {
 			public:
@@ -85,7 +77,7 @@ namespace StormByte {
 				BufferedFileReader(BufferedFileReader&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Public @ref Close runs in the base.
+				 * @brief Destructor. Calls @ref Close while the leaf vtable is live.
 				 */
 				~BufferedFileReader() noexcept override;
 
@@ -129,7 +121,7 @@ namespace StormByte {
 				 * @brief Read up to @p n bytes from the file into @p dest.
 				 * @param n Maximum bytes.
 				 * @param dest Base-owned FIFO.
-				 * @return Ok with count == n, End with count <= n, or Failed.
+				 * @return Ok, End, Error or Failed.
 				 */
 				IO::Result OriginPull(std::size_t n, FIFO& dest) override;
 
@@ -160,10 +152,10 @@ namespace StormByte {
 				std::optional<std::size_t> OriginSize() const noexcept override;
 
 			private:
-				std::filesystem::path m_path;		///< Path given at construction.
-				std::ifstream m_file;			///< Binary input stream.
-				std::optional<std::size_t> m_size;	///< Size after OriginOpen.
-				mutable std::mutex m_file_mutex;	///< Serialises ifstream access.
+				std::filesystem::path m_path;			///< Path given at construction.
+				std::ifstream m_file;				///< Binary input stream.
+				std::optional<std::size_t> m_size;		///< Size after OriginOpen.
+				mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
 		};
 	}
 }

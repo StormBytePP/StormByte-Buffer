@@ -51,11 +51,9 @@ namespace StormByte {
 			 * @class BufferedRead
 			 * @brief Private implementation of @ref StormByte::Buffer::BufferedRead.
 			 *
-			 * Owns session flags, the cache window, the logical cursor and the
-			 * prefetch worker. Invokes @c Origin* hooks on @c m_owner.
-			 *
-			 * v1 keeps a single @ref FIFO window. A multi-span map can replace
-			 * @c m_window without changing the public class.
+			 * Owns session flags, @ref State, the cache window, the logical
+			 * cursor and the prefetch worker. Invokes @c Origin* hooks on
+			 * @c m_owner.
 			 */
 			class STORMBYTE_BUFFER_PRIVATE BufferedRead {
 				public:
@@ -70,7 +68,7 @@ namespace StormByte {
 					 * @param read_ahead Initial @ref ReadAhead in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 *
-					 * Starts the worker thread. Does not call @ref Open.
+					 * Starts the worker thread. State is @ref State::Unavailable.
 					 */
 					BufferedRead(Buffer::BufferedRead& owner, std::size_t read_ahead,
 						std::size_t max_memory);
@@ -113,10 +111,22 @@ namespace StormByte {
 					void Rebind(Buffer::BufferedRead& owner) noexcept;
 
 					/**
-					 * @brief Whether the source is armed and ready to read.
-					 * @return Same as @ref IsReadable.
+					 * @brief Whether the source is prepared to read.
+					 * @return @ref IsReadable.
 					 */
 					explicit operator bool() const noexcept;
+
+					/**
+					 * @brief Session state.
+					 * @return Current @ref State.
+					 */
+					enum State State() const noexcept;
+
+					/**
+					 * @brief Publish session state from a leaf hook.
+					 * @param state New @ref State.
+					 */
+					void SetState(enum State state) noexcept;
 
 					/**
 					 * @name Session
@@ -124,42 +134,37 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Arm the origin if it is not already open.
-					 * @return @ref Status::Ok if open; @ref Status::Failed if
-					 *         @c OriginOpen failed.
+					 * @brief Arm the origin.
+					 * @return @c true if @ref State is @ref State::Idle afterwards.
 					 */
-					Result Open();
+					bool Open();
 
 					/**
 					 * @brief Flush prefetch, drop the window, close the origin.
-					 * @return @ref Status::Ok. Idempotent.
+					 * @return @ref Status::Ok. Idempotent. State → Unavailable.
 					 */
 					Result Close();
 
 					/**
 					 * @brief Join the worker and drop caches. Does not call Origin*.
-					 *
-					 * Used from the public destructor when the leaf vtable is
-					 * already gone. Leaves must @ref Close in their destructor
-					 * so @c OriginClose still runs.
 					 */
 					void Shutdown();
 
 					/**
-					 * @brief @ref Close then @ref Open when currently open.
-					 * @return @ref Status::Failed if not open; otherwise @ref Open.
+					 * @brief @ref Close then @ref Open when currently armed.
+					 * @return @c true if Idle afterwards.
 					 */
-					Result Rewind();
+					bool Rewind();
 
 					/**
-					 * @brief Whether the session is open.
-					 * @return @c true after a successful @ref Open until @ref Close.
+					 * @brief Whether the session is armed (not Unavailable-from-ctor/close).
+					 * @return @c true after a successful Open until Close.
 					 */
 					bool IsOpen() const noexcept;
 
 					/**
 					 * @brief Whether a @c Read may still produce bytes.
-					 * @return @c false if closed, failed, or @ref EoF.
+					 * @return Idle and not @ref EoF.
 					 */
 					bool IsReadable() const noexcept;
 
@@ -181,17 +186,11 @@ namespace StormByte {
 
 					/**
 					 * @brief Consume @p n bytes into @p dest.
-					 * @param n Requested count. Zero serves the current window.
-					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
-					 * @return Status and bytes written to @p dest.
 					 */
 					Result Read(std::size_t n, FIFO& dest) const;
 
 					/**
 					 * @brief Copy @p n bytes into @p dest without consuming.
-					 * @param n Requested count. Zero copies the current window.
-					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
-					 * @return Status and bytes written to @p dest.
 					 */
 					Result Peek(std::size_t n, FIFO& dest) const;
 
@@ -206,21 +205,16 @@ namespace StormByte {
 
 					/**
 					 * @brief Move the logical cursor.
-					 * @param offset Byte offset.
-					 * @param mode Absolute from stream start, or relative to @ref Tell.
-					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					Result Seek(std::ptrdiff_t offset, Position mode) const;
 
 					/**
 					 * @brief Logical read offset in the stream.
-					 * @return Bytes from origin start.
 					 */
 					std::size_t Tell() const noexcept;
 
 					/**
 					 * @brief Whether the leaf origin can seek.
-					 * @return @c m_owner->OriginCanSeek().
 					 */
 					bool IsSeekable() const noexcept;
 
@@ -235,13 +229,11 @@ namespace StormByte {
 
 					/**
 					 * @brief Whether the leaf origin reports a length.
-					 * @return @c m_owner->OriginHasSize().
 					 */
 					bool IsSized() const noexcept;
 
 					/**
 					 * @brief Origin length when known.
-					 * @return @c m_owner->OriginSize(), or empty.
 					 */
 					std::optional<std::size_t> Size() const noexcept;
 
@@ -256,25 +248,21 @@ namespace StormByte {
 
 					/**
 					 * @brief Configured prefetch length.
-					 * @return Bytes. 0 disables prefetch.
 					 */
 					std::size_t ReadAhead() const noexcept;
 
 					/**
 					 * @brief Set prefetch length.
-					 * @param bytes New ReadAhead. 0 disables prefetch.
 					 */
 					void ReadAhead(std::size_t bytes);
 
 					/**
 					 * @brief Configured cache cap.
-					 * @return Bytes. 0 disables cache and prefetch.
 					 */
 					std::size_t MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set cache cap.
-					 * @param bytes Approximate maximum resident window.
 					 */
 					void MaxMemory(std::size_t bytes);
 
@@ -300,9 +288,6 @@ namespace StormByte {
 
 					/**
 					 * @brief Cancel the in-flight pull and wait until the worker is idle.
-					 *
-					 * Publishes bytes already written into the window. Does not
-					 * wait for the full ReadAhead.
 					 */
 					void FlushPrefetch() const;
 
@@ -313,29 +298,21 @@ namespace StormByte {
 
 					/**
 					 * @brief Clear @c m_window and reset @c m_window_origin to @c m_tell.
-					 * @note Caller holds @c m_mutex.
 					 */
 					void DropWindow() const;
 
 					/**
 					 * @brief Synchronous @c OriginPull into the window until @p n or end.
-					 * @param n Extra bytes required in the window.
-					 * @return Last pull status.
 					 */
 					Result PullIntoWindow(std::size_t n) const;
 
 					/**
 					 * @brief Shared @c Read / @c Peek implementation.
-					 * @param n Requested count.
-					 * @param dest Caller FIFO.
-					 * @param consume If true, extract from the window and advance Tell.
-					 * @return Status and bytes placed in @p dest.
 					 */
 					Result Serve(std::size_t n, FIFO& dest, bool consume) const;
 
 					/**
 					 * @brief Drop consumed prefix; cap the window by MaxMemory.
-					 * @note Caller holds @c m_mutex. Only after a successful serve.
 					 */
 					void TrimWindow() const;
 
@@ -347,7 +324,8 @@ namespace StormByte {
 					std::size_t m_read_ahead {0};				///< Prefetch target length.
 					std::size_t m_max_memory {0};				///< Approximate cache cap.
 
-					bool m_open {false};						///< Session open.
+					enum State m_state { State::Unavailable };	///< Session state.
+					bool m_open {false};						///< Session armed (Open until Close).
 					mutable bool m_failed {false};				///< Permanent failure.
 					mutable bool m_origin_exhausted {false};	///< Device EOF (not public EoF).
 					mutable std::size_t m_tell {0};				///< Logical stream cursor.

@@ -22,6 +22,7 @@
 #include <StormByte/buffer/visibility.h>
 
 #include <cstddef>
+#include <string_view>
 
 /**
  * @namespace StormByte
@@ -40,25 +41,75 @@ namespace StormByte {
 		namespace IO {
 			/**
 			 * @enum Status
-			 * @brief Outcome of an I/O operation on a buffered byte source.
+			 * @brief Outcome of a single I/O call.
 			 *
 			 * There is no would-block / EAGAIN value.
 			 *
-			 * @see Result, StormByte::Buffer::BufferedRead
+			 * @see Result, State, StormByte::Buffer::BufferedRead
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Status {
-				Ok,	///< The call completed as requested (see @ref Result::count).
-				End,	///< Origin exhausted; @ref Result::count may be short.
-				Failed	///< Permanent failure or invalid state for the call.
+				Ok,			///< The call completed as requested (see @ref Result::count).
+				End,		///< Origin exhausted; @ref Result::count may be short.
+				Error,		///< Origin failed during the call; destination untouched.
+				Failed		///< Illegal call or dead session; destination untouched.
 			};
 
 			/**
-			 * @struct Result
-			 * @brief Status plus how many bytes were transferred into the destination.
+			 * @enum State
+			 * @brief Session state of a coordinated reader.
 			 *
-			 * @c count is 0 when nothing was written to the caller FIFO
-			 * (including @ref Status::Failed and @ref Status::End with no
-			 * remaining bytes).
+			 * Distinct from @ref Status, which is per-call.
+			 *
+			 * @see StormByte::Buffer::BufferedRead::State
+			 */
+			enum class STORMBYTE_BUFFER_PUBLIC State {
+				Idle,		///< Armed. Ready to read until a pull proves otherwise.
+				Missing,	///< Last Open: path does not exist.
+				Directory,	///< Last Open: path is a directory.
+				Permission,	///< Last Open: regular file exists; open denied.
+				Fault,		///< Origin I/O error or corrupt mid-read.
+				Unavailable	///< Ctor, after Close, or origin gone / unreachable.
+			};
+
+			/**
+			 * @brief Enumerator name of @p status.
+			 * @param status Per-call status.
+			 * @return Stable name, or empty if unknown.
+			 */
+			[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
+				switch (status) {
+					case Status::Ok:		return "Ok";
+					case Status::End:		return "End";
+					case Status::Error:		return "Error";
+					case Status::Failed:	return "Failed";
+				}
+				return {};
+			}
+
+			/**
+			 * @brief Enumerator name of @p state.
+			 * @param state Session state.
+			 * @return Stable name, or empty if unknown.
+			 */
+			[[nodiscard]] constexpr std::string_view ToString(State state) noexcept {
+				switch (state) {
+					case State::Idle:			return "Idle";
+					case State::Missing:		return "Missing";
+					case State::Directory:		return "Directory";
+					case State::Permission:		return "Permission";
+					case State::Fault:			return "Fault";
+					case State::Unavailable:	return "Unavailable";
+				}
+				return {};
+			}
+
+			/**
+			 * @struct Result
+			 * @brief Per-call status plus how many bytes reached the destination.
+			 *
+			 * @c count is 0 when the destination FIFO was not written
+			 * (@ref Status::Failed, @ref Status::Error, or @ref Status::End
+			 * with no remaining bytes).
 			 *
 			 * @see Status, StormByte::Buffer::BufferedRead::Read
 			 */
