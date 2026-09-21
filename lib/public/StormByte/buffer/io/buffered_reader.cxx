@@ -17,27 +17,27 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/buffered_read.hxx>
-#include <StormByte/buffer/io/buffered_read.hxx>
+#include <StormByte/buffer/io/backend/buffered_reader.hxx>
+#include <StormByte/buffer/io/buffered_reader.hxx>
 
-using namespace StormByte::Buffer;
+using namespace StormByte::Buffer::IO;
 
-BufferedRead::BufferedRead(const std::size_t read_ahead, const std::size_t max_memory,
+BufferedReader::BufferedReader(const std::size_t read_ahead, const std::size_t max_memory,
 		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<IO::BufferedRead>(*this, read_ahead, max_memory, max_wait)) {}
+	m_io(std::make_unique<Backend::BufferedReader>(*this, read_ahead, max_memory, max_wait)) {}
 
-BufferedRead::BufferedRead(BufferedRead&& other) noexcept:
+BufferedReader::BufferedReader(BufferedReader&& other) noexcept:
 	m_io(std::move(other.m_io)) {
 	if (m_io)
 		m_io->Rebind(*this);
 }
 
-BufferedRead::~BufferedRead() noexcept {
+BufferedReader::~BufferedReader() noexcept {
 	if (m_io)
 		m_io->Shutdown();
 }
 
-BufferedRead& BufferedRead::operator=(BufferedRead&& other) noexcept {
+BufferedReader& BufferedReader::operator=(BufferedReader&& other) noexcept {
 	if (this != &other) {
 		if (m_io)
 			static_cast<void>(Close());
@@ -48,108 +48,108 @@ BufferedRead& BufferedRead::operator=(BufferedRead&& other) noexcept {
 	return *this;
 }
 
-BufferedRead::operator bool() const noexcept {
+BufferedReader::operator bool() const noexcept {
 	return m_io && static_cast<bool>(*m_io);
 }
 
-IO::State BufferedRead::State() const noexcept {
-	return m_io ? m_io->State() : IO::State::Unavailable;
+State BufferedReader::State() const noexcept {
+	return m_io ? m_io->State() : State::Unavailable;
 }
 
-void BufferedRead::SetState(const IO::State state) noexcept {
+void BufferedReader::SetState(const enum State state) noexcept {
 	if (m_io)
 		m_io->SetState(state);
 }
 
-bool BufferedRead::Open() {
+bool BufferedReader::Open() {
 	if (!m_io)
 		return false;
 	return m_io->Open();
 }
 
-IO::Result BufferedRead::Close() {
+Result BufferedReader::Close() {
 	if (!m_io)
 		return { IO::Status::Ok, 0 };
 	return m_io->Close();
 }
 
-bool BufferedRead::Rewind() {
+bool BufferedReader::Rewind() {
 	if (!m_io)
 		return false;
 	return m_io->Rewind();
 }
 
-bool BufferedRead::IsOpen() const noexcept {
+bool BufferedReader::IsOpen() const noexcept {
 	return m_io && m_io->IsOpen();
 }
 
-bool BufferedRead::IsReadable() const noexcept {
+bool BufferedReader::IsReadable() const noexcept {
 	return m_io && m_io->IsReadable();
 }
 
-bool BufferedRead::EoF() const noexcept {
+bool BufferedReader::EoF() const noexcept {
 	return !m_io || m_io->EoF();
 }
 
-IO::Result BufferedRead::Read(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Read(const std::size_t n, FIFO& dest) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Read(n, dest);
 }
 
-IO::Result BufferedRead::Peek(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Peek(const std::size_t n, FIFO& dest) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Peek(n, dest);
 }
 
-IO::Result BufferedRead::Seek(const std::ptrdiff_t offset, const Position mode) const {
+Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Seek(offset, mode);
 }
 
-std::size_t BufferedRead::Tell() const noexcept {
+std::size_t BufferedReader::Tell() const noexcept {
 	return m_io ? m_io->Tell() : 0;
 }
 
-bool BufferedRead::IsSeekable() const noexcept {
+bool BufferedReader::IsSeekable() const noexcept {
 	return m_io && m_io->IsSeekable();
 }
 
-bool BufferedRead::IsSized() const noexcept {
+bool BufferedReader::IsSized() const noexcept {
 	return m_io && m_io->IsSized();
 }
 
-std::optional<std::size_t> BufferedRead::Size() const noexcept {
+std::optional<std::size_t> BufferedReader::Size() const noexcept {
 	if (!m_io)
 		return std::nullopt;
 	return m_io->Size();
 }
 
-std::size_t BufferedRead::ReadAhead() const noexcept {
+std::size_t BufferedReader::ReadAhead() const noexcept {
 	return m_io ? m_io->ReadAhead() : 0;
 }
 
-void BufferedRead::ReadAhead(const std::size_t bytes) {
+void BufferedReader::ReadAhead(const std::size_t bytes) {
 	if (m_io)
 		m_io->ReadAhead(bytes);
 }
 
-std::size_t BufferedRead::MaxMemory() const noexcept {
+std::size_t BufferedReader::MaxMemory() const noexcept {
 	return m_io ? m_io->MaxMemory() : 0;
 }
 
-void BufferedRead::MaxMemory(const std::size_t bytes) {
+void BufferedReader::MaxMemory(const std::size_t bytes) {
 	if (m_io)
 		m_io->MaxMemory(bytes);
 }
 
-std::chrono::milliseconds BufferedRead::MaxWait() const noexcept {
+std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
 	return m_io ? m_io->MaxWait() : std::chrono::milliseconds{0};
 }
 
-void BufferedRead::MaxWait(const std::chrono::milliseconds wait) {
+void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
 	if (m_io)
 		m_io->MaxWait(wait);
 }

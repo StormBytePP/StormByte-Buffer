@@ -17,27 +17,27 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/buffered_write.hxx>
-#include <StormByte/buffer/io/buffered_write.hxx>
+#include <StormByte/buffer/io/backend/buffered_writer.hxx>
+#include <StormByte/buffer/io/buffered_writer.hxx>
 
-using namespace StormByte::Buffer;
+using namespace StormByte::Buffer::IO;
 
-BufferedWrite::BufferedWrite(const std::size_t write_chunk, const std::size_t back_pressure,
+BufferedWriter::BufferedWriter(const std::size_t write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<IO::BufferedWrite>(*this, write_chunk, back_pressure, max_wait)) {}
+	m_io(std::make_unique<Backend::BufferedWriter>(*this, write_chunk, back_pressure, max_wait)) {}
 
-BufferedWrite::BufferedWrite(BufferedWrite&& other) noexcept:
+BufferedWriter::BufferedWriter(BufferedWriter&& other) noexcept:
 	m_io(std::move(other.m_io)) {
 	if (m_io)
 		m_io->Rebind(*this);
 }
 
-BufferedWrite::~BufferedWrite() noexcept {
+BufferedWriter::~BufferedWriter() noexcept {
 	if (m_io)
 		m_io->Shutdown();
 }
 
-BufferedWrite& BufferedWrite::operator=(BufferedWrite&& other) noexcept {
+BufferedWriter& BufferedWriter::operator=(BufferedWriter&& other) noexcept {
 	if (this != &other) {
 		if (m_io)
 			static_cast<void>(Close());
@@ -48,102 +48,102 @@ BufferedWrite& BufferedWrite::operator=(BufferedWrite&& other) noexcept {
 	return *this;
 }
 
-BufferedWrite::operator bool() const noexcept {
+BufferedWriter::operator bool() const noexcept {
 	return m_io && static_cast<bool>(*m_io);
 }
 
-IO::State BufferedWrite::State() const noexcept {
-	return m_io ? m_io->State() : IO::State::Unavailable;
+enum State BufferedWriter::State() const noexcept {
+	return m_io ? m_io->State() : State::Unavailable;
 }
 
-void BufferedWrite::SetState(const IO::State state) noexcept {
+void BufferedWriter::SetState(const enum State state) noexcept {
 	if (m_io)
 		m_io->SetState(state);
 }
 
-bool BufferedWrite::Open() {
+bool BufferedWriter::Open() {
 	if (!m_io)
 		return false;
 	return m_io->Open();
 }
 
-bool BufferedWrite::Close() {
+bool BufferedWriter::Close() {
 	if (!m_io)
 		return true;
 	return m_io->Close();
 }
 
-bool BufferedWrite::Rewind() {
+bool BufferedWriter::Rewind() {
 	if (!m_io)
 		return false;
 	return m_io->Rewind();
 }
 
-bool BufferedWrite::IsOpen() const noexcept {
+bool BufferedWriter::IsOpen() const noexcept {
 	return m_io && m_io->IsOpen();
 }
 
-IO::Result BufferedWrite::Flush() {
+Result BufferedWriter::Flush() {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Flush();
 }
 
-IO::Result BufferedWrite::Truncate() {
+Result BufferedWriter::Truncate() {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Truncate();
 }
 
-IO::Result BufferedWrite::Write(const FIFO& src) {
+Result BufferedWriter::Write(const FIFO& src) {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
-IO::Result BufferedWrite::Write(FIFO& src) {
+Result BufferedWriter::Write(FIFO& src) {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
-IO::Result BufferedWrite::Write(const std::span<const std::byte> src) {
+Result BufferedWriter::Write(const std::span<const std::byte> src) {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
-std::size_t BufferedWrite::Tell() const noexcept {
+std::size_t BufferedWriter::Tell() const noexcept {
 	return m_io ? m_io->Tell() : 0;
 }
 
-std::size_t BufferedWrite::Dirty() const noexcept {
+std::size_t BufferedWriter::Dirty() const noexcept {
 	return m_io ? m_io->Dirty() : 0;
 }
 
-std::size_t BufferedWrite::WriteChunk() const noexcept {
+std::size_t BufferedWriter::WriteChunk() const noexcept {
 	return m_io ? m_io->WriteChunk() : 0;
 }
 
-void BufferedWrite::WriteChunk(const std::size_t bytes) {
+void BufferedWriter::WriteChunk(const std::size_t bytes) {
 	if (m_io)
 		m_io->WriteChunk(bytes);
 }
 
-std::size_t BufferedWrite::BackPressure() const noexcept {
+std::size_t BufferedWriter::BackPressure() const noexcept {
 	return m_io ? m_io->BackPressure() : 0;
 }
 
-void BufferedWrite::BackPressure(const std::size_t chunks) {
+void BufferedWriter::BackPressure(const std::size_t chunks) {
 	if (m_io)
 		m_io->BackPressure(chunks);
 }
 
-std::chrono::milliseconds BufferedWrite::MaxWait() const noexcept {
+std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {
 	return m_io ? m_io->MaxWait() : std::chrono::milliseconds{0};
 }
 
-void BufferedWrite::MaxWait(const std::chrono::milliseconds wait) {
+void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 	if (m_io)
 		m_io->MaxWait(wait);
 }

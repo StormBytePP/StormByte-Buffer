@@ -17,14 +17,16 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/io/buffered_write.hxx>
+#include <StormByte/buffer/io/backend/buffered_writer.hxx>
 #include <StormByte/buffer/lockfree_ring.hxx>
 
 #include <algorithm>
 
-using namespace StormByte::Buffer;
+using namespace StormByte::Buffer::IO::Backend;
+using Result = StormByte::Buffer::IO::Result;
+using State = StormByte::Buffer::IO::State;
 
-IO::BufferedWrite::BufferedWrite(Buffer::BufferedWrite& owner, const std::size_t write_chunk,
+BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, const std::size_t write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
 	m_owner(&owner),
 	m_write_chunk(write_chunk),
@@ -36,40 +38,40 @@ IO::BufferedWrite::BufferedWrite(Buffer::BufferedWrite& owner, const std::size_t
 	StartWorker();
 }
 
-IO::BufferedWrite::~BufferedWrite() {
+BufferedWriter::~BufferedWriter() {
 	Shutdown();
 }
 
-void IO::BufferedWrite::Rebind(Buffer::BufferedWrite& owner) noexcept {
+void BufferedWriter::Rebind(IO::BufferedWriter& owner) noexcept {
 	m_owner = &owner;
 }
 
-IO::BufferedWrite::operator bool() const noexcept {
+BufferedWriter::operator bool() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_state == State::Idle;
 }
 
-IO::State IO::BufferedWrite::State() const noexcept {
+State BufferedWriter::State() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_state;
 }
 
-void IO::BufferedWrite::SetState(const enum State state) noexcept {
+void BufferedWriter::SetState(const enum State state) noexcept {
 	std::lock_guard lock(m_mutex);
 	m_state = state;
 }
 
-bool IO::BufferedWrite::BufferedMode() const noexcept {
+bool BufferedWriter::BufferedMode() const noexcept {
 	return m_write_chunk > 0 && m_back_pressure > 0;
 }
 
-std::size_t IO::BufferedWrite::PendingCap() const noexcept {
+std::size_t BufferedWriter::PendingCap() const noexcept {
 	if (!BufferedMode())
 		return 0;
 	return m_back_pressure * m_write_chunk;
 }
 
-bool IO::BufferedWrite::WouldAccept(const std::size_t bytes) const noexcept {
+bool BufferedWriter::WouldAccept(const std::size_t bytes) const noexcept {
 	if (!BufferedMode())
 		return true;
 	if (!m_ring)
@@ -77,7 +79,7 @@ bool IO::BufferedWrite::WouldAccept(const std::size_t bytes) const noexcept {
 	return m_ring->AvailableBytes() + bytes <= PendingCap();
 }
 
-bool IO::BufferedWrite::Open() {
+bool BufferedWriter::Open() {
 	if (!m_owner)
 		return false;
 
@@ -107,7 +109,7 @@ bool IO::BufferedWrite::Open() {
 	return m_state == State::Idle;
 }
 
-bool IO::BufferedWrite::Close() {
+bool BufferedWriter::Close() {
 	const Result flushed = Flush();
 
 	bool was_open = false;
@@ -138,7 +140,7 @@ bool IO::BufferedWrite::Close() {
 	return true;
 }
 
-void IO::BufferedWrite::Shutdown() {
+void BufferedWriter::Shutdown() {
 	m_stop.store(true);
 	m_cv.notify_all();
 	StopWorker();
@@ -147,7 +149,7 @@ void IO::BufferedWrite::Shutdown() {
 	m_state = State::Unavailable;
 }
 
-bool IO::BufferedWrite::Rewind() {
+bool BufferedWriter::Rewind() {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open)
@@ -158,12 +160,12 @@ bool IO::BufferedWrite::Rewind() {
 	return Open();
 }
 
-bool IO::BufferedWrite::IsOpen() const noexcept {
+bool BufferedWriter::IsOpen() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_open;
 }
 
-IO::Result IO::BufferedWrite::Flush() {
+Result BufferedWriter::Flush() {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || !m_owner)
@@ -198,7 +200,7 @@ IO::Result IO::BufferedWrite::Flush() {
 	return { Status::Ok, 0 };
 }
 
-IO::Result IO::BufferedWrite::Truncate() {
+Result BufferedWriter::Truncate() {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || !m_owner)
@@ -218,7 +220,7 @@ IO::Result IO::BufferedWrite::Truncate() {
 	return { Status::Ok, 0 };
 }
 
-IO::Result IO::BufferedWrite::Write(const FIFO& src) {
+Result BufferedWriter::Write(const FIFO& src) {
 	const std::size_t need = src.AvailableBytes();
 	if (need == 0)
 		return { Status::Ok, 0 };
@@ -235,11 +237,11 @@ IO::Result IO::BufferedWrite::Write(const FIFO& src) {
 	return WriteSpan(std::span<const std::byte>(chunk.data(), chunk.size()));
 }
 
-IO::Result IO::BufferedWrite::Write(FIFO& src) {
+Result BufferedWriter::Write(FIFO& src) {
 	return Write(static_cast<const FIFO&>(src));
 }
 
-IO::Result IO::BufferedWrite::Write(const std::span<const std::byte> src) {
+Result BufferedWriter::Write(const std::span<const std::byte> src) {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || m_state != State::Idle)
@@ -252,7 +254,7 @@ IO::Result IO::BufferedWrite::Write(const std::span<const std::byte> src) {
 	return WriteSpan(src);
 }
 
-IO::Result IO::BufferedWrite::WriteSpan(const std::span<const std::byte> src) {
+Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	if (src.empty())
 		return { Status::Ok, 0 };
 
@@ -292,23 +294,23 @@ IO::Result IO::BufferedWrite::WriteSpan(const std::span<const std::byte> src) {
 	return { Status::Ok, src.size() };
 }
 
-std::size_t IO::BufferedWrite::Tell() const noexcept {
+std::size_t BufferedWriter::Tell() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_tell;
 }
 
-std::size_t IO::BufferedWrite::Dirty() const noexcept {
+std::size_t BufferedWriter::Dirty() const noexcept {
 	if (!m_ring)
 		return 0;
 	return m_ring->AvailableBytes();
 }
 
-std::size_t IO::BufferedWrite::WriteChunk() const noexcept {
+std::size_t BufferedWriter::WriteChunk() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_write_chunk;
 }
 
-void IO::BufferedWrite::WriteChunk(const std::size_t bytes) {
+void BufferedWriter::WriteChunk(const std::size_t bytes) {
 	const bool disable = bytes == 0 || m_back_pressure == 0;
 	if (disable && Dirty() > 0)
 		static_cast<void>(Flush());
@@ -326,12 +328,12 @@ void IO::BufferedWrite::WriteChunk(const std::size_t bytes) {
 	RequestDrain();
 }
 
-std::size_t IO::BufferedWrite::BackPressure() const noexcept {
+std::size_t BufferedWriter::BackPressure() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_back_pressure;
 }
 
-void IO::BufferedWrite::BackPressure(const std::size_t chunks) {
+void BufferedWriter::BackPressure(const std::size_t chunks) {
 	const std::size_t unit = WriteChunk();
 	const std::size_t cap = (chunks == 0 || unit == 0) ? 0 : chunks * unit;
 	if (cap == 0 || Dirty() > cap)
@@ -350,31 +352,31 @@ void IO::BufferedWrite::BackPressure(const std::size_t chunks) {
 	RequestDrain();
 }
 
-std::chrono::milliseconds IO::BufferedWrite::MaxWait() const noexcept {
+std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_max_wait;
 }
 
-void IO::BufferedWrite::MaxWait(const std::chrono::milliseconds wait) {
+void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 	std::lock_guard lock(m_mutex);
 	m_max_wait = wait;
 }
 
-void IO::BufferedWrite::StartWorker() {
+void BufferedWriter::StartWorker() {
 	if (m_worker.joinable())
 		return;
 	m_stop.store(false);
-	m_worker = std::thread(&BufferedWrite::Worker, this);
+	m_worker = std::thread(&BufferedWriter::Worker, this);
 }
 
-void IO::BufferedWrite::StopWorker() {
+void BufferedWriter::StopWorker() {
 	m_stop.store(true);
 	m_cv.notify_all();
 	if (m_worker.joinable())
 		m_worker.join();
 }
 
-void IO::BufferedWrite::RequestDrain() const {
+void BufferedWriter::RequestDrain() const {
 	std::lock_guard lock(m_mutex);
 	if (!BufferedMode() || !m_ring)
 		return;
@@ -384,7 +386,7 @@ void IO::BufferedWrite::RequestDrain() const {
 	m_cv.notify_all();
 }
 
-void IO::BufferedWrite::Worker() {
+void BufferedWriter::Worker() {
 	for (;;) {
 		std::unique_lock lock(m_mutex);
 		m_cv.wait(lock, [this] {
@@ -428,7 +430,7 @@ void IO::BufferedWrite::Worker() {
 	}
 }
 
-IO::Result IO::BufferedWrite::PushAll(const std::span<const std::byte> data) const {
+Result BufferedWriter::PushAll(const std::span<const std::byte> data) const {
 	if (!m_owner)
 		return { Status::Failed, 0 };
 	if (data.empty())

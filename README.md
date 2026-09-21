@@ -7,7 +7,7 @@
 [![CI](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-StormBytePP-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/StormBytePP)
 
-This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink and pipelines for the StormByte C++ suite.
+This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, pipelines and buffered I/O for the StormByte C++ suite.
 
 It depends on [StormByte Base 1.2.0](https://github.com/StormBytePP/StormByte/releases/tag/1.2.0) or newer and optionally [StormByte Logger 1.2.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.2.0) or newer for pipeline stages (`Scope`). Public headers live under `StormByte/buffer/`.
 
@@ -23,8 +23,10 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 - **Sink** — map of integer keys to Hopper buckets. Wire with `To(key)` / `>>` / `<<`. Round-robin or custom `Select`, plus terminal producer `Drain`.
 - **Bridge** — chunked passthrough from `ExternalReader` to `ExternalWriter`.
 - **Pipeline** — stages chained with `ExecutionMode`: `Sync`, `Async`, `Parallel` (combinable). A non-null logger is scoped as `Buffer/Pipeline` before it reaches the stages.
+- **IO::BufferedReader** — public base for a binary read origin with optional prefetch. Leaves implement `Origin*` hooks only; they do not override `Read` / `Peek` / `Seek`.
+- **IO::BufferedWriter** — public base for a binary write sink with optional write-behind chunks. Leaves implement `Origin*` hooks only; they do not override `Write` / `Flush`.
+- **IO::BufferedFileReader** / **IO::BufferedFileWriter** — filesystem leaves over those bases (binary `ifstream` / append `ofstream`).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
-- **Private** — `LockFreeRing` is SPSC only, used between pipeline stages.
 
 ## The rest of the suite
 
@@ -51,6 +53,10 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
   - [Hopper](#hopper)
   - [Sink](#sink)
   - [Pipeline](#pipeline)
+  - [IO::BufferedReader](#iobufferedreader)
+  - [IO::BufferedWriter](#iobufferedwriter)
+  - [IO::BufferedFileReader](#iobufferedfilereader)
+  - [IO::BufferedFileWriter](#iobufferedfilewriter)
 - [Support](#support)
 - [Contributing](#contributing)
 - [License](#license)
@@ -68,7 +74,7 @@ cmake --build build
 
 ## Usage
 
-Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`.
+Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. IO types live in `StormByte::Buffer::IO`.
 
 ### FIFO
 
@@ -261,12 +267,90 @@ int main() {
 
 `ExecutionMode`: `Sync` (caller thread), `Async` (background), `Parallel` (one thread per stage). Flags combine (`Async | Parallel`).
 
-## Support
+### IO::BufferedReader
 
-StormByte is developed in spare time. Sponsorship is optional and does not buy features, priority or support.
+`StormByte::Buffer::IO::BufferedReader` is the public base for a **binary** read origin (file, socket, prefilled FIFO, anything a leaf can pull). It owns the session, the optional prefetch window, `Read` / `Peek` / `Seek` / `Tell` and `MaxWait`. Construction is `State::Unavailable`. `Open` arms it; `Close` is idempotent; `Open` is not.
 
-- [GitHub Sponsors](https://github.com/sponsors/StormBytePP)
-- [PayPal](https://paypal.me/StormBytePP)
+A leaf does **not** override `Read`, `Peek`, `Seek`, `Open`, `Close` or `Rewind`. It implements only:
+
+- `OriginOpen` / `OriginClose` — arm and release the device; call `SetState`.
+- `OriginPull(n, dest)` — read up to `n` raw bytes. Do not cache inside the hook.
+- `OriginCanSeek` / `OriginSeek` — or report not seekable.
+- `OriginHasSize` / `OriginSize` — or report unknown length.
+
+Network or Multimedia can inherit this class and pass `const BufferedReader&` into a file/source API.
+
+### IO::BufferedWriter
+
+`StormByte::Buffer::IO::BufferedWriter` is the public base for a **binary** write sink. It owns the session, optional SPSC write-behind (`WriteChunk` / `BackPressure`), `Write`, `Flush`, `Truncate` and `Tell`. Either knob `0` is direct (blocking) write. Both `> 0` buffer until a full chunk or `Flush`. `Write` is atomic: the whole payload is accepted or nothing is (`TryAgain` if it would exceed backpressure).
+
+A leaf does **not** override `Write`, `Flush`, `Open`, `Close`, `Rewind` or `Truncate`. It implements only:
+
+- `OriginOpen` / `OriginClose` — arm and release; call `SetState`.
+- `OriginPush(span)` — write those bytes. Do not buffer in the hook.
+- `OriginFlush` — make accepted bytes visible on the device (file: stream flush; network: no-op `Ok`).
+- `OriginTruncate` — drop destination contents (file: resize 0; network may no-op `Ok`).
+
+The destructor of a leaf must call `Close` while its vtable is live.
+
+### IO::BufferedFileReader
+
+Filesystem leaf over `BufferedReader`. Binary `ifstream`. Does not open in the constructor. Seekable and sized when the path is a regular file.
+
+```cpp
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/fifo.hxx>
+#include <iostream>
+
+using StormByte::Buffer::FIFO;
+using StormByte::Buffer::IO::BufferedFileReader;
+using StormByte::Buffer::IO::ToString;
+
+int main() {
+	BufferedFileReader in("payload.bin", /*read_ahead*/ 4096, /*max_memory*/ 1 << 20);
+	if (!in.Open()) {
+		std::cerr << ToString(in.State()) << "\n";
+		return 1;
+	}
+
+	FIFO dest;
+	auto got = in.Read(16, dest);
+	std::cout << ToString(got.status) << " " << got.count << "\n";
+	in.Close();
+}
+```
+
+Missing path is `State::Missing`. A directory is `State::Directory`. No read permission is `State::Permission`.
+
+### IO::BufferedFileWriter
+
+Filesystem leaf over `BufferedWriter`. Binary append `ofstream`. Creates the file when the parent directory exists. Does not `mkdir -p`. Overwrite is `Truncate`, not an open flag.
+
+```cpp
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <span>
+#include <cstddef>
+#include <iostream>
+
+using StormByte::Buffer::IO::BufferedFileWriter;
+using StormByte::Buffer::IO::ToString;
+
+int main() {
+	BufferedFileWriter out("out.bin", /*write_chunk*/ 4096, /*back_pressure*/ 4);
+	if (!out.Open()) {
+		std::cerr << ToString(out.State()) << "\n";
+		return 1;
+	}
+
+	const char raw[] = { 'A', 'B', 'C', 'D' };
+	auto wr = out.Write(std::span<const std::byte>(
+		reinterpret_cast<const std::byte*>(raw), 4));
+	out.Flush();
+	out.Close();
+}
+```
+
+Missing parent is `State::Missing`. Path is a directory → `State::Directory`. No write permission → `State::NotWritable`.
 
 ## Contributing
 

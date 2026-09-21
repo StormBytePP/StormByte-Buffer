@@ -17,11 +17,13 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/io/buffered_read.hxx>
+#include <StormByte/buffer/io/backend/buffered_reader.hxx>
 
-using namespace StormByte::Buffer;
+using namespace StormByte::Buffer::IO::Backend;
+using Result = StormByte::Buffer::IO::Result;
+using State = StormByte::Buffer::IO::State;
 
-IO::BufferedRead::BufferedRead(Buffer::BufferedRead& owner, const std::size_t read_ahead,
+BufferedReader::BufferedReader(IO::BufferedReader& owner, const std::size_t read_ahead,
 		const std::size_t max_memory, const std::chrono::milliseconds max_wait):
 	m_owner(&owner),
 	m_read_ahead(read_ahead),
@@ -31,29 +33,29 @@ IO::BufferedRead::BufferedRead(Buffer::BufferedRead& owner, const std::size_t re
 	StartWorker();
 }
 
-IO::BufferedRead::~BufferedRead() {
+BufferedReader::~BufferedReader() {
 	Shutdown();
 }
 
-void IO::BufferedRead::Rebind(Buffer::BufferedRead& owner) noexcept {
+void BufferedReader::Rebind(IO::BufferedReader& owner) noexcept {
 	m_owner = &owner;
 }
 
-IO::BufferedRead::operator bool() const noexcept {
+BufferedReader::operator bool() const noexcept {
 	return IsReadable();
 }
 
-IO::State IO::BufferedRead::State() const noexcept {
+State BufferedReader::State() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_state;
 }
 
-void IO::BufferedRead::SetState(const enum State state) noexcept {
+void BufferedReader::SetState(const enum State state) noexcept {
 	std::lock_guard lock(m_mutex);
 	m_state = state;
 }
 
-bool IO::BufferedRead::Open() {
+bool BufferedReader::Open() {
 	if (!m_owner)
 		return false;
 
@@ -83,7 +85,7 @@ bool IO::BufferedRead::Open() {
 	return m_state == State::Idle;
 }
 
-IO::Result IO::BufferedRead::Close() {
+Result BufferedReader::Close() {
 	FlushPrefetch();
 
 	bool was_open = false;
@@ -104,7 +106,7 @@ IO::Result IO::BufferedRead::Close() {
 	return { Status::Ok, 0 };
 }
 
-void IO::BufferedRead::Shutdown() {
+void BufferedReader::Shutdown() {
 	FlushPrefetch();
 	StopWorker();
 	std::lock_guard lock(m_mutex);
@@ -114,7 +116,7 @@ void IO::BufferedRead::Shutdown() {
 	DropWindow();
 }
 
-bool IO::BufferedRead::Rewind() {
+bool BufferedReader::Rewind() {
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open)
@@ -124,37 +126,37 @@ bool IO::BufferedRead::Rewind() {
 	return Open();
 }
 
-bool IO::BufferedRead::IsOpen() const noexcept {
+bool BufferedReader::IsOpen() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_open;
 }
 
-bool IO::BufferedRead::IsReadable() const noexcept {
+bool BufferedReader::IsReadable() const noexcept {
 	std::lock_guard lock(m_mutex);
 	if (m_state != State::Idle || !m_open || m_failed)
 		return false;
 	return !(m_origin_exhausted && m_window.AvailableBytes() == 0);
 }
 
-bool IO::BufferedRead::EoF() const noexcept {
+bool BufferedReader::EoF() const noexcept {
 	std::lock_guard lock(m_mutex);
 	if (!m_open)
 		return true;
 	return m_origin_exhausted && m_window.AvailableBytes() == 0;
 }
 
-IO::Result IO::BufferedRead::Read(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Read(const std::size_t n, FIFO& dest) const {
 	return Serve(n, dest, true);
 }
 
-IO::Result IO::BufferedRead::Peek(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Peek(const std::size_t n, FIFO& dest) const {
 	return Serve(n, dest, false);
 }
 
-IO::Result IO::BufferedRead::Seek(const std::ptrdiff_t offset, const Position mode) const {
+Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) const {
 	FlushPrefetch();
 
-	Buffer::BufferedRead* owner = nullptr;
+	IO::BufferedReader* owner = nullptr;
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || m_state != State::Idle || !m_owner || !m_owner->OriginCanSeek())
@@ -195,31 +197,31 @@ IO::Result IO::BufferedRead::Seek(const std::ptrdiff_t offset, const Position mo
 	return { Status::Ok, 0 };
 }
 
-std::size_t IO::BufferedRead::Tell() const noexcept {
+std::size_t BufferedReader::Tell() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_tell;
 }
 
-bool IO::BufferedRead::IsSeekable() const noexcept {
+bool BufferedReader::IsSeekable() const noexcept {
 	return m_owner && m_owner->OriginCanSeek();
 }
 
-bool IO::BufferedRead::IsSized() const noexcept {
+bool BufferedReader::IsSized() const noexcept {
 	return m_owner && m_owner->OriginHasSize();
 }
 
-std::optional<std::size_t> IO::BufferedRead::Size() const noexcept {
+std::optional<std::size_t> BufferedReader::Size() const noexcept {
 	if (!m_owner)
 		return std::nullopt;
 	return m_owner->OriginSize();
 }
 
-std::size_t IO::BufferedRead::ReadAhead() const noexcept {
+std::size_t BufferedReader::ReadAhead() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_read_ahead;
 }
 
-void IO::BufferedRead::ReadAhead(const std::size_t bytes) {
+void BufferedReader::ReadAhead(const std::size_t bytes) {
 	FlushPrefetch();
 	std::lock_guard lock(m_mutex);
 	m_read_ahead = bytes;
@@ -229,36 +231,36 @@ void IO::BufferedRead::ReadAhead(const std::size_t bytes) {
 		TrimWindow();
 }
 
-std::size_t IO::BufferedRead::MaxMemory() const noexcept {
+std::size_t BufferedReader::MaxMemory() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_max_memory;
 }
 
-void IO::BufferedRead::MaxMemory(const std::size_t bytes) {
+void BufferedReader::MaxMemory(const std::size_t bytes) {
 	FlushPrefetch();
 	std::lock_guard lock(m_mutex);
 	m_max_memory = bytes;
 	TrimWindow();
 }
 
-std::chrono::milliseconds IO::BufferedRead::MaxWait() const noexcept {
+std::chrono::milliseconds BufferedReader::MaxWait() const noexcept {
 	std::lock_guard lock(m_mutex);
 	return m_max_wait;
 }
 
-void IO::BufferedRead::MaxWait(const std::chrono::milliseconds wait) {
+void BufferedReader::MaxWait(const std::chrono::milliseconds wait) {
 	std::lock_guard lock(m_mutex);
 	m_max_wait = wait;
 }
 
-void IO::BufferedRead::StartWorker() {
+void BufferedReader::StartWorker() {
 	if (m_worker.joinable())
 		return;
 	m_stop.store(false);
-	m_worker = std::thread(&BufferedRead::Worker, this);
+	m_worker = std::thread(&BufferedReader::Worker, this);
 }
 
-void IO::BufferedRead::StopWorker() {
+void BufferedReader::StopWorker() {
 	m_stop.store(true);
 	m_cancel_prefetch.store(true);
 	m_cv.notify_all();
@@ -266,7 +268,7 @@ void IO::BufferedRead::StopWorker() {
 		m_worker.join();
 }
 
-void IO::BufferedRead::RequestPrefetch() const {
+void BufferedReader::RequestPrefetch() const {
 	std::lock_guard lock(m_mutex);
 	if (!m_open || m_failed || m_state != State::Idle || m_origin_exhausted)
 		return;
@@ -278,7 +280,7 @@ void IO::BufferedRead::RequestPrefetch() const {
 	m_cv.notify_all();
 }
 
-void IO::BufferedRead::FlushPrefetch() const {
+void BufferedReader::FlushPrefetch() const {
 	m_cancel_prefetch.store(true);
 	m_cv.notify_all();
 	std::unique_lock lock(m_mutex);
@@ -287,7 +289,7 @@ void IO::BufferedRead::FlushPrefetch() const {
 	});
 }
 
-void IO::BufferedRead::Worker() {
+void BufferedReader::Worker() {
 	for (;;) {
 		std::unique_lock lock(m_mutex);
 		m_cv.wait(lock, [this] {
@@ -332,12 +334,12 @@ void IO::BufferedRead::Worker() {
 	}
 }
 
-void IO::BufferedRead::DropWindow() const {
+void BufferedReader::DropWindow() const {
 	m_window.Clear();
 	m_window_origin = m_tell;
 }
 
-IO::Result IO::BufferedRead::PullIntoWindow(const std::size_t n) const {
+Result BufferedReader::PullIntoWindow(const std::size_t n) const {
 	if (!m_owner)
 		return { Status::Failed, 0 };
 	std::size_t need = n;
@@ -371,7 +373,7 @@ IO::Result IO::BufferedRead::PullIntoWindow(const std::size_t n) const {
 	return { m_origin_exhausted ? Status::End : Status::Ok, m_window.AvailableBytes() };
 }
 
-IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool consume) const {
+Result BufferedReader::Serve(const std::size_t n, FIFO& dest, const bool consume) const {
 	FlushPrefetch();
 
 	std::chrono::milliseconds wait{0};
@@ -477,7 +479,7 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 	return { end ? Status::End : Status::Ok, take };
 }
 
-void IO::BufferedRead::TrimWindow() const {
+void BufferedReader::TrimWindow() const {
 	if (m_max_memory == 0) {
 		DropWindow();
 		return;

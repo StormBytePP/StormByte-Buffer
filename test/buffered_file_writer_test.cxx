@@ -17,8 +17,7 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/buffered_file_writer.hxx>
-#include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
 
@@ -30,9 +29,9 @@
 #include <string>
 #include <thread>
 
-using StormByte::Buffer::BufferedFileWriter;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::IO::BufferedFileWriter;
 using StormByte::Buffer::IO::State;
 using StormByte::Buffer::IO::Status;
 using StormByte::Buffer::IO::ToString;

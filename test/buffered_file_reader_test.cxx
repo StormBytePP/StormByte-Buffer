@@ -17,8 +17,7 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
-#include <StormByte/buffer/buffered_file_reader.hxx>
-#include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <chrono>
@@ -28,10 +27,10 @@
 #include <string>
 #include <thread>
 
-using StormByte::Buffer::BufferedFileReader;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
+using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::State;
 using StormByte::Buffer::IO::Status;
 using StormByte::Buffer::IO::ToString;
