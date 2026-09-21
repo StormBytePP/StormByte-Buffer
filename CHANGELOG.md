@@ -33,6 +33,7 @@ If you landed here from a release link and have not read the tree:
 
 - `Generic::Size` is the occupancy of every buffer. It left `ReadOnly`. `Producer` implements it (the shared `Ring`). `Consumer`, `FIFO`, `SharedFIFO` and `Ring` keep their existing overrides.
 - `Bridge` pumps bytes between `ExternalReader`/`ExternalWriter` and `IO::BufferedReader`/`IO::BufferedWriter` in any pairing. It holds references only; tips must outlive every `Passthrough` or `Drain`. No local cache and no configured chunk: `Passthrough(n)` is the unit (`n == 0` is whatever is available on the source now). Writers are never const. `Passthrough` blocks and is transactional: the sink is checked (`IsWritable` / `WillWrite`) before the source is consumed. External sources are `Extract`ed. `Flush` is a no-op on an External sink and `Flush` on an IO writer. `FlushAndClose` closes only an External writer. `SetError` is External only. Move-from `Passthrough` is a no-op.
+- Producer/Consumer tests cover live occupancy: `ExternalWriter::Occupied` and `Producer::Size` drop when the `Consumer` `Extract`s (required for `Drain` backpressure). `Read`/`Peek` do not drop occupancy. Bridge tests cover `Drain` on every tip pairing and a `SharedFIFO` consumer under `high_water`.
 
 ### Fixed
 
