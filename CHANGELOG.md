@@ -22,14 +22,16 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `StormByte::Buffer::IO::Status` and `StormByte::Buffer::IO::Result` in `buffer/io/typedefs.hxx`. `Ok` / `End` / `Failed` plus a byte `count`. No would-block status: coordinated reads wait until the requested count or origin EOF.
+- `StormByte::Buffer::IO::Status` and `StormByte::Buffer::IO::Result` in `buffer/io/typedefs.hxx`. `Ok` / `End` / `Error` / `Failed` / `TryAgain` plus a byte `count`. `TryAgain` is a bounded-wait timeout, not POSIX EAGAIN.
+- `StormByte::Buffer::IO::State`: `Idle`, `Missing`, `Directory`, `Permission`, `Fault`, `Unavailable`. Session state, distinct from per-call `Status`. `constexpr ToString` for both enums.
 - `StormByte::Buffer::BufferedRead`. Public base for a binary read origin with optional prefetch. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`. They do not override `Open`, `Close`, `Rewind`, `Read`, `Peek`, `Seek` or `Tell`.
-- Session: idempotent `Open` / `Close`; `Rewind` is `Close` then `Open` only while open (fails if never opened or already closed). `operator bool` is true when armed and readable; EOF yields false. Movable, not copyable.
-- `Read(n, FIFO&)` / `Peek(n, FIFO&)`: synchronous, block until `n` bytes or origin end. Destination FIFO is replaced on `Ok` / `End` with a non-zero count and left untouched on `Failed` or `End` with count 0. `Read` consumes cache and advances `Tell`; `Peek` does not. `Read(0)` / `Peek(0)` serve the current window only.
-- `ReadAhead` / `MaxMemory` (overridable get/set). Ahead runs after the request on a private worker and uses the same `OriginPull`. An in-flight prefetch is flushed (“publish what you have”) before the next `Read` / `Peek` / `Seek` / `Close`. `MaxMemory(0)` disables cache and prefetch. Device EOF from prefetch does not set public `EoF()` while cached bytes remain.
-- `IsSeekable`, `IsSized`, `Size`, `Tell`. Seek does not invent a size. v1 cache is a single internal `FIFO` window (multi-span map later).
-- Private `StormByte::Buffer::IO::BufferedRead` PIMPL (`m_io`). Leaves call `Close` in their destructor; the public destructor only shuts down the worker.
-- `StormByte::Buffer::BufferedFileReader`. `BufferedRead` leaf over a filesystem path (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory` in the constructor. Seekable and sized. Does not open in the constructor; call `Open` after construction. `Path()` returns the stored path.
+- Session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` is idempotent and returns to `Unavailable`. `Open` is not idempotent: a second `Open` while Idle fails and leaves Idle. `Close` then `Open` is a valid round-trip. `Open` / `Rewind` return `bool`. `operator bool` is true when `State` is Idle and not `EoF`.
+- `Read(n, FIFO&)` / `Peek(n, FIFO&)`: wait for `n` bytes or origin end. Destination FIFO is replaced on `Ok` / `End` with a non-zero count and left untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `Read` consumes cache and advances `Tell`; `Peek` does not. `Read(0)` / `Peek(0)` serve the current window only. Origin failure during a pull is `Error` and sets `Fault` or `Unavailable`.
+- `MaxWait(std::chrono::milliseconds)` (overridable get/set, ctor default `0ms`). `0ms` waits without limit and never returns `TryAgain`. A positive cap waits that long then returns `TryAgain` without touching the destination or changing `State`.
+- `ReadAhead` / `MaxMemory` (overridable get/set). Ahead runs after the request on a private worker and uses the same `OriginPull`. An in-flight prefetch is flushed before the next `Read` / `Peek` / `Seek` / `Close`. `MaxMemory(0)` disables cache and prefetch. Device EOF from prefetch does not set public `EoF()` while cached bytes remain.
+- `IsSeekable`, `IsSized`, `Size`, `Tell`. Seek does not invent a size. v1 cache is a single internal `FIFO` window.
+- Private `StormByte::Buffer::IO::BufferedRead` PIMPL (`m_io`). Leaves call `Close` in their destructor; the public destructor only shuts down the worker. Origin hooks never run while the session mutex is held.
+- `StormByte::Buffer::BufferedFileReader`. `BufferedRead` leaf over a filesystem path (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory` in the constructor. Seekable and sized. Does not open in the constructor. `Path()` returns the stored path. `OriginOpen` sets `Missing` / `Directory` / `Permission` / `Idle`.
 
 ### Changed
 
@@ -41,7 +43,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `BufferedFileReaderTests`. Fixtures under `test/files/`. Session, `Read`/`Peek`, seek, rewind, empty/missing path, NULs, `pattern_256`, prefetch knobs, `MaxMemory(0)`, 4 KiB chunked read, move.
+- `BufferedFileReaderTests`. Fixtures under `test/files/`. Session and `State`, `Read`/`Peek`, seek, rewind, empty/missing/directory path, NULs, `pattern_256`, prefetch knobs, `MaxMemory(0)`, 4 KiB chunked read, move.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
 

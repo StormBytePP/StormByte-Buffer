@@ -19,10 +19,12 @@
 
 #pragma once
 
+#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -37,8 +39,6 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
-		class FIFO;
-
 		/**
 		 * @namespace StormByte::Buffer::IO
 		 * @brief Coordinated byte I/O: results and private backends.
@@ -75,16 +75,19 @@ namespace StormByte {
 		 * @c operator bool is true only when the instance is prepared to
 		 * read: @ref State is Idle and not @ref EoF.
 		 *
-		 * @par Synchronous Read / Peek
-		 * Block until @p n bytes or origin end. No would-block status.
+		 * @par Read / Peek
+		 * Wait for @p n bytes or origin end. @ref MaxWait of @c 0ms waits
+		 * without limit and never returns @ref IO::Status::TryAgain.
+		 * A positive @ref MaxWait caps the wait; timeout yields
+		 * @ref IO::Status::TryAgain, destination untouched, state Idle.
 		 * Origin failure during a pull is @ref IO::Status::Error; the
-		 * destination FIFO is not written; @ref State becomes
+		 * destination FIFO is not written; session state becomes
 		 * @ref IO::State::Fault or @ref IO::State::Unavailable.
 		 *
 		 * @par Destination FIFO
 		 * Overwritten on @ref IO::Status::Ok or @ref IO::Status::End with
 		 * a non-zero count. Untouched on @ref IO::Status::Failed,
-		 * @ref IO::Status::Error, or End with count 0.
+		 * @ref IO::Status::Error, @ref IO::Status::TryAgain, or End with count 0.
 		 *
 		 * @par Read vs Peek vs cache
 		 * @c Read advances @ref Tell and removes served bytes from the cache.
@@ -154,7 +157,7 @@ namespace StormByte {
 				 * @brief Session state.
 				 * @return Current @ref IO::State.
 				 */
-				virtual IO::State State() const noexcept final;
+				virtual enum IO::State State() const noexcept final;
 
 				/**
 				 * @name Session
@@ -166,9 +169,7 @@ namespace StormByte {
 				 * @return @c true if @ref State is @ref IO::State::Idle afterwards.
 				 *
 				 * Not idempotent. A second call while Idle returns @c false
-				 * and leaves the session Idle. Does not call @ref OriginOpen
-				 * when already Idle; the leaf still sees the attempt so it
-				 * can leave state unchanged.
+				 * and leaves the session Idle.
 				 */
 				virtual bool Open() final;
 
@@ -176,22 +177,20 @@ namespace StormByte {
 				 * @brief Stop prefetch, drop caches, close the origin.
 				 * @return @ref IO::Status::Ok. Always succeeds at this layer.
 				 *
-				 * Idempotent. Sets @ref State to @ref IO::State::Unavailable.
+				 * Idempotent. Sets session state to @ref IO::State::Unavailable.
 				 */
 				virtual IO::Result Close() final;
 
 				/**
 				 * @brief Re-arm an open source: @ref Close then @ref Open.
-				 * @return @c true if @ref State is Idle afterwards.
-				 *         @c false if not currently Idle (never opened / closed / error).
+				 * @return @c true if session state is Idle afterwards.
+				 *         @c false if not currently armed.
 				 */
 				virtual bool Rewind() final;
 
 				/**
 				 * @brief Whether @ref Open succeeded and @ref Close has not.
-				 * @return @c true if the session is armed (@ref IO::State::Idle
-				 *         or a mid-read @ref IO::State::Fault /
-				 *         @ref IO::State::Unavailable that has not been Closed).
+				 * @return @c true if the session is armed.
 				 */
 				virtual bool IsOpen() const noexcept final;
 
@@ -317,6 +316,21 @@ namespace StormByte {
 				virtual void MaxMemory(std::size_t bytes);
 
 				/**
+				 * @brief Configured read wait limit.
+				 * @return Wait cap. @c 0ms waits forever (never @ref IO::Status::TryAgain).
+				 */
+				virtual std::chrono::milliseconds MaxWait() const noexcept;
+
+				/**
+				 * @brief Set read wait limit.
+				 * @param wait @c 0ms = unlimited. Positive = timeout then TryAgain.
+				 *
+				 * Overridable so a leaf can clamp. Applies to the next
+				 * @c Read / @c Peek.
+				 */
+				virtual void MaxWait(std::chrono::milliseconds wait);
+
+				/**
 				 * @}
 				 */
 
@@ -325,8 +339,10 @@ namespace StormByte {
 				 * @brief Construct an unopened coordinator (@ref IO::State::Unavailable).
 				 * @param read_ahead Initial @ref ReadAhead in bytes.
 				 * @param max_memory Initial @ref MaxMemory in bytes.
+				 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 				 */
-				explicit BufferedRead(std::size_t read_ahead = 0, std::size_t max_memory = 0);
+				explicit BufferedRead(std::size_t read_ahead = 0, std::size_t max_memory = 0,
+					std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 				/**
 				 * @brief Publish session state from a leaf hook.
@@ -335,7 +351,7 @@ namespace StormByte {
 				 * Called from @ref OriginOpen, @ref OriginClose and
 				 * @ref OriginPull. Not for user code.
 				 */
-				void SetState(IO::State state) noexcept;
+				void SetState(enum IO::State state) noexcept;
 
 				/**
 				 * @name Origin hooks

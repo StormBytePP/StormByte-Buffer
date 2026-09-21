@@ -43,15 +43,17 @@ namespace StormByte {
 			 * @enum Status
 			 * @brief Outcome of a single I/O call.
 			 *
-			 * There is no would-block / EAGAIN value.
+			 * There is no POSIX EAGAIN name. @ref TryAgain is the
+			 * bounded-wait timeout of @c Read / @c Peek.
 			 *
 			 * @see Result, State, StormByte::Buffer::BufferedRead
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Status {
-				Ok,			///< The call completed as requested (see @ref Result::count).
+				Ok,		///< The call completed as requested (see @ref Result::count).
 				End,		///< Origin exhausted; @ref Result::count may be short.
 				Error,		///< Origin failed during the call; destination untouched.
-				Failed		///< Illegal call or dead session; destination untouched.
+				Failed,		///< Illegal call or dead session; destination untouched.
+				TryAgain	///< MaxWait elapsed; destination untouched. State stays Idle.
 			};
 
 			/**
@@ -78,10 +80,11 @@ namespace StormByte {
 			 */
 			[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
 				switch (status) {
-					case Status::Ok:		return "Ok";
-					case Status::End:		return "End";
-					case Status::Error:		return "Error";
+					case Status::Ok:	return "Ok";
+					case Status::End:	return "End";
+					case Status::Error:	return "Error";
 					case Status::Failed:	return "Failed";
+					case Status::TryAgain:	return "TryAgain";
 				}
 				return {};
 			}
@@ -93,11 +96,11 @@ namespace StormByte {
 			 */
 			[[nodiscard]] constexpr std::string_view ToString(State state) noexcept {
 				switch (state) {
-					case State::Idle:			return "Idle";
+					case State::Idle:		return "Idle";
 					case State::Missing:		return "Missing";
 					case State::Directory:		return "Directory";
 					case State::Permission:		return "Permission";
-					case State::Fault:			return "Fault";
+					case State::Fault:		return "Fault";
 					case State::Unavailable:	return "Unavailable";
 				}
 				return {};
@@ -108,8 +111,8 @@ namespace StormByte {
 			 * @brief Per-call status plus how many bytes reached the destination.
 			 *
 			 * @c count is 0 when the destination FIFO was not written
-			 * (@ref Status::Failed, @ref Status::Error, or @ref Status::End
-			 * with no remaining bytes).
+			 * (@ref Status::Failed, @ref Status::Error, @ref Status::TryAgain,
+			 * or @ref Status::End with no remaining bytes).
 			 *
 			 * @see Status, StormByte::Buffer::BufferedRead::Read
 			 */

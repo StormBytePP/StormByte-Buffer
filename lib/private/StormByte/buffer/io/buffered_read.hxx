@@ -26,6 +26,7 @@
 #include <StormByte/buffer/visibility.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
@@ -67,11 +68,12 @@ namespace StormByte {
 					 * @param owner Public instance (the most-derived object).
 					 * @param read_ahead Initial @ref ReadAhead in bytes.
 					 * @param max_memory Initial @ref MaxMemory in bytes.
+					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 					 *
 					 * Starts the worker thread. State is @ref State::Unavailable.
 					 */
 					BufferedRead(Buffer::BufferedRead& owner, std::size_t read_ahead,
-						std::size_t max_memory);
+						std::size_t max_memory, std::chrono::milliseconds max_wait);
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -267,6 +269,18 @@ namespace StormByte {
 					void MaxMemory(std::size_t bytes);
 
 					/**
+					 * @brief Configured read wait limit.
+					 * @return @c 0ms waits forever.
+					 */
+					std::chrono::milliseconds MaxWait() const noexcept;
+
+					/**
+					 * @brief Set read wait limit.
+					 * @param wait @c 0ms = unlimited. Positive = timeout then TryAgain.
+					 */
+					void MaxWait(std::chrono::milliseconds wait);
+
+					/**
 					 * @}
 					 */
 
@@ -323,6 +337,7 @@ namespace StormByte {
 
 					std::size_t m_read_ahead {0};				///< Prefetch target length.
 					std::size_t m_max_memory {0};				///< Approximate cache cap.
+					std::chrono::milliseconds m_max_wait {0};	///< Read wait cap. 0 = forever.
 
 					enum State m_state { State::Unavailable };	///< Session state.
 					bool m_open {false};						///< Session armed (Open until Close).

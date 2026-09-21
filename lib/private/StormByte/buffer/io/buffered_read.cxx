@@ -22,10 +22,11 @@
 using namespace StormByte::Buffer;
 
 IO::BufferedRead::BufferedRead(Buffer::BufferedRead& owner, const std::size_t read_ahead,
-		const std::size_t max_memory):
+		const std::size_t max_memory, const std::chrono::milliseconds max_wait):
 	m_owner(&owner),
 	m_read_ahead(read_ahead),
 	m_max_memory(max_memory),
+	m_max_wait(max_wait),
 	m_state(State::Unavailable) {
 	StartWorker();
 }
@@ -233,6 +234,16 @@ void IO::BufferedRead::MaxMemory(const std::size_t bytes) {
 	m_max_memory = bytes;
 }
 
+std::chrono::milliseconds IO::BufferedRead::MaxWait() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_max_wait;
+}
+
+void IO::BufferedRead::MaxWait(const std::chrono::milliseconds wait) {
+	std::lock_guard lock(m_mutex);
+	m_max_wait = wait;
+}
+
 void IO::BufferedRead::StartWorker() {
 	if (m_worker.joinable())
 		return;
@@ -250,7 +261,9 @@ void IO::BufferedRead::StopWorker() {
 
 void IO::BufferedRead::RequestPrefetch() const {
 	std::lock_guard lock(m_mutex);
-	if (!m_open || m_failed || m_state != State::Idle || m_max_memory == 0 || m_read_ahead == 0 || m_origin_exhausted)
+	if (!m_open || m_failed || m_state != State::Idle || m_origin_exhausted)
+		return;
+	if (m_max_memory == 0 && m_read_ahead == 0)
 		return;
 	m_prefetch_target = m_read_ahead;
 	m_prefetch_run = true;
@@ -293,12 +306,14 @@ void IO::BufferedRead::Worker() {
 			std::lock_guard inner(m_mutex);
 			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
 				m_failed = true;
+				m_cv.notify_all();
 				break;
 			}
 			if (pulled.count > 0)
 				static_cast<void>(m_window.Write(pulled.count, std::move(chunk)));
 			if (pulled.status == Status::End)
 				m_origin_exhausted = true;
+			m_cv.notify_all();
 			if (pulled.status != Status::Ok)
 				break;
 		}
@@ -352,10 +367,12 @@ IO::Result IO::BufferedRead::PullIntoWindow(const std::size_t n) const {
 IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool consume) const {
 	FlushPrefetch();
 
+	std::chrono::milliseconds wait{0};
 	{
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || m_state != State::Idle || !m_owner)
 			return { Status::Failed, 0 };
+		wait = m_max_wait;
 	}
 
 	if (n == 0) {
@@ -383,25 +400,46 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 		return { Status::Ok, count };
 	}
 
-	for (;;) {
-		bool need_pull = false;
+	if (wait.count() == 0) {
+		for (;;) {
+			bool need_pull = false;
+			{
+				std::lock_guard lock(m_mutex);
+				need_pull = m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed;
+			}
+			if (!need_pull)
+				break;
+			std::size_t missing = 0;
+			{
+				std::lock_guard lock(m_mutex);
+				missing = n - m_window.AvailableBytes();
+			}
+			const Result pulled = PullIntoWindow(missing);
+			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
+				std::lock_guard lock(m_mutex);
+				m_failed = true;
+				return { pulled.status, 0 };
+			}
+		}
+	} else {
 		{
 			std::lock_guard lock(m_mutex);
-			need_pull = m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed;
+			if (m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed) {
+				const std::size_t need = n - m_window.AvailableBytes();
+				m_prefetch_target = m_read_ahead > need ? m_read_ahead : need;
+				m_prefetch_run = true;
+				m_cancel_prefetch.store(false);
+				m_cv.notify_all();
+			}
 		}
-		if (!need_pull)
-			break;
-		std::size_t missing = 0;
-		{
-			std::lock_guard lock(m_mutex);
-			missing = n - m_window.AvailableBytes();
+		std::unique_lock lock(m_mutex);
+		const auto deadline = std::chrono::steady_clock::now() + wait;
+		while (m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed && !m_stop.load()) {
+			if (m_cv.wait_until(lock, deadline) == std::cv_status::timeout)
+				break;
 		}
-		const Result pulled = PullIntoWindow(missing);
-		if (pulled.status == Status::Failed || pulled.status == Status::Error) {
-			std::lock_guard lock(m_mutex);
-			m_failed = true;
-			return { pulled.status, 0 };
-		}
+		if (m_window.AvailableBytes() < n && !m_origin_exhausted && !m_failed)
+			return { Status::TryAgain, 0 };
 	}
 
 	std::unique_lock lock(m_mutex);

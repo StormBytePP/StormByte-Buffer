@@ -18,13 +18,13 @@
  */
 
 #include <StormByte/buffer/buffered_read.hxx>
-#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_read.hxx>
 
 using namespace StormByte::Buffer;
 
-BufferedRead::BufferedRead(const std::size_t read_ahead, const std::size_t max_memory):
-	m_io(std::make_unique<IO::BufferedRead>(*this, read_ahead, max_memory)) {}
+BufferedRead::BufferedRead(const std::size_t read_ahead, const std::size_t max_memory,
+		const std::chrono::milliseconds max_wait):
+	m_io(std::make_unique<IO::BufferedRead>(*this, read_ahead, max_memory, max_wait)) {}
 
 BufferedRead::BufferedRead(BufferedRead&& other) noexcept:
 	m_io(std::move(other.m_io)) {
@@ -143,4 +143,13 @@ std::size_t BufferedRead::MaxMemory() const noexcept {
 void BufferedRead::MaxMemory(const std::size_t bytes) {
 	if (m_io)
 		m_io->MaxMemory(bytes);
+}
+
+std::chrono::milliseconds BufferedRead::MaxWait() const noexcept {
+	return m_io ? m_io->MaxWait() : std::chrono::milliseconds{0};
+}
+
+void BufferedRead::MaxWait(const std::chrono::milliseconds wait) {
+	if (m_io)
+		m_io->MaxWait(wait);
 }
