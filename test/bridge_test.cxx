@@ -160,6 +160,10 @@ class FailingWriter final : public ExternalWriter {
 			return !m_closed && !m_error;
 		}
 
+		std::size_t Occupied() const noexcept override {
+			return m_target.Size();
+		}
+
 		bool Write(const DataType& data) noexcept override {
 			DataType copy = data;
 			return Write(std::move(copy));
