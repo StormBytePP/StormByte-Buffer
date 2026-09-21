@@ -18,8 +18,32 @@
  */
 
 #include <StormByte/buffer/generic.hxx>
+
 using namespace StormByte::Buffer;
+
 Generic::~Generic() noexcept = default;
+
 ReadOnly::~ReadOnly() noexcept = default;
+
 WriteOnly::~WriteOnly() noexcept = default;
+
 ReadWrite::~ReadWrite() noexcept = default;
+
+template DataType Generic::DataConvert<DataType>(const DataType&) noexcept;
+template DataType Generic::DataConvert<DataType>(DataType&&) noexcept;
+template DataType Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
+template DataType Generic::DataConvert<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
+template DataType Generic::DataConvert<std::span<std::byte>>(std::span<std::byte>&&) noexcept;
+
+template bool WriteOnly::Write<DataType>(const DataType&) noexcept;
+template bool WriteOnly::Write<DataType>(DataType&&) noexcept;
+template bool WriteOnly::Write<DataType>(const std::size_t&, const DataType&) noexcept;
+template bool WriteOnly::Write<DataType>(const std::size_t&, DataType&&) noexcept;
+template bool WriteOnly::Write<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
+template bool WriteOnly::Write<std::span<const std::byte>>(const std::size_t&, const std::span<const std::byte>&) noexcept;
+template bool WriteOnly::Write<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
+template bool WriteOnly::Write<std::span<std::byte>>(const std::size_t&, const std::span<std::byte>&) noexcept;
+template bool WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(DataType::const_iterator, DataType::const_iterator) noexcept;
+template bool WriteOnly::Write<DataType::iterator, DataType::iterator>(DataType::iterator, DataType::iterator) noexcept;
+template bool WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(const std::size_t&, DataType::const_iterator, DataType::const_iterator) noexcept;
+template bool WriteOnly::Write<DataType::iterator, DataType::iterator>(const std::size_t&, DataType::iterator, DataType::iterator) noexcept;

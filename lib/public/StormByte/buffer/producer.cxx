@@ -22,6 +22,7 @@
 using namespace StormByte::Buffer;
 
 Producer::~Producer() noexcept = default;
+
 void Producer::Close() noexcept {
 	m_buffer->Close();
 }
@@ -32,6 +33,10 @@ void Producer::SetError() noexcept {
 
 bool Producer::IsWritable() const noexcept {
 	return m_buffer->IsWritable();
+}
+
+std::size_t Producer::Size() const noexcept {
+	return m_buffer->Size();
 }
 
 bool Producer::Write(const std::size_t& count, const DataType& data) noexcept {

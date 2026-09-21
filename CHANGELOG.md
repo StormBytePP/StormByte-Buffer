@@ -25,9 +25,11 @@ If you landed here from a release link and have not read the tree:
 - `IO::BufferedReader` and `IO::BufferedWriter`: public bases for a binary origin or sink. Leaves implement only the `Origin*` hooks. `Open` is not idempotent; `Close` is. `operator bool` is true when `State` is Idle and the instance can still read or write. `Read`/`Write` are blocking for the requested bytes; configured prefetch or write-behind runs after that. `MaxWait` of `0ms` waits without a cap. `TryAgain` is returned when that cap is hit or when a write would exceed `BackPressure`. Policy setters take effect immediately.
 - `IO::BufferedFileReader` and `IO::BufferedFileWriter`: file leaves (`ifstream` / `ofstream` binary). Writer `Open` is append; overwrite is `Truncate`. No `mkdir -p`. Parent missing is `Missing`, a directory is `Directory`, no write permission is `NotWritable`. `WillWrite` on the file writer also probes free space (`statvfs` / `GetDiskFreeSpaceExW`); that probe is indicative (races, quotas, network FS).
 - `IO::Status`, `IO::State`, `IO::Result` and `IO::ToString` in `StormByte/buffer/io/typedefs.hxx`.
+- Explicit instantiations of `Generic::DataConvert` and `WriteOnly::Write` for `DataType`, `std::span<std::byte>`, `std::span<const std::byte>` and `DataType` iterators. Declared `extern template` in `generic.hxx` and emitted in `generic.cxx` so those closed cases live in libStormByte-Buffer. Other ranges still instantiate in the caller.
 
 ### Changed
 
+- `Generic::Size` is the occupancy of every buffer. It left `ReadOnly`. `Producer` implements it (the shared `Ring`). `Consumer`, `FIFO`, `SharedFIFO` and `Ring` keep their existing overrides.
 - `Bridge` pumps bytes between `ExternalReader`/`ExternalWriter` and `IO::BufferedReader`/`IO::BufferedWriter` in any pairing. It holds references only; tips must outlive every `Passthrough`. No local cache and no configured chunk: `Passthrough(n)` is the unit (`n == 0` is whatever is available on the source now). Writers are never const. `Passthrough` blocks and is transactional: the sink is checked (`IsWritable` / `WillWrite`) before the source is consumed. External sources are `Extract`ed. `Flush` is a no-op on an External sink and `Flush` on an IO writer. `FlushAndClose` closes only an External writer. `SetError` is External only. Move-from `Passthrough` is a no-op.
 
 ### Fixed
@@ -36,6 +38,9 @@ If you landed here from a release link and have not read the tree:
 
 - `Sink::Bind` and `Sink::Bind(int, Sink&)`. Wire with `To(key)` / `>>` / `<<`.
 - `Bridge` chunk size, leftover FIFO, `PendingBytes`, `ChunkSize`, copy of External handlers, and const `Passthrough` / `Flush`.
+- `ReadOnly::Size` as a distinct declaration (use `Generic::Size`).
+
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
 
 ## [1.3.0] - 2026-09-20
 
