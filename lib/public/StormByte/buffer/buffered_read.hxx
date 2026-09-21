@@ -97,6 +97,14 @@ namespace StormByte {
 		 * Applied after the synchronous request. Prefetch uses @ref OriginPull.
 		 * Leaves must not buffer inside the hook.
 		 *
+		 * @par Policy setters
+		 * @ref ReadAhead, @ref MaxMemory and @ref MaxWait take effect
+		 * immediately. They are not deferred to the next Read. Lowering
+		 * ReadAhead or MaxMemory may drop cached bytes that no longer fit.
+		 * The setter does not return until prefetch is cancelled and the
+		 * window is trimmed. That wait is blocking even though it is not
+		 * an origin pull.
+		 *
 		 * @par Movable, not copyable
 		 * Move transfers @c m_io. Moved-from is Unavailable.
 		 *
@@ -298,8 +306,12 @@ namespace StormByte {
 				virtual std::size_t ReadAhead() const noexcept;
 
 				/**
-				 * @brief Set prefetch length in bytes.
+				 * @brief Set prefetch length. Takes effect immediately.
 				 * @param bytes Bytes to hold ahead of the cursor after a Read.
+				 *
+				 * Cancels in-flight prefetch and trims the window before
+				 * returning. Cached bytes past the new target may be discarded.
+				 * Does not pull from the origin. Still waits for the worker.
 				 */
 				virtual void ReadAhead(std::size_t bytes);
 
@@ -310,8 +322,12 @@ namespace StormByte {
 				virtual std::size_t MaxMemory() const noexcept;
 
 				/**
-				 * @brief Set cache memory cap in bytes.
-				 * @param bytes Approximate maximum resident cache. 0 disables cache.
+				 * @brief Set cache memory cap. Takes effect immediately.
+				 * @param bytes Approximate maximum resident cache. 0 drops the window.
+				 *
+				 * Cancels prefetch and trims or drops the window before
+				 * returning. Bytes that no longer fit are discarded.
+				 * Waits for the worker; not an origin pull.
 				 */
 				virtual void MaxMemory(std::size_t bytes);
 
@@ -322,11 +338,11 @@ namespace StormByte {
 				virtual std::chrono::milliseconds MaxWait() const noexcept;
 
 				/**
-				 * @brief Set read wait limit.
+				 * @brief Set read wait limit. Takes effect on the next Read / Peek.
 				 * @param wait @c 0ms = unlimited. Positive = timeout then TryAgain.
 				 *
-				 * Overridable so a leaf can clamp. Applies to the next
-				 * @c Read / @c Peek.
+				 * Overridable so a leaf can clamp. Does not cancel an in-flight
+				 * prefetch. Does not trim the window.
 				 */
 				virtual void MaxWait(std::chrono::milliseconds wait);
 

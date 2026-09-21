@@ -220,8 +220,13 @@ std::size_t IO::BufferedRead::ReadAhead() const noexcept {
 }
 
 void IO::BufferedRead::ReadAhead(const std::size_t bytes) {
+	FlushPrefetch();
 	std::lock_guard lock(m_mutex);
 	m_read_ahead = bytes;
+	if (bytes == 0 || m_window.AvailableBytes() > bytes)
+		DropWindow();
+	else
+		TrimWindow();
 }
 
 std::size_t IO::BufferedRead::MaxMemory() const noexcept {
@@ -230,8 +235,10 @@ std::size_t IO::BufferedRead::MaxMemory() const noexcept {
 }
 
 void IO::BufferedRead::MaxMemory(const std::size_t bytes) {
+	FlushPrefetch();
 	std::lock_guard lock(m_mutex);
 	m_max_memory = bytes;
+	TrimWindow();
 }
 
 std::chrono::milliseconds IO::BufferedRead::MaxWait() const noexcept {

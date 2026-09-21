@@ -91,6 +91,11 @@ namespace StormByte {
 		 * short @ref OriginPush results are retried until complete
 		 * or @ref IO::Status::Error.
 		 *
+		 * Setters take effect immediately. They are not deferred to
+		 * the next @c Write. Turning the ring off or lowering the cap
+		 * below @ref Dirty flushes dirty bytes first and may block
+		 * on @ref OriginPush / @ref OriginFlush.
+		 *
 		 * @par Flush / Truncate
 		 * @ref Flush blocks, drains the ring including a short tail,
 		 * calls @ref OriginFlush, and never returns @ref IO::Status::TryAgain.
@@ -98,8 +103,9 @@ namespace StormByte {
 		 * @ref OriginTruncate. @ref Tell becomes 0.
 		 *
 		 * @par MaxWait
-		 * Applies to @ref OriginPush (direct @c Write or worker).
+		 * Applies to the next @ref OriginPush (direct @c Write or worker).
 		 * @c 0ms waits without limit. The ring itself is not timed.
+		 * Setting @c MaxWait does not abort an in-flight push.
 		 *
 		 * @par Movable, not copyable
 		 * Move transfers @c m_io. The worker is not stopped. Moved-from
@@ -281,8 +287,12 @@ namespace StormByte {
 				virtual std::size_t WriteChunk() const noexcept;
 
 				/**
-				 * @brief Set origin push unit.
+				 * @brief Set origin push unit. Takes effect immediately.
 				 * @param bytes Chunk size. 0 disables the ring.
+				 *
+				 * May block. A zero value or a smaller unit that now meets
+				 * dirty bytes drains the ring through @ref Flush / the worker
+				 * before the setter returns. Not deferred to the next Write.
 				 */
 				virtual void WriteChunk(std::size_t bytes);
 
@@ -293,8 +303,11 @@ namespace StormByte {
 				virtual std::size_t BackPressure() const noexcept;
 
 				/**
-				 * @brief Set dirty cap in WriteChunk units.
+				 * @brief Set dirty cap in WriteChunk units. Takes effect immediately.
 				 * @param chunks 0 disables the ring. Otherwise cap is chunks * WriteChunk.
+				 *
+				 * May block. Zero, or a cap below @ref Dirty, flushes dirty
+				 * bytes before the setter returns. Not deferred to the next Write.
 				 */
 				virtual void BackPressure(std::size_t chunks);
 
@@ -305,8 +318,10 @@ namespace StormByte {
 				virtual std::chrono::milliseconds MaxWait() const noexcept;
 
 				/**
-				 * @brief Set wait cap for OriginPush.
+				 * @brief Set wait cap for OriginPush. Takes effect on the next push.
 				 * @param wait @c 0ms = unlimited.
+				 *
+				 * Does not cancel an in-flight @ref OriginPush. Does not Flush.
 				 */
 				virtual void MaxWait(std::chrono::milliseconds wait);
 

@@ -168,18 +168,18 @@ IO::Result IO::BufferedWrite::Flush() {
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || !m_owner)
 			return { Status::Failed, 0 };
-		if (BufferedMode() && m_ring && m_ring->AvailableBytes() > 0) {
+		if (m_ring && m_ring->AvailableBytes() > 0) {
 			m_flush.store(true);
 			m_drain_run = true;
 			m_cv.notify_all();
 		}
 	}
 
-	if (BufferedMode() && m_ring) {
+	if (m_ring) {
 		std::unique_lock lock(m_mutex);
 		m_cv.wait(lock, [this] {
 			return m_stop.load() || m_failed
-				|| (m_ring && m_ring->AvailableBytes() == 0);
+				|| !m_ring || m_ring->AvailableBytes() == 0;
 		});
 		m_flush.store(false);
 		m_drain_run = false;
@@ -309,8 +309,21 @@ std::size_t IO::BufferedWrite::WriteChunk() const noexcept {
 }
 
 void IO::BufferedWrite::WriteChunk(const std::size_t bytes) {
-	std::lock_guard lock(m_mutex);
-	m_write_chunk = bytes;
+	const bool disable = bytes == 0 || m_back_pressure == 0;
+	if (disable && Dirty() > 0)
+		static_cast<void>(Flush());
+
+	{
+		std::lock_guard lock(m_mutex);
+		m_write_chunk = bytes;
+		if (!BufferedMode()) {
+			m_ring.reset();
+			return;
+		}
+		if (!m_ring)
+			m_ring = std::make_unique<LockFreeRing>(PendingCap());
+	}
+	RequestDrain();
 }
 
 std::size_t IO::BufferedWrite::BackPressure() const noexcept {
@@ -319,8 +332,22 @@ std::size_t IO::BufferedWrite::BackPressure() const noexcept {
 }
 
 void IO::BufferedWrite::BackPressure(const std::size_t chunks) {
-	std::lock_guard lock(m_mutex);
-	m_back_pressure = chunks;
+	const std::size_t unit = WriteChunk();
+	const std::size_t cap = (chunks == 0 || unit == 0) ? 0 : chunks * unit;
+	if (cap == 0 || Dirty() > cap)
+		static_cast<void>(Flush());
+
+	{
+		std::lock_guard lock(m_mutex);
+		m_back_pressure = chunks;
+		if (!BufferedMode()) {
+			m_ring.reset();
+			return;
+		}
+		if (!m_ring)
+			m_ring = std::make_unique<LockFreeRing>(PendingCap());
+	}
+	RequestDrain();
 }
 
 std::chrono::milliseconds IO::BufferedWrite::MaxWait() const noexcept {
