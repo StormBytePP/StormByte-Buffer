@@ -20,7 +20,7 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 - **Ring** — concurrent ring (`shared_mutex`, many-to-many).
 - **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
 - **Hopper** — single-producer single-consumer (SPSC) queue of typed items with optional capacity ceiling. `Push` / `Pop` stay; `<<` / `>>` are the same operations. `Notify(cv)` does not own the CV; call `Unnotify` before that CV dies.
-- **Sink** — map of integer keys to Hopper buckets. Wire with `To(key)` / `>>` / `<<`. `Bind` is a `[[deprecated]]` wrapper. Round-robin or custom `Select`, plus terminal producer `Drain`.
+- **Sink** — map of integer keys to Hopper buckets. Wire with `To(key)` / `>>` / `<<`. Round-robin or custom `Select`, plus terminal producer `Drain`.
 - **Bridge** — chunked passthrough from `ExternalReader` to `ExternalWriter`.
 - **Pipeline** — stages chained with `ExecutionMode`: `Sync`, `Async`, `Parallel` (combinable). A non-null logger is scoped as `Buffer/Pipeline` before it reaches the stages.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.

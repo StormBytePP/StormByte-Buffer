@@ -542,16 +542,6 @@ namespace StormByte::Buffer {
 	}
 
 	template<Type::MoveConstructible T>
-	void Sink<T>::Bind(Sink& consumer) {
-		*this >> consumer;
-	}
-
-	template<Type::MoveConstructible T>
-	void Sink<T>::Bind(int key, Sink& consumer) {
-		To(key) >> consumer;
-	}
-
-	template<Type::MoveConstructible T>
 	void Sink<T>::Drain() noexcept {
 		m_impl->Drain();
 	}

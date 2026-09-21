@@ -42,7 +42,7 @@ namespace StormByte::Buffer {
 	 *   Sink already holds that hopper, dest is a co-writer: Eof on this Sink
 	 *   then only closes the hopper when the last writer closes.
 	 *   @c consumer << producer and @c consumer << producer.To(key) are the
-	 *   same edges. @ref Bind remains for one or two releases and is deprecated.
+	 *   same edges.
 	 * - Drain: Terminal producer flag. Push to an un-wired key discards the item
 	 *   without waiting for a consumer.
 	 * - Pop: Retrieves items across buckets using Round-Robin, custom Select,
@@ -189,27 +189,6 @@ namespace StormByte::Buffer {
 			 * @return *this.
 			 */
 			Sink& operator<<(Lane lane) noexcept;
-
-			/**
-			 * @brief Shares all existing hoppers on this Sink with the consumer Sink.
-			 * @param consumer Target consumer Sink.
-			 * @deprecated Use @c *this >> consumer. Kept for one or two releases.
-			 */
-			[[deprecated("use producer >> consumer")]]
-			void Bind(Sink& consumer);
-
-			/**
-			 * @brief Creates or retrieves the hopper for key and shares it with consumer.
-			 * @param key Bucket key identifier.
-			 * @param consumer Target consumer Sink.
-			 * @deprecated Use @c To(key) >> consumer. Kept for one or two releases.
-			 *
-			 * This Sink has no hopper yet: creates it (this is the writer,
-			 * @p consumer is the reader). This Sink already has the hopper:
-			 * @p consumer is attached as a co-writer (extra producer).
-			 */
-			[[deprecated("use producer.To(key) >> consumer")]]
-			void Bind(int key, Sink& consumer);
 
 			/**
 			 * @brief Marks Sink as a terminal producer (un-wired Push calls drop instead of waiting).

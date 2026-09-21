@@ -26,9 +26,9 @@ If you landed here from a release link and have not read the tree:
 
 ### Fixed
 
-### Deprecated
+### Removed
 
-- `Sink::Bind` (both overloads) is still `[[deprecated]]`. Remove it in a later minor.
+- `Sink::Bind` and `Sink::Bind(int, Sink&)`. Wire with `To(key)` / `>>` / `<<`.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
 
