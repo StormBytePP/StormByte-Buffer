@@ -168,22 +168,33 @@ IO::Result IO::BufferedWrite::Flush() {
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || !m_owner)
 			return { Status::Failed, 0 };
-		if (!BufferedMode() || !m_ring || m_ring->AvailableBytes() == 0)
-			return { Status::Ok, 0 };
-		m_flush.store(true);
-		m_drain_run = true;
-		m_cv.notify_all();
+		if (BufferedMode() && m_ring && m_ring->AvailableBytes() > 0) {
+			m_flush.store(true);
+			m_drain_run = true;
+			m_cv.notify_all();
+		}
 	}
 
-	std::unique_lock lock(m_mutex);
-	m_cv.wait(lock, [this] {
-		return m_stop.load() || m_failed
-			|| (m_ring && m_ring->AvailableBytes() == 0);
-	});
-	m_flush.store(false);
-	m_drain_run = false;
-	if (m_failed)
-		return { Status::Error, 0 };
+	if (BufferedMode() && m_ring) {
+		std::unique_lock lock(m_mutex);
+		m_cv.wait(lock, [this] {
+			return m_stop.load() || m_failed
+				|| (m_ring && m_ring->AvailableBytes() == 0);
+		});
+		m_flush.store(false);
+		m_drain_run = false;
+		if (m_failed)
+			return { Status::Error, 0 };
+	}
+
+	const Result visible = m_owner->OriginFlush();
+	if (visible.status != Status::Ok) {
+		std::lock_guard lock(m_mutex);
+		m_failed = true;
+		if (m_state == State::Idle)
+			m_state = State::Fault;
+		return visible;
+	}
 	return { Status::Ok, 0 };
 }
 
@@ -253,6 +264,14 @@ IO::Result IO::BufferedWrite::WriteSpan(const std::span<const std::byte> src) {
 			if (m_state == State::Idle)
 				m_state = State::Fault;
 			return pushed;
+		}
+		const Result visible = m_owner->OriginFlush();
+		if (visible.status != Status::Ok) {
+			std::lock_guard lock(m_mutex);
+			m_failed = true;
+			if (m_state == State::Idle)
+				m_state = State::Fault;
+			return visible;
 		}
 		std::lock_guard lock(m_mutex);
 		m_tell += src.size();

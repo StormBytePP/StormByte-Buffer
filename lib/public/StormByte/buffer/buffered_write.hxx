@@ -93,7 +93,7 @@ namespace StormByte {
 		 *
 		 * @par Flush / Truncate
 		 * @ref Flush blocks, drains the ring including a short tail,
-		 * and never returns @ref IO::Status::TryAgain.
+		 * calls @ref OriginFlush, and never returns @ref IO::Status::TryAgain.
 		 * @ref Truncate drops the ring without pushing and calls
 		 * @ref OriginTruncate. @ref Tell becomes 0.
 		 *
@@ -198,7 +198,7 @@ namespace StormByte {
 				virtual bool IsOpen() const noexcept final;
 
 				/**
-				 * @brief Push every dirty byte to the origin.
+				 * @brief Push every dirty byte to the origin and @ref OriginFlush.
 				 * @return @ref IO::Status::Ok, @ref IO::Status::Error or
 				 *         @ref IO::Status::Failed. Never @ref IO::Status::TryAgain.
 				 *
@@ -354,6 +354,15 @@ namespace StormByte {
 				 *         (backend retries), Error or Failed.
 				 */
 				virtual IO::Result OriginPush(std::span<const std::byte> data) = 0;
+
+				/**
+				 * @brief Make accepted bytes visible on the device.
+				 * @return @ref IO::Status::Ok, Error or Failed.
+				 *
+				 * The base calls this after a completed direct Write and after
+				 * Flush has drained the ring. Do not buffer here.
+				 */
+				virtual IO::Result OriginFlush() = 0;
 
 				/**
 				 * @brief Discard origin contents. Network may no-op Ok.

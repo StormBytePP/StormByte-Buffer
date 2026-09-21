@@ -28,12 +28,13 @@ If you landed here from a release link and have not read the tree:
 - Read session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` is idempotent and returns to `Unavailable`. `Open` is not idempotent. `Close` then `Open` is a valid round-trip. `Open` / `Rewind` return `bool`. `operator bool` is true when `State` is Idle and not `EoF`.
 - `Read(n, FIFO&)` / `Peek(n, FIFO&)`: wait for `n` bytes or origin end. Destination FIFO is replaced on `Ok` / `End` with a non-zero count and left untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `MaxWait` of `0ms` waits without limit. A positive `MaxWait` returns `TryAgain` on timeout.
 - `StormByte::Buffer::BufferedFileReader`. `BufferedRead` leaf over a filesystem path (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory`. Seekable and sized. Does not open in the constructor. `OriginOpen` sets `Missing` / `Directory` / `Permission` / `Idle`.
-- `StormByte::Buffer::BufferedWrite`. Public base for a binary write sink. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPush(std::span<const std::byte>)` and `OriginTruncate`. They do not override `Write`, `Flush`, `Open`, `Close`, `Rewind` or `Truncate`. Movable, not copyable. PIMPL `StormByte::Buffer::IO::BufferedWrite`.
+- `StormByte::Buffer::BufferedWrite`. Public base for a binary write sink. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPush(std::span<const std::byte>)`, `OriginFlush` and `OriginTruncate`. They do not override `Write`, `Flush`, `Open`, `Close`, `Rewind` or `Truncate`. Movable, not copyable. PIMPL `StormByte::Buffer::IO::BufferedWrite`.
 - Write session: construction is `Unavailable`. Successful `Open` → `Idle`. `Open` / `Close` / `Rewind` return `bool` and update `State`. `Close` always `Flush` then `OriginClose`. Flush failure leaves `Fault`. Destructor of a leaf must call `Close`. `operator bool` is true when `State` is Idle. No `Seek`. `Tell` is bytes accepted since `Open` or `Truncate`. `Truncate` drops dirty bytes without pushing and calls `OriginTruncate`.
 - `Write(const FIFO&)`, `Write(FIFO&)` and `Write(std::span<const std::byte>)`. Atomic: the whole visible source is accepted or nothing is. FIFO is read from the current position (`FIFO::Read` is const). Source untouched on `TryAgain` / `Failed` / `Error`.
 - `WriteChunk` and `BackPressure` (overridable). Either knob `0` disables the ring: `Write` calls `OriginPush` on the caller thread. Both `> 0` enable an internal SPSC `LockFreeRing`. Cap is `BackPressure * WriteChunk` bytes. A `Write` that would exceed that cap returns `TryAgain`. The worker pushes full `WriteChunk` spans when possible; short `OriginPush` results are retried until complete or `Error`. `Dirty()` is unread ring bytes.
-- `Flush()` returns `IO::Result`, blocks, drains the ring including a short tail, never `TryAgain`. `MaxWait` applies only to `OriginPush`.
-- File write open (when the leaf lands): binary append. Missing parent is `Missing`. No write permission is `NotWritable`. Overwrite is `Truncate`, not an open flag. No `mkdir -p`.
+- `Flush()` returns `IO::Result`, blocks, drains the ring including a short tail, never `TryAgain`, then calls `OriginFlush`. The base also calls `OriginFlush` after a successful direct `Write`. `MaxWait` applies only to `OriginPush`.
+- `StormByte::Buffer::BufferedFileWriter`. `BufferedWrite` leaf over a filesystem path (`ofstream`, binary append). Does not open in the constructor. Creates the file when the parent directory exists. No `mkdir -p`. Missing parent is `Missing`. Path is a directory → `Directory`. No write permission → `NotWritable`. Overwrite is `Truncate`, not an open flag. `OriginFlush` flushes the stream.
+- `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)` for SPSC drain without an intermediate vector.
 
 ### Changed
 
@@ -46,6 +47,7 @@ If you landed here from a release link and have not read the tree:
 ### Tests
 
 - `BufferedFileReaderTests`. Fixtures under `test/files/`. Session and `State`, `Read`/`Peek`, seek, rewind, empty/missing/directory path, NULs, `pattern_256`, prefetch knobs, `MaxMemory(0)`, 4 KiB chunked read, move.
+- `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Session and `State`, create/append/reopen, direct write and span, empty write, Dirty/Tell, hold-until-Flush, full-chunk Dirty, two chunks, BackPressure `TryAgain` atomic, Close flushes dirty, Truncate, move.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
 

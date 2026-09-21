@@ -10,6 +10,10 @@ if(ENABLE_TEST)
 	target_link_libraries(BufferedFileReaderTests StormByte-Buffer)
 	add_test(NAME BufferedFileReaderTests COMMAND BufferedFileReaderTests)
 
+	add_executable(BufferedFileWriterTests buffered_file_writer_test.cxx)
+	target_link_libraries(BufferedFileWriterTests StormByte-Buffer)
+	add_test(NAME BufferedFileWriterTests COMMAND BufferedFileWriterTests)
+
 	add_executable(FIFOTests fifo_test.cxx)
 	target_link_libraries(FIFOTests StormByte-Buffer)
 	add_test(NAME FIFOTests COMMAND FIFOTests)
