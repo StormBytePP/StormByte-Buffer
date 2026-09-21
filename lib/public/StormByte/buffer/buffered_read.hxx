@@ -47,10 +47,6 @@ namespace StormByte {
 			/**
 			 * @class BufferedRead
 			 * @brief Private implementation of @ref StormByte::Buffer::BufferedRead.
-			 *
-			 * Not installed as a documented public API. Owns the cache map,
-			 * cursor, prefetch thread and origin-exhausted flag. Friend of
-			 * the public class so it can call @c Origin* hooks on the leaf.
 			 */
 			class BufferedRead;
 		}
@@ -166,7 +162,10 @@ namespace StormByte {
 				BufferedRead(BufferedRead&& other) noexcept;
 
 				/**
-				 * @brief Virtual destructor. Closes if still open.
+				 * @brief Virtual destructor. Stops the worker. Does not call Origin*.
+				 *
+				 * Leaves must call @ref Close in their destructor so
+				 * @ref OriginClose still runs on a live vtable.
 				 */
 				virtual ~BufferedRead() noexcept;
 

@@ -23,15 +23,18 @@ using namespace StormByte::Buffer;
 
 IO::BufferedRead::BufferedRead(Buffer::BufferedRead& owner, const std::size_t read_ahead,
 		const std::size_t max_memory):
-	m_owner(owner),
+	m_owner(&owner),
 	m_read_ahead(read_ahead),
 	m_max_memory(max_memory) {
 	StartWorker();
 }
 
 IO::BufferedRead::~BufferedRead() {
-	static_cast<void>(Close());
-	StopWorker();
+	Shutdown();
+}
+
+void IO::BufferedRead::Rebind(Buffer::BufferedRead& owner) noexcept {
+	m_owner = &owner;
 }
 
 IO::BufferedRead::operator bool() const noexcept {
@@ -42,7 +45,9 @@ IO::Result IO::BufferedRead::Open() {
 	std::lock_guard lock(m_mutex);
 	if (m_open)
 		return { Status::Ok, 0 };
-	const Result opened = m_owner.OriginOpen();
+	if (!m_owner)
+		return { Status::Failed, 0 };
+	const Result opened = m_owner->OriginOpen();
 	if (opened.status != Status::Ok) {
 		m_failed = true;
 		m_open = false;
@@ -61,11 +66,21 @@ IO::Result IO::BufferedRead::Close() {
 	std::lock_guard lock(m_mutex);
 	if (!m_open)
 		return { Status::Ok, 0 };
-	static_cast<void>(m_owner.OriginClose());
+	if (m_owner)
+		static_cast<void>(m_owner->OriginClose());
 	m_open = false;
 	m_origin_exhausted = true;
 	DropWindow();
 	return { Status::Ok, 0 };
+}
+
+void IO::BufferedRead::Shutdown() {
+	FlushPrefetch();
+	StopWorker();
+	std::lock_guard lock(m_mutex);
+	m_open = false;
+	m_origin_exhausted = true;
+	DropWindow();
 }
 
 IO::Result IO::BufferedRead::Rewind() {
@@ -108,7 +123,7 @@ IO::Result IO::BufferedRead::Peek(const std::size_t n, FIFO& dest) const {
 IO::Result IO::BufferedRead::Seek(const std::ptrdiff_t offset, const Position mode) const {
 	FlushPrefetch();
 	std::lock_guard lock(m_mutex);
-	if (!m_open || m_failed || !m_owner.OriginCanSeek())
+	if (!m_open || m_failed || !m_owner || !m_owner->OriginCanSeek())
 		return { Status::Failed, 0 };
 
 	std::size_t target = m_tell;
@@ -127,7 +142,7 @@ IO::Result IO::BufferedRead::Seek(const std::ptrdiff_t offset, const Position mo
 		}
 	}
 
-	const Result seeked = m_owner.OriginSeek(static_cast<std::ptrdiff_t>(target), Position::Absolute);
+	const Result seeked = m_owner->OriginSeek(static_cast<std::ptrdiff_t>(target), Position::Absolute);
 	if (seeked.status != Status::Ok)
 		return { Status::Failed, 0 };
 
@@ -145,15 +160,17 @@ std::size_t IO::BufferedRead::Tell() const noexcept {
 }
 
 bool IO::BufferedRead::IsSeekable() const noexcept {
-	return m_owner.OriginCanSeek();
+	return m_owner && m_owner->OriginCanSeek();
 }
 
 bool IO::BufferedRead::IsSized() const noexcept {
-	return m_owner.OriginHasSize();
+	return m_owner && m_owner->OriginHasSize();
 }
 
 std::optional<std::size_t> IO::BufferedRead::Size() const noexcept {
-	return m_owner.OriginSize();
+	if (!m_owner)
+		return std::nullopt;
+	return m_owner->OriginSize();
 }
 
 std::size_t IO::BufferedRead::ReadAhead() const noexcept {
@@ -228,9 +245,11 @@ void IO::BufferedRead::Worker() {
 				if (!m_open || m_origin_exhausted || m_window.AvailableBytes() >= target)
 					break;
 			}
+			if (!m_owner)
+				break;
 			FIFO chunk;
 			constexpr std::size_t batch = 4096;
-			const Result pulled = m_owner.OriginPull(batch, chunk);
+			const Result pulled = m_owner->OriginPull(batch, chunk);
 			std::lock_guard inner(m_mutex);
 			if (pulled.status == Status::Failed) {
 				m_failed = true;
@@ -257,10 +276,12 @@ void IO::BufferedRead::DropWindow() const {
 }
 
 IO::Result IO::BufferedRead::PullIntoWindow(const std::size_t n) const {
+	if (!m_owner)
+		return { Status::Failed, 0 };
 	std::size_t need = n;
 	while (need > 0 && !m_origin_exhausted) {
 		FIFO chunk;
-		const Result pulled = m_owner.OriginPull(need, chunk);
+		const Result pulled = m_owner->OriginPull(need, chunk);
 		if (pulled.status == Status::Failed)
 			return { Status::Failed, 0 };
 		if (pulled.count > 0)
@@ -283,7 +304,7 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 	FlushPrefetch();
 
 	std::unique_lock lock(m_mutex);
-	if (!m_open || m_failed)
+	if (!m_open || m_failed || !m_owner)
 		return { Status::Failed, 0 };
 
 	if (n == 0) {
@@ -295,15 +316,15 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 				static_cast<void>(m_window.Peek(0, out));
 		}
 		const std::size_t count = out.AvailableBytes();
-		dest = std::move(out);
-		if (consume) {
+		if (count > 0)
+			dest = std::move(out);
+		if (consume && count > 0) {
 			m_tell += count;
 			m_window_origin = m_tell;
 			TrimWindow();
 		}
 		lock.unlock();
-		if (consume || n == 0)
-			RequestPrefetch();
+		RequestPrefetch();
 		if (count == 0 && m_origin_exhausted)
 			return { Status::End, 0 };
 		return { Status::Ok, count };
@@ -335,8 +356,9 @@ IO::Result IO::BufferedRead::Serve(const std::size_t n, FIFO& dest, const bool c
 	if (take < n && !m_origin_exhausted && !m_failed)
 		return { Status::Failed, 0 };
 
-	dest = std::move(out);
-	if (consume) {
+	if (take > 0)
+		dest = std::move(out);
+	if (consume && take > 0) {
 		m_tell += take;
 		if (m_window.AvailableBytes() == 0)
 			m_window_origin = m_tell;

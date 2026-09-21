@@ -27,11 +27,14 @@ BufferedRead::BufferedRead(const std::size_t read_ahead, const std::size_t max_m
 	m_io(std::make_unique<IO::BufferedRead>(*this, read_ahead, max_memory)) {}
 
 BufferedRead::BufferedRead(BufferedRead&& other) noexcept:
-	m_io(std::move(other.m_io)) {}
+	m_io(std::move(other.m_io)) {
+	if (m_io)
+		m_io->Rebind(*this);
+}
 
 BufferedRead::~BufferedRead() noexcept {
 	if (m_io)
-		static_cast<void>(Close());
+		m_io->Shutdown();
 }
 
 BufferedRead& BufferedRead::operator=(BufferedRead&& other) noexcept {
@@ -39,6 +42,8 @@ BufferedRead& BufferedRead::operator=(BufferedRead&& other) noexcept {
 		if (m_io)
 			static_cast<void>(Close());
 		m_io = std::move(other.m_io);
+		if (m_io)
+			m_io->Rebind(*this);
 	}
 	return *this;
 }

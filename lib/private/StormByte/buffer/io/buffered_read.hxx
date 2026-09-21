@@ -86,7 +86,7 @@ namespace StormByte {
 					BufferedRead(BufferedRead&&) = delete;
 
 					/**
-					 * @brief Stop the worker and close if still open.
+					 * @brief Stop the worker. Does not call OriginClose.
 					 */
 					~BufferedRead();
 
@@ -105,6 +105,12 @@ namespace StormByte {
 					/**
 					 * @}
 					 */
+
+					/**
+					 * @brief Point hooks at a new public instance after a move.
+					 * @param owner Destination public object.
+					 */
+					void Rebind(Buffer::BufferedRead& owner) noexcept;
 
 					/**
 					 * @brief Whether the source is armed and ready to read.
@@ -129,6 +135,15 @@ namespace StormByte {
 					 * @return @ref Status::Ok. Idempotent.
 					 */
 					Result Close();
+
+					/**
+					 * @brief Join the worker and drop caches. Does not call Origin*.
+					 *
+					 * Used from the public destructor when the leaf vtable is
+					 * already gone. Leaves must @ref Close in their destructor
+					 * so @c OriginClose still runs.
+					 */
+					void Shutdown();
 
 					/**
 					 * @brief @ref Close then @ref Open when currently open.
@@ -167,7 +182,7 @@ namespace StormByte {
 					/**
 					 * @brief Consume @p n bytes into @p dest.
 					 * @param n Requested count. Zero serves the current window.
-					 * @param dest Caller FIFO. Overwritten on Ok / End.
+					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and bytes written to @p dest.
 					 */
 					Result Read(std::size_t n, FIFO& dest) const;
@@ -175,7 +190,7 @@ namespace StormByte {
 					/**
 					 * @brief Copy @p n bytes into @p dest without consuming.
 					 * @param n Requested count. Zero copies the current window.
-					 * @param dest Caller FIFO. Overwritten on Ok / End.
+					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and bytes written to @p dest.
 					 */
 					Result Peek(std::size_t n, FIFO& dest) const;
@@ -205,7 +220,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Whether the leaf origin can seek.
-					 * @return @c m_owner.OriginCanSeek().
+					 * @return @c m_owner->OriginCanSeek().
 					 */
 					bool IsSeekable() const noexcept;
 
@@ -220,13 +235,13 @@ namespace StormByte {
 
 					/**
 					 * @brief Whether the leaf origin reports a length.
-					 * @return @c m_owner.OriginHasSize().
+					 * @return @c m_owner->OriginHasSize().
 					 */
 					bool IsSized() const noexcept;
 
 					/**
 					 * @brief Origin length when known.
-					 * @return @c m_owner.OriginSize(), or empty.
+					 * @return @c m_owner->OriginSize(), or empty.
 					 */
 					std::optional<std::size_t> Size() const noexcept;
 
@@ -324,7 +339,7 @@ namespace StormByte {
 					 */
 					void TrimWindow() const;
 
-					Buffer::BufferedRead& m_owner;				///< Public leaf (hooks).
+					Buffer::BufferedRead* m_owner;				///< Public leaf (hooks).
 
 					mutable std::mutex m_mutex;					///< Session + window.
 					mutable std::condition_variable m_cv;		///< Worker / flush waits.

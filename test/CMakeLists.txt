@@ -6,6 +6,10 @@ if(ENABLE_TEST)
 	target_link_libraries(BridgeTests StormByte-Buffer)
 	add_test(NAME BridgeTests COMMAND BridgeTests)
 
+	add_executable(BufferedFileReaderTests buffered_file_reader_test.cxx)
+	target_link_libraries(BufferedFileReaderTests StormByte-Buffer)
+	add_test(NAME BufferedFileReaderTests COMMAND BufferedFileReaderTests)
+
 	add_executable(FIFOTests fifo_test.cxx)
 	target_link_libraries(FIFOTests StormByte-Buffer)
 	add_test(NAME FIFOTests COMMAND FIFOTests)
