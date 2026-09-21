@@ -43,34 +43,32 @@ namespace StormByte {
 			 * @enum Status
 			 * @brief Outcome of a single I/O call.
 			 *
-			 * There is no POSIX EAGAIN name. @ref TryAgain is the
-			 * bounded-wait timeout of @c Read / @c Peek.
+			 * @c TryAgain is backpressure or a bounded wait. It is not POSIX EAGAIN.
 			 *
-			 * @see Result, State, StormByte::Buffer::BufferedRead
+			 * @see Result, State
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Status {
 				Ok,		///< The call completed as requested (see @ref Result::count).
 				End,		///< Origin exhausted; @ref Result::count may be short.
-				Error,		///< Origin failed during the call; destination untouched.
-				Failed,		///< Illegal call or dead session; destination untouched.
-				TryAgain	///< MaxWait elapsed; destination untouched. State stays Idle.
+				Error,		///< Origin failed during the call; buffers untouched.
+				Failed,		///< Illegal call or dead session; buffers untouched.
+				TryAgain	///< Not accepted; buffers untouched. State stays Idle.
 			};
 
 			/**
 			 * @enum State
-			 * @brief Session state of a coordinated reader.
+			 * @brief Session state of a coordinated reader or writer.
 			 *
 			 * Distinct from @ref Status, which is per-call.
-			 *
-			 * @see StormByte::Buffer::BufferedRead::State
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC State {
-				Idle,		///< Armed. Ready to read until a pull proves otherwise.
-				Missing,	///< Last Open: path does not exist.
-				Directory,	///< Last Open: path is a directory.
-				Permission,	///< Last Open: regular file exists; open denied.
-				Fault,		///< Origin I/O error or corrupt mid-read.
-				Unavailable	///< Ctor, after Close, or origin gone / unreachable.
+				Idle,			///< Armed.
+				Missing,		///< Last Open: path or parent does not exist.
+				Directory,		///< Last Open: path is a directory.
+				Permission,		///< Last Open: exists; read open denied.
+				NotWritable,	///< Last Open or mid-write: cannot write.
+				Fault,			///< Origin I/O error mid-transfer.
+				Unavailable		///< Ctor, after Close, or origin gone.
 			};
 
 			/**
@@ -80,9 +78,9 @@ namespace StormByte {
 			 */
 			[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
 				switch (status) {
-					case Status::Ok:	return "Ok";
-					case Status::End:	return "End";
-					case Status::Error:	return "Error";
+					case Status::Ok:		return "Ok";
+					case Status::End:		return "End";
+					case Status::Error:		return "Error";
 					case Status::Failed:	return "Failed";
 					case Status::TryAgain:	return "TryAgain";
 				}
@@ -96,11 +94,12 @@ namespace StormByte {
 			 */
 			[[nodiscard]] constexpr std::string_view ToString(State state) noexcept {
 				switch (state) {
-					case State::Idle:		return "Idle";
+					case State::Idle:			return "Idle";
 					case State::Missing:		return "Missing";
 					case State::Directory:		return "Directory";
 					case State::Permission:		return "Permission";
-					case State::Fault:		return "Fault";
+					case State::NotWritable:	return "NotWritable";
+					case State::Fault:			return "Fault";
 					case State::Unavailable:	return "Unavailable";
 				}
 				return {};
@@ -108,17 +107,17 @@ namespace StormByte {
 
 			/**
 			 * @struct Result
-			 * @brief Per-call status plus how many bytes reached the destination.
+			 * @brief Per-call status plus how many bytes this call transferred.
 			 *
-			 * @c count is 0 when the destination FIFO was not written
+			 * @c count is 0 when the caller buffer was not consumed
 			 * (@ref Status::Failed, @ref Status::Error, @ref Status::TryAgain,
 			 * or @ref Status::End with no remaining bytes).
 			 *
-			 * @see Status, StormByte::Buffer::BufferedRead::Read
+			 * @see Status
 			 */
 			struct STORMBYTE_BUFFER_PUBLIC Result {
-				Status status;		///< Outcome of the call.
-				std::size_t count;	///< Bytes placed in the destination FIFO this call.
+				Status status;					///< Outcome of the call.
+				std::size_t count;				///< Bytes transferred this call.
 			};
 		}
 	}
