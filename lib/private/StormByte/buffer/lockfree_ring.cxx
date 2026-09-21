@@ -18,9 +18,12 @@
  */
 
 #include <StormByte/buffer/lockfree_ring.hxx>
+
 #include <algorithm>
 #include <cstring>
+
 using namespace StormByte::Buffer;
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -129,6 +132,20 @@ const DataType& LockFreeRing::Data() const noexcept {
 	return m_data_cache;
 }
 
+std::span<const std::byte> LockFreeRing::FrontSpan() const noexcept {
+	if (m_error.load(std::memory_order_acquire))
+		return {};
+	const std::size_t logical = m_logical.load(std::memory_order_acquire);
+	const std::size_t tail = m_tail.load(std::memory_order_acquire);
+	if (logical >= tail)
+		return {};
+	const std::size_t avail = tail - logical;
+	const std::size_t pos = logical & m_mask;
+	const std::size_t linear = m_capacity - pos;
+	const std::size_t n = avail < linear ? avail : linear;
+	return std::span<const std::byte>(m_storage.data() + pos, n);
+}
+
 // ---------------------------------------------------------------------------
 // Mutators
 // ---------------------------------------------------------------------------
@@ -162,6 +179,21 @@ bool LockFreeRing::Drop(const std::size_t& count) noexcept {
 	if (count > avail) return false;
 	m_logical.fetch_add(count, std::memory_order_relaxed);
 	m_head.store(m_logical.load(std::memory_order_relaxed), std::memory_order_release);
+	m_cv.notify_all();
+	return true;
+}
+
+bool LockFreeRing::Consume(const std::size_t n) noexcept {
+	if (n == 0)
+		return true;
+	if (m_error.load(std::memory_order_acquire))
+		return false;
+	const std::size_t avail = AvailableBytes();
+	if (n > avail)
+		return false;
+	const std::size_t next = m_logical.load(std::memory_order_relaxed) + n;
+	m_logical.store(next, std::memory_order_relaxed);
+	m_head.store(next, std::memory_order_release);
 	m_cv.notify_all();
 	return true;
 }
@@ -435,4 +467,10 @@ bool LockFreeRing::Write(const std::size_t& count, ReadOnly&& data) noexcept {
 	DataType tmp;
 	if (!data.Extract(count, tmp)) return false;
 	return Write(0, std::move(tmp));
+}
+
+bool LockFreeRing::Write(const std::span<const std::byte> src) noexcept {
+	if (src.empty())
+		return true;
+	return WriteInternal(src.size(), src.data());
 }

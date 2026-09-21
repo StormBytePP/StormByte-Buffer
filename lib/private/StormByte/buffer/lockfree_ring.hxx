@@ -26,6 +26,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <vector>
 
 /**
@@ -148,6 +149,15 @@ namespace StormByte::Buffer {
 			 */
 			const DataType& Data() const noexcept override;
 
+			/**
+			 * @brief Longest contiguous unread span from the read cursor.
+			 * @return Empty if none. Does not wrap; call again after Consume.
+			 *
+			 * Valid until the next producer Grow or a Consume/Extract that
+			 * advances past this span.
+			 */
+			std::span<const std::byte> FrontSpan() const noexcept;
+
 			/** @} */
 
 			/**
@@ -185,6 +195,13 @@ namespace StormByte::Buffer {
 			 * @return @c true on success, @c false if fewer bytes were available.
 			 */
 			bool Drop(const std::size_t& count) noexcept override;
+
+			/**
+			 * @brief Advance the read cursor by @p n bytes.
+			 * @param n Bytes to drop from the front. 0 is success.
+			 * @return @c false if @p n exceeds @ref AvailableBytes.
+			 */
+			bool Consume(std::size_t n) noexcept;
 
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
@@ -324,6 +341,13 @@ namespace StormByte::Buffer {
 			 * @return @c true on success, @c false if closed / error.
 			 */
 			bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
+
+			/**
+			 * @brief Append a span (copy into the ring).
+			 * @param src Octets to store.
+			 * @return @c false if closed or in error.
+			 */
+			bool Write(std::span<const std::byte> src) noexcept;
 
 			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
 			using WriteOnly::Write;
