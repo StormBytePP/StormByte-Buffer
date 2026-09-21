@@ -22,37 +22,20 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `StormByte::Buffer::IO`. Buffered binary sources and sinks, distinct from FIFO / Ring / Hopper. Holds `Status`, `State`, `Result`, `ToString`, `BufferedReader`, `BufferedWriter` and the file leaves.
-- `StormByte::Buffer::IO::Backend`. PIMPL coordinators (`Backend::BufferedReader`, `Backend::BufferedWriter`). Not part of the public include surface.
-- `StormByte::Buffer::IO::Status` and `StormByte::Buffer::IO::Result`. `Ok` / `End` / `Error` / `Failed` / `TryAgain` plus a byte `count`. `TryAgain` is backpressure or a bounded wait. `constexpr ToString` for `Status` and `State`.
-- `StormByte::Buffer::IO::State`: `Idle`, `Missing`, `Directory`, `Permission`, `NotWritable`, `Fault`, `Unavailable`.
-- `StormByte::Buffer::IO::BufferedReader`. Public base for a binary read origin with optional prefetch. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`.
-- Read session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` is idempotent. `Open` is not. `Close` then `Open` is a valid round-trip. `operator bool` is true when `State` is Idle and not `EoF`.
-- `Read(n, FIFO&)` / `Peek(n, FIFO&)`. Destination overwritten on `Ok` / `End` with a non-zero count. Untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `MaxWait` of `0ms` waits without limit. A positive `MaxWait` returns `TryAgain` on timeout.
-- Policy setters (`ReadAhead`, `MaxMemory`, `MaxWait`) take effect immediately. Lowering a cap may drop cached bytes. The setter waits until prefetch is cancelled and the window is trimmed.
-- `StormByte::Buffer::IO::BufferedFileReader`. File leaf (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory`. Seekable and sized. Does not open in the constructor.
-- `StormByte::Buffer::IO::BufferedWriter`. Public base for a binary write sink. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush` and `OriginTruncate`. Movable, not copyable.
-- Write session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` always `Flush` then `OriginClose`. Flush failure leaves `Fault`. `operator bool` is true when `State` is Idle. No `Seek`. `Tell` is bytes accepted since `Open` or `Truncate`.
-- `Write(const FIFO&)`, `Write(FIFO&)` and `Write(std::span<const std::byte>)`. Atomic. FIFO read from the current position. Source untouched on `TryAgain` / `Failed` / `Error`.
-- `WriteChunk` and `BackPressure`. Either knob `0` is direct mode. Both `> 0` enable an SPSC `LockFreeRing`. Cap is `BackPressure * WriteChunk` bytes. Overflow is `TryAgain`. `Dirty()` is unread ring bytes. Setters take effect immediately and may `Flush`.
-- `Flush()` returns `IO::Result`, drains the ring, never `TryAgain`, then `OriginFlush`. Direct `Write` also calls `OriginFlush`.
-- `StormByte::Buffer::IO::BufferedFileWriter`. File leaf (`ofstream`, binary append). Creates the file when the parent exists. No `mkdir -p`. Missing parent is `Missing`. Directory is `Directory`. No write permission is `NotWritable`. Overwrite is `Truncate`.
-- `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
+- `IO::BufferedReader` and `IO::BufferedWriter`: public bases for a binary origin or sink. Leaves implement only the `Origin*` hooks. `Open` is not idempotent; `Close` is. `operator bool` is true when `State` is Idle and the instance can still read or write. `Read`/`Write` are blocking for the requested bytes; configured prefetch or write-behind runs after that. `MaxWait` of `0ms` waits without a cap. `TryAgain` is returned when that cap is hit or when a write would exceed `BackPressure`. Policy setters take effect immediately.
+- `IO::BufferedFileReader` and `IO::BufferedFileWriter`: file leaves (`ifstream` / `ofstream` binary). Writer `Open` is append; overwrite is `Truncate`. No `mkdir -p`. Parent missing is `Missing`, a directory is `Directory`, no write permission is `NotWritable`. `WillWrite` on the file writer also probes free space (`statvfs` / `GetDiskFreeSpaceExW`); that probe is indicative (races, quotas, network FS).
+- `IO::Status`, `IO::State`, `IO::Result` and `IO::ToString` in `StormByte/buffer/io/typedefs.hxx`.
 
 ### Changed
+
+- `Bridge` pumps bytes between `ExternalReader`/`ExternalWriter` and `IO::BufferedReader`/`IO::BufferedWriter` in any pairing. It holds references only; tips must outlive every `Passthrough`. No local cache and no configured chunk: `Passthrough(n)` is the unit (`n == 0` is whatever is available on the source now). Writers are never const. `Passthrough` blocks and is transactional: the sink is checked (`IsWritable` / `WillWrite`) before the source is consumed. External sources are `Extract`ed. `Flush` is a no-op on an External sink and `Flush` on an IO writer. `FlushAndClose` closes only an External writer. `SetError` is External only. Move-from `Passthrough` is a no-op.
 
 ### Fixed
 
 ### Removed
 
 - `Sink::Bind` and `Sink::Bind(int, Sink&)`. Wire with `To(key)` / `>>` / `<<`.
-
-### Tests
-
-- `BufferedFileReaderTests`. Fixtures under `test/files/`.
-- `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Dirty / Tell / Flush / BackPressure / Truncate / move.
-
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
+- `Bridge` chunk size, leftover FIFO, `PendingBytes`, `ChunkSize`, copy of External handlers, and const `Passthrough` / `Flush`.
 
 ## [1.3.0] - 2026-09-20
 

@@ -21,239 +21,176 @@
 
 #include <StormByte/buffer/external.hxx>
 #include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_reader.hxx>
+#include <StormByte/buffer/io/buffered_writer.hxx>
+#include <StormByte/buffer/visibility.h>
+
+#include <cstddef>
+#include <memory>
 
 /**
- * @namespace StormByte::Buffer
- * @brief Buffer module of the StormByte suite.
+ * @namespace StormByte
+ * @brief Root namespace of the StormByte C++ suite.
  */
-namespace StormByte::Buffer {
+namespace StormByte {
 	/**
-	 * @class Bridge
-	 * @brief Pass-through adapter that forwards bytes from an @ref ExternalReader
-	 *        to an @ref ExternalWriter in fixed-size chunks.
-	 *
-	 * @par Overview
-	 * The Bridge connects an ExternalReader (source) and an ExternalWriter (sink).
-	 * It reads data from the reader and forwards it to the writer in blocks of
-	 * @c chunk_size bytes. A small internal @ref FIFO accumulates leftovers
-	 * between calls.
-	 *
-	 * @par Key behaviour
-	 * - When enough bytes are available (≥ @c chunk_size) the bridge forwards
-	 *   whole chunks via @ref ExternalWriter::Write().
-	 * - If @c chunk_size is zero, chunking is disabled: every read is written
-	 *   immediately (no accumulation of leftovers).
-	 * - After a successful passthrough the internal buffer contains at most
-	 *   @c chunk_size - 1 bytes. @ref Flush() writes any remaining bytes in a
-	 *   single call.
-	 * - The destructor automatically calls @ref Flush().
-	 *
-	 * @par End-of-stream and error handling
-	 * - @ref FlushAndClose() flushes pending data and then calls
-	 *   @c out.Close() on the writer.
-	 * - @ref SetError() propagates the error state to the writer.
-	 * - @ref EoF(), @ref IsReadable() and @ref IsWritable() delegate to the
-	 *   underlying reader / writer.
-	 *
-	 * @par Thread safety
-	 * The Bridge is **not thread-safe**. It is intended for single-threaded use
-	 * only. Concurrent access requires external synchronization.
-	 *
-	 * @note The internal buffer is marked @c mutable so that logically-const
-	 *       operations (const overloads of Passthrough / Flush) may update it.
-	 *       This does **not** imply thread safety.
-	 *
-	 * @see ExternalReader, ExternalWriter, FIFO, Pipeline
+	 * @namespace StormByte::Buffer
+	 * @brief Buffer module of the StormByte suite.
 	 */
-	class STORMBYTE_BUFFER_PUBLIC Bridge {
-		public:
+	namespace Buffer {
+		/**
+		 * @namespace StormByte::Buffer::IO
+		 * @brief Buffered binary sources and sinks.
+		 */
+		namespace IO {
 			/**
-			 * @name Constructors / destructor / assignment
-			 * @{
+			 * @namespace StormByte::Buffer::IO::Backend
+			 * @brief PIMPL coordinators for the public IO types.
 			 */
-
-			/**
-			 * @brief Construct a Bridge by cloning the supplied handlers.
-			 * @param in External reader used as source.
-			 * @param out External writer used as sink.
-			 * @param chunk_size Size of each write chunk.
-			 *                   If zero, chunking is disabled and every read is
-			 *                   forwarded immediately.
-			 */
-			inline Bridge(const ExternalReader& in,
-						const ExternalWriter& out,
-						std::size_t chunk_size = 4096) noexcept
-				: m_buffer()
-				, m_read_handler(in.Clone())
-				, m_write_handler(out.Clone())
-				, m_chunk_size(chunk_size)
-			{}
-
-			/**
-			 * @brief Construct a Bridge by moving the supplied handlers.
-			 * @param in External reader (will be moved).
-			 * @param out External writer (will be moved).
-			 * @param chunk_size Size of each write chunk (0 = no chunking).
-			 */
-			inline Bridge(ExternalReader&& in,
-						ExternalWriter&& out,
-						std::size_t chunk_size = 4096) noexcept
-				: m_buffer()
-				, m_read_handler(in.Move())
-				, m_write_handler(out.Move())
-				, m_chunk_size(chunk_size)
-			{}
-
-			/**
-			 * @brief Copy constructor (deleted – Bridge is non-copyable).
-			 */
-			Bridge(const Bridge&) = delete;
-
-			/**
-			 * @brief Move constructor.
-			 */
-			Bridge(Bridge&&) noexcept = default;
-
-			/**
-			 * @brief Destructor.
-			 * @details Automatically attempts to flush any pending bytes via @ref Flush().
-			 */
-			inline ~Bridge() noexcept {
-				Flush();
+			namespace Backend {
+				/**
+				 * @class Bridge
+				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
+				 */
+				class Bridge;
 			}
+		}
 
-			/**
-			 * @brief Copy assignment (deleted – Bridge is non-copyable).
-			 */
-			Bridge& operator=(const Bridge&) = delete;
+		/**
+		 * @class Bridge
+		 * @brief Move bytes from a source to a sink.
+		 *
+		 * Pairings: ExternalReader/Writer, IO::BufferedReader/Writer, or mixed.
+		 * Holds references only. Tips must outlive the Bridge and every
+		 * Passthrough. Does not Open or Seek. No local cache. No configured
+		 * chunk: @c Passthrough(n) is the unit.
+		 *
+		 * External sources are consumed with Extract (Read only if Extract
+		 * fails). IO sources use Read, which already consumes. Writers are
+		 * never const.
+		 *
+		 * @c Passthrough(n) blocks and is transactional: the whole request
+		 * lands on the sink or neither tip is consumed. @c n == 0 moves
+		 * what is available on the source now. A short read at EoF is
+		 * success and marks EoF; it is not Failed.
+		 *
+		 * @ref Flush is a no-op on an External sink and @c Flush on an
+		 * IO writer. The destructor Flushes.
+		 *
+		 * @see ExternalReader, ExternalWriter, IO::BufferedReader, IO::BufferedWriter
+		 */
+		class STORMBYTE_BUFFER_PUBLIC Bridge {
+			public:
+				/**
+				 * @name Lifecycle
+				 * @{
+				 */
 
-			/**
-			 * @brief Move assignment.
-			 */
-			Bridge& operator=(Bridge&&) noexcept = default;
+				/**
+				 * @brief Buffer → buffer. Tips not owned.
+				 * @param in Source.
+				 * @param out Sink.
+				 */
+				Bridge(ExternalReader& in, ExternalWriter& out) noexcept;
 
-			/** @} */
+				/**
+				 * @brief IO → IO. Tips must already be armed. Not owned.
+				 * @param in Source.
+				 * @param out Sink.
+				 */
+				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept;
 
-			/**
-			 * @name Configuration and status
-			 * @{
-			 */
+				/**
+				 * @brief Buffer → IO. Tips not owned.
+				 * @param in Source.
+				 * @param out Sink.
+				 */
+				Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept;
 
-			/**
-			 * @brief Configured chunk size.
-			 * @return Chunk size in bytes (0 means “no chunking”).
-			 */
-			inline std::size_t ChunkSize() const noexcept {
-				return m_chunk_size;
-			}
+				/**
+				 * @brief IO → buffer. Tips not owned.
+				 * @param in Source.
+				 * @param out Sink.
+				 */
+				Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept;
 
-			/**
-			 * @brief Number of bytes currently waiting in the internal buffer.
-			 * @return Pending bytes (always &lt; @c chunk_size when chunking is enabled).
-			 */
-			inline std::size_t PendingBytes() const noexcept {
-				return m_buffer.Size();
-			}
+				/**
+				 * @brief Copy constructor is deleted.
+				 */
+				Bridge(const Bridge&) = delete;
 
-			/**
-			 * @brief Check whether the source has reached end-of-stream.
-			 * @return @c true when the underlying reader reports EoF.
-			 */
-			inline bool EoF() const noexcept {
-				return m_read_handler->EoF();
-			}
+				/**
+				 * @brief Move constructor. Moved-from Passthrough is a no-op.
+				 * @param other Instance to take from.
+				 */
+				Bridge(Bridge&& other) noexcept;
 
-			/**
-			 * @brief Check whether the source is still readable.
-			 * @return @c true if the underlying reader is readable; @c false on error.
-			 */
-			inline bool IsReadable() const noexcept {
-				return m_read_handler->IsReadable();
-			}
+				/**
+				 * @brief Destructor. Calls @ref Flush.
+				 */
+				~Bridge() noexcept;
 
-			/**
-			 * @brief Check whether the sink still accepts writes.
-			 * @return @c true if the underlying writer is writable; @c false if closed or in error.
-			 */
-			inline bool IsWritable() const noexcept {
-				return m_write_handler->IsWritable();
-			}
+				/**
+				 * @brief Copy assignment is deleted.
+				 * @return *this.
+				 */
+				Bridge& operator=(const Bridge&) = delete;
 
-			/** @} */
+				/**
+				 * @brief Move assignment. Moved-from Passthrough is a no-op.
+				 * @param other Instance to take from.
+				 * @return *this.
+				 */
+				Bridge& operator=(Bridge&& other) noexcept;
 
-			/**
-			 * @name Lifecycle and error propagation
-			 * @{
-			 */
+				/**
+				 * @}
+				 */
 
-			/**
-			 * @brief Flush any pending bytes to the writer.
-			 * @return @c true on success (or if there was nothing to flush),
-			 *         @c false on write error.
-			 */
-			bool Flush() const noexcept;
+				/**
+				 * @brief Whether the source reports end-of-stream.
+				 * @return @c true on EoF.
+				 */
+				bool EoF() const noexcept;
 
-			/**
-			 * @brief Flush pending bytes and then close the writer.
-			 * @return @c true if the flush (and subsequent close) succeeded.
-			 * @details Equivalent to @c Flush() followed by @c out.Close().
-			 *          After this call the writer will reject further writes.
-			 */
-			bool FlushAndClose() const noexcept;
+				/**
+				 * @brief Whether the source can be read.
+				 * @return @c false on error or closed.
+				 */
+				bool IsReadable() const noexcept;
 
-			/**
-			 * @brief Propagate a permanent error to the writer.
-			 * @details Calls @c SetError() on the underlying @ref ExternalWriter.
-			 *          Subsequent writes will fail and readers may observe the error.
-			 */
-			void SetError() const noexcept;
+				/**
+				 * @brief Whether the sink accepts writes.
+				 * @return @c false if closed or failed.
+				 */
+				bool IsWritable() const noexcept;
 
-			/** @} */
+				/**
+				 * @brief External sink: no-op. IO sink: @c BufferedWriter::Flush.
+				 * @return @c true on success or if there was nothing to flush.
+				 */
+				bool Flush() noexcept;
 
-			/**
-			 * @name Passthrough
-			 * @{
-			 */
+				/**
+				 * @brief @ref Flush then Close an External writer. IO: Flush only.
+				 * @return @c true if Flush succeeded.
+				 */
+				bool FlushAndClose() noexcept;
 
-			/**
-			 * @brief Read up to @p bytes from the source and forward them to the sink
-			 *        (const overload – non-destructive read when the reader supports it).
-			 * @param bytes Number of bytes to request (0 = none).
-			 * @return @c true on success, @c false on read or write failure.
-			 *
-			 * @details Data is written in blocks of @c chunk_size. Any tail shorter
-			 *          than @c chunk_size is kept in the internal buffer and will be
-			 *          sent on a later call or by @ref Flush().
-			 */
-			bool Passthrough(std::size_t bytes) const noexcept;
+				/**
+				 * @brief @c SetError on an External writer. No-op on IO.
+				 */
+				void SetError() noexcept;
 
-			/**
-			 * @brief Read up to @p bytes from the source and forward them to the sink
-			 *        (non-const overload – may consume data destructively).
-			 * @param bytes Number of bytes to request (0 = none).
-			 * @return @c true on success, @c false on read or write failure.
-			 *
-			 * @details Same chunking rules as the const overload. Prefer this overload
-			 *          when the source should be consumed (e.g. pipeline stages).
-			 */
-			bool Passthrough(std::size_t bytes) noexcept;
+				/**
+				 * @brief Move up to @p bytes from source to sink. Blocks.
+				 * @param bytes 0 = available now.
+				 * @return @c true on success.
+				 */
+				bool Passthrough(std::size_t bytes) noexcept;
 
-			/** @} */
-
-		private:
-			mutable FIFO m_buffer;							///< Leftover bytes (< chunk_size when chunking)
-			ExternalReader::PointerType m_read_handler;		///< Owned reader adapter
-			ExternalWriter::PointerType m_write_handler;	///< Owned writer adapter
-			std::size_t m_chunk_size;						///< 0 = write everything immediately
-
-			/**
-			 * @brief Write @p data (plus any previous leftovers) to the sink in chunks.
-			 * @param data Newly read data (moved from).
-			 * @return @c true on success, @c false if any write failed.
-			 *
-			 * @details On failure the remaining unwritten bytes are preserved in
-			 *          @c m_buffer so they are not lost.
-			 */
-			bool PassthroughWrite(DataType&& data) const noexcept;
-	};
+			private:
+				std::unique_ptr<IO::Backend::Bridge> m_io;	///< Pump.
+		};
+	}
 }

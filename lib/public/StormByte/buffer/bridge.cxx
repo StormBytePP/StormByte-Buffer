@@ -18,103 +18,61 @@
  */
 
 #include <StormByte/buffer/bridge.hxx>
-#include <algorithm>
+#include <StormByte/buffer/io/backend/bridge.hxx>
+
 using namespace StormByte::Buffer;
-// ---------------------------------------------------------------------------
-// Flush / Close / Error
-// ---------------------------------------------------------------------------
-bool Bridge::Flush() const noexcept {
-	if (m_buffer.Empty())
-		return true;
-	DataType data;
-	if (!m_buffer.Extract(0, data))
-		return false;
-	if (data.empty())
-		return true;
-	return m_write_handler->Write(std::move(data));
+
+Bridge::Bridge(ExternalReader& in, ExternalWriter& out) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+
+Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+
+Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+
+Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+
+Bridge::Bridge(Bridge&& other) noexcept:
+	m_io(std::move(other.m_io)) {}
+
+Bridge::~Bridge() noexcept {
+	if (m_io)
+		static_cast<void>(m_io->Flush());
 }
 
-bool Bridge::FlushAndClose() const noexcept {
-	const bool ok = Flush();
-	m_write_handler->Close();
-	return ok;
+Bridge& Bridge::operator=(Bridge&& other) noexcept {
+	if (this != &other)
+		m_io = std::move(other.m_io);
+	return *this;
 }
 
-void Bridge::SetError() const noexcept {
-	m_write_handler->SetError();
+bool Bridge::EoF() const noexcept {
+	return m_io && m_io->EoF();
 }
 
-// ---------------------------------------------------------------------------
-// Passthrough entry points
-// ---------------------------------------------------------------------------
-bool Bridge::Passthrough(std::size_t bytes) const noexcept {
-	// NO hacer early-return si bytes == 0:
-	// 0 significa "todo lo disponible" en la semántica del reader.
-	DataType out;
-	if (!m_read_handler->Read(bytes, out))
-		return false;
-	return PassthroughWrite(std::move(out));
+bool Bridge::IsReadable() const noexcept {
+	return m_io && m_io->IsReadable();
 }
 
-bool Bridge::Passthrough(std::size_t bytes) noexcept {
-	DataType out;
-	if (!m_read_handler->Extract(bytes, out)) {
-		if (!m_read_handler->Read(bytes, out))
-			return false;
-	}
-
-	return PassthroughWrite(std::move(out));
+bool Bridge::IsWritable() const noexcept {
+	return m_io && m_io->IsWritable();
 }
 
-// ---------------------------------------------------------------------------
-// Core chunking logic
-// ---------------------------------------------------------------------------
-bool Bridge::PassthroughWrite(DataType&& data) const noexcept {
-	// Fast path: no previous leftovers and no chunking
-	if (m_buffer.Empty() && m_chunk_size == 0) {
-		if (data.empty())
-			return true;
-		return m_write_handler->Write(std::move(data));
-	}
+bool Bridge::Flush() noexcept {
+	return !m_io || m_io->Flush();
+}
 
-	// Merge previous leftovers + new data
-	DataType combined;
-	const DataType& existing = m_buffer.Data();
-	combined.reserve(existing.size() + data.size());
-	if (!existing.empty())
-		combined.insert(combined.end(), existing.begin(), existing.end());
-	if (!data.empty()) {
-		combined.insert(combined.end(),
-						std::make_move_iterator(data.begin()),
-						std::make_move_iterator(data.end()));
-	}
+bool Bridge::FlushAndClose() noexcept {
+	return !m_io || m_io->FlushAndClose();
+}
 
-	// Clear the internal buffer; we will put back only the final remainder
-	m_buffer.Clear();
-	if (combined.empty())
-		return true;
-	// No chunking → write everything
-	if (m_chunk_size == 0)
-		return m_write_handler->Write(std::move(combined));
-	// Write as many full chunks as possible
-	std::size_t pos = 0;
-	bool ok = true;
-	while (ok && pos + m_chunk_size <= combined.size()) {
-		DataType chunk(combined.begin() + static_cast<std::ptrdiff_t>(pos),
-					combined.begin() + static_cast<std::ptrdiff_t>(pos + m_chunk_size));
-		ok = m_write_handler->Write(std::move(chunk));
-		if (ok)
-			pos += m_chunk_size;
-	}
+void Bridge::SetError() noexcept {
+	if (m_io)
+		m_io->SetError();
+}
 
-	// Store the unwritten tail (if any) back into the internal buffer
-	if (pos < combined.size()) {
-		DataType remainder(
-			std::make_move_iterator(combined.begin() + static_cast<std::ptrdiff_t>(pos)),
-			std::make_move_iterator(combined.end())
-		);
-		(void)m_buffer.Write(std::move(remainder));
-	}
-
-	return ok;
+bool Bridge::Passthrough(const std::size_t bytes) noexcept {
+	return m_io && m_io->Passthrough(bytes);
 }

@@ -18,11 +18,22 @@
  */
 
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
 #include <StormByte/string.hxx>
+#include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
+
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::ExternalBufferReader;
@@ -31,626 +42,811 @@ using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
-// ---------------------------------------------------------------------------
-// Test helpers – full ExternalReader / ExternalWriter implementations
-// ---------------------------------------------------------------------------
+using StormByte::Buffer::IO::BufferedFileReader;
+using StormByte::Buffer::IO::BufferedFileWriter;
+using StormByte::Buffer::IO::State;
+using StormByte::Buffer::IO::Status;
+using StormByte::Buffer::IO::ToString;
+using StormByte::System::TempFileName;
+
+// -------------------
+// Helpers
+// -------------------
+
+static std::filesystem::path File(const char* name) {
+	return CurrentFileDirectory / "files" / name;
+}
+
+static std::filesystem::path Scratch(const char* tag) {
+	return std::filesystem::path(TempFileName(std::string("sbr_") + tag));
+}
+
+static std::string Slurp(const std::filesystem::path& path) {
+	std::ifstream in(path, std::ios::in | std::ios::binary);
+	if (!in)
+		return {};
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+static FIFO FromText(const std::string& text) {
+	FIFO fifo;
+	DataType data(text.size());
+	for (std::size_t i = 0; i < text.size(); ++i)
+		data[i] = static_cast<std::byte>(text[i]);
+	static_cast<void>(fifo.Write(data.size(), std::move(data)));
+	return fifo;
+}
+
+static std::string FifoText(const FIFO& fifo) {
+	return StormByte::String::FromByteVector(fifo.Data());
+}
+
+static bool WaitDirtyZero(BufferedFileWriter& out) {
+	for (int i = 0; i < 80; ++i) {
+		if (out.Dirty() == 0)
+			return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	return out.Dirty() == 0;
+}
+
 class FaultyReader final : public ExternalReader {
-public:
-	explicit FaultyReader(FIFO& from) noexcept
-		: m_source(from), m_fail_extract(true), m_fail_read(true) {}
+	public:
+		explicit FaultyReader(FIFO& from) noexcept
+			: m_source(from), m_fail_extract(true), m_fail_read(true) {}
 
-	std::size_t AvailableBytes() const noexcept override {
-		return m_source.AvailableBytes();
-	}
-
-	bool Empty() const noexcept override { return m_source.Empty(); }
-	bool EoF() const noexcept override { return m_source.EoF(); }
-	bool IsReadable() const noexcept override { return m_source.IsReadable(); }
-
-	bool Read(std::size_t bytes, DataType& out) const noexcept override {
-		if (m_fail_read) {
-			m_fail_read = false;
-			return false;
+		std::size_t AvailableBytes() const noexcept override {
+			return m_source.AvailableBytes();
 		}
 
-		return m_source.Extract(bytes, out);
-	}
+		bool Empty() const noexcept override { return m_source.Empty(); }
+		bool EoF() const noexcept override { return m_source.EoF(); }
+		bool IsReadable() const noexcept override { return m_source.IsReadable(); }
 
-	bool Extract(std::size_t bytes, DataType& out) noexcept override {
-		if (m_fail_extract) {
-			m_fail_extract = false;
-			return false;
+		bool Read(std::size_t bytes, DataType& out) const noexcept override {
+			if (m_fail_read) {
+				m_fail_read = false;
+				return false;
+			}
+			return m_source.Extract(bytes, out);
 		}
 
-		return m_source.Extract(bytes, out);
-	}
+		bool Extract(std::size_t bytes, DataType& out) noexcept override {
+			if (m_fail_extract) {
+				m_fail_extract = false;
+				return false;
+			}
+			return m_source.Extract(bytes, out);
+		}
 
-	bool Peek(std::size_t bytes, DataType& out) const noexcept override {
-		return m_source.Peek(bytes, out);
-	}
+		bool Peek(std::size_t bytes, DataType& out) const noexcept override {
+			return m_source.Peek(bytes, out);
+		}
 
-	void ReadUntilEoF(DataType& out) const noexcept override {
-		m_source.ReadUntilEoF(out);
-	}
+		void ReadUntilEoF(DataType& out) const noexcept override {
+			m_source.ReadUntilEoF(out);
+		}
 
-	void ExtractUntilEoF(DataType& out) noexcept override {
-		m_source.ExtractUntilEoF(out);
-	}
+		void ExtractUntilEoF(DataType& out) noexcept override {
+			m_source.ExtractUntilEoF(out);
+		}
 
-	void Seek(std::ptrdiff_t offset, Position mode) const noexcept override {
-		m_source.Seek(offset, mode);
-	}
+		void Seek(std::ptrdiff_t offset, Position mode) const noexcept override {
+			m_source.Seek(offset, mode);
+		}
 
-	void Clean() noexcept override { m_source.Clean(); }
+		void Clean() noexcept override { m_source.Clean(); }
 
-	PointerType Clone() const noexcept override {
-		return MakePointer<FaultyReader>(m_source);
-	}
+		PointerType Clone() const noexcept override {
+			return MakePointer<FaultyReader>(m_source);
+		}
 
-	PointerType Move() noexcept override {
-		return MakePointer<FaultyReader>(m_source);
-	}
+		PointerType Move() noexcept override {
+			return MakePointer<FaultyReader>(m_source);
+		}
 
-private:
-	FIFO& m_source;
-	mutable bool m_fail_extract;
-	mutable bool m_fail_read;
+	private:
+		FIFO& m_source;
+		mutable bool m_fail_extract;
+		mutable bool m_fail_read;
 };
 
-/**
- * FailingWriter: accepts a limited number of successful Write calls.
- */
 class FailingWriter final : public ExternalWriter {
-public:
-	FailingWriter(FIFO& to, std::size_t succeed_calls) noexcept
-		: m_target(to), m_succeed(succeed_calls), m_calls(0), m_closed(false), m_error(false) {}
+	public:
+		FailingWriter(FIFO& to, std::size_t succeed_calls) noexcept
+			: m_target(to), m_succeed(succeed_calls), m_calls(0), m_closed(false), m_error(false) {}
 
-	bool IsWritable() const noexcept override {
-		return !m_closed && !m_error;
-	}
-
-	bool Write(const DataType& data) noexcept override {
-		DataType copy = data;
-		return Write(std::move(copy));
-	}
-
-	bool Write(DataType&& in) noexcept override {
-		if (m_closed || m_error)
-			return false;
-		if (m_calls < m_succeed) {
-			++m_calls;
-			return m_target.Write(std::move(in));
+		bool IsWritable() const noexcept override {
+			return !m_closed && !m_error;
 		}
 
-		return false;
-	}
-
-	bool Write(std::size_t count, const DataType& data) noexcept override {
-		if (count == 0)
-			return Write(data);
-		DataType tmp(data.begin(),
-					data.begin() + static_cast<std::ptrdiff_t>(std::min(count, data.size())));
-		return Write(std::move(tmp));
-	}
-
-	bool Write(std::size_t count, DataType&& data) noexcept override {
-		if (count == 0)
-			return Write(std::move(data));
-		if (count < data.size())
-			data.resize(count);
-		return Write(std::move(data));
-	}
-
-	void Close() noexcept override { m_closed = true; }
-	void SetError() noexcept override { m_error = true; }
-
-	PointerType Clone() const noexcept override {
-		return MakePointer<FailingWriter>(m_target, m_succeed);
-	}
-
-	PointerType Move() noexcept override {
-		return MakePointer<FailingWriter>(m_target, m_succeed);
-	}
-
-private:
-	FIFO& m_target;
-	std::size_t m_succeed;
-	std::size_t m_calls;
-	bool m_closed;
-	bool m_error;
-};
-
-/**
- * FailingWriterOnce: only the first Write succeeds.
- */
-class FailingWriterOnce final : public ExternalWriter {
-public:
-	explicit FailingWriterOnce(FIFO& to) noexcept
-		: m_target(to), m_called(false), m_closed(false), m_error(false) {}
-
-	bool IsWritable() const noexcept override {
-		return !m_closed && !m_error;
-	}
-
-	bool Write(const DataType& data) noexcept override {
-		DataType copy = data;
-		return Write(std::move(copy));
-	}
-
-	bool Write(DataType&& in) noexcept override {
-		if (m_closed || m_error)
-			return false;
-		if (!m_called) {
-			m_called = true;
-			return m_target.Write(std::move(in));
+		bool Write(const DataType& data) noexcept override {
+			DataType copy = data;
+			return Write(std::move(copy));
 		}
 
-		return false;
-	}
+		bool Write(DataType&& in) noexcept override {
+			if (m_closed || m_error)
+				return false;
+			if (m_calls < m_succeed) {
+				++m_calls;
+				return m_target.Write(std::move(in));
+			}
+			return false;
+		}
 
-	bool Write(std::size_t count, const DataType& data) noexcept override {
-		if (count == 0)
-			return Write(data);
-		DataType tmp(data.begin(),
-					data.begin() + static_cast<std::ptrdiff_t>(std::min(count, data.size())));
-		return Write(std::move(tmp));
-	}
+		bool Write(std::size_t count, const DataType& data) noexcept override {
+			if (count == 0)
+				return Write(data);
+			DataType tmp(data.begin(),
+				data.begin() + static_cast<std::ptrdiff_t>(std::min(count, data.size())));
+			return Write(std::move(tmp));
+		}
 
-	bool Write(std::size_t count, DataType&& data) noexcept override {
-		if (count == 0)
+		bool Write(std::size_t count, DataType&& data) noexcept override {
+			if (count == 0)
+				return Write(std::move(data));
+			if (count < data.size())
+				data.resize(count);
 			return Write(std::move(data));
-		if (count < data.size())
-			data.resize(count);
-		return Write(std::move(data));
-	}
+		}
 
-	void Close() noexcept override { m_closed = true; }
-	void SetError() noexcept override { m_error = true; }
+		void Close() noexcept override { m_closed = true; }
+		void SetError() noexcept override { m_error = true; }
 
-	PointerType Clone() const noexcept override {
-		return MakePointer<FailingWriterOnce>(m_target);
-	}
+		PointerType Clone() const noexcept override {
+			return MakePointer<FailingWriter>(m_target, m_succeed);
+		}
 
-	PointerType Move() noexcept override {
-		return MakePointer<FailingWriterOnce>(m_target);
-	}
+		PointerType Move() noexcept override {
+			return MakePointer<FailingWriter>(m_target, m_succeed);
+		}
 
-private:
-	FIFO& m_target;
-	bool m_called;
-	bool m_closed;
-	bool m_error;
+	private:
+		FIFO& m_target;
+		std::size_t m_succeed;
+		std::size_t m_calls;
+		bool m_closed;
+		bool m_error;
 };
 
-// ---------------------------------------------------------------------------
-// Original tests (same semantics)
-// ---------------------------------------------------------------------------
+// -------------------
+// Buffer → buffer
+// -------------------
 
-int test_simple_bridge_passthrough() {
-	const std::string fn_name = "test_simple_bridge_passthrough";
-	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 16);
-
-	std::size_t total_bytes = source_fifo.Size();
-	bool passthrough_success = bridge.Passthrough(total_bytes);
-	ASSERT_TRUE(fn_name, passthrough_success);
-
-	bool flush_success = bridge.Flush();
-	ASSERT_TRUE(fn_name, flush_success);
-
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_passthrough_all() {
+	const std::string fn = "test_ext_passthrough_all";
+	const std::string text = "The quick brown fox jumps over the lazy dog.";
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.IsReadable());
+	ASSERT_TRUE(fn, bridge.IsWritable());
+	ASSERT_TRUE(fn, bridge.Passthrough(src.AvailableBytes()));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), src.AvailableBytes());
+	RETURN_TEST(fn, 0);
 }
 
-int test_little_data_and_flush() {
-	const std::string fn_name = "test_little_data_and_flush";
-	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer); // default chunk_size 4096
-
-	std::size_t total_bytes = source_fifo.Size();
-	bool passthrough_success = bridge.Passthrough(total_bytes);
-	ASSERT_TRUE(fn_name, passthrough_success);
-
-	// Data not flushed yet (chunk larger than payload)
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), target_fifo.Size());
-
-	bool flush_success = bridge.Flush();
-	ASSERT_TRUE(fn_name, flush_success);
-
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_passthrough_zero_available_now() {
+	const std::string fn = "test_ext_passthrough_zero_available_now";
+	const std::string text = "Mr. Jock, TV quiz PhD, bags few lynx.";
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(0));
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), src.AvailableBytes());
+	RETURN_TEST(fn, 0);
 }
 
-int test_flush_on_destruct() {
-	const std::string fn_name = "test_flush_on_destruct";
-	const std::string test_data = "The quick brown fox jumps over the lazy dog.";
+int test_ext_passthrough_zero_when_empty() {
+	const std::string fn = "test_ext_passthrough_zero_when_empty";
+	FIFO src;
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(0));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	RETURN_TEST(fn, 0);
+}
 
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
+int test_ext_passthrough_consumes_source() {
+	const std::string fn = "test_ext_passthrough_consumes_source";
+	FIFO src = FromText("ABCDEFGH");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(3));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), src.AvailableBytes());
+	ASSERT_EQUAL(fn, std::string("ABC"), FifoText(dst));
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), src.AvailableBytes());
+	ASSERT_EQUAL(fn, std::string("ABCDEFGH"), FifoText(dst));
+	RETURN_TEST(fn, 0);
+}
 
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
+int test_ext_multiple_passthrough() {
+	const std::string fn = "test_ext_multiple_passthrough";
+	const std::string text = "How vexingly quick daft zebras jump!";
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(10));
+	ASSERT_TRUE(fn, bridge.Passthrough(10));
+	ASSERT_TRUE(fn, bridge.Passthrough(src.AvailableBytes()));
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	RETURN_TEST(fn, 0);
+}
 
+int test_ext_flush_is_noop() {
+	const std::string fn = "test_ext_flush_is_noop";
+	FIFO src = FromText("HELLO");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, std::string("HELLO"), FifoText(dst));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("HELLO"), FifoText(dst));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ext_dtor_flush_noop_data_already_there() {
+	const std::string fn = "test_ext_dtor_flush_noop_data_already_there";
+	const std::string text = "The quick brown fox jumps over the lazy dog.";
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
 	{
-		std::unique_ptr<Bridge> bridge = std::make_unique<Bridge>(reader, writer);
-
-		std::size_t total_bytes = source_fifo.Size();
-		bool passthrough_success = bridge->Passthrough(total_bytes);
-		ASSERT_TRUE(fn_name, passthrough_success);
+		Bridge bridge(in, out);
+		ASSERT_TRUE(fn, bridge.Passthrough(src.AvailableBytes()));
 	}
-
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	RETURN_TEST(fn, 0);
 }
 
-int test_reader_false_prevents_write_then_recover() {
-	const std::string fn_name = "test_reader_false_prevents_write_then_recover";
-	const std::string test_data = "Pack my box with five dozen liquor jugs.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	FaultyReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 16);
-
-	bool first = bridge.Passthrough(8);
-	ASSERT_TRUE(fn_name, !first);
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), target_fifo.Size());
-
-	bool second = bridge.Passthrough(source_fifo.AvailableBytes());
-	ASSERT_TRUE(fn_name, second);
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_flush_and_close() {
+	const std::string fn = "test_ext_flush_and_close";
+	FIFO src = FromText("CLOSEME");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(7));
+	ASSERT_TRUE(fn, bridge.FlushAndClose());
+	ASSERT_FALSE(fn, bridge.IsWritable());
+	ASSERT_FALSE(fn, out.IsWritable());
+	RETURN_TEST(fn, 0);
 }
 
-int test_writer_failure_stops_passthrough() {
-	const std::string fn_name = "test_writer_failure_stops_passthrough";
-	const std::string test_data = "Sphinx of black quartz, judge my vow.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	FailingWriter writer(target_fifo, 1);
-	ExternalBufferReader reader(source_fifo);
-
-	Bridge bridge(reader, writer, 16);
-	bool ok = bridge.Passthrough(source_fifo.Size());
-	if (ok) {
-		bool flushed = bridge.Flush();
-		ASSERT_TRUE(fn_name, !flushed);
-	} else {
-		ASSERT_TRUE(fn_name, !ok);
-	}
-
-	ASSERT_TRUE(fn_name, target_fifo.Size() <= test_data.size());
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_multiple_passthrough_calls() {
-	const std::string fn_name = "test_multiple_passthrough_calls";
-	const std::string test_data = "How vexingly quick daft zebras jump!";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 16);
-
-	bool ok1 = bridge.Passthrough(10);
-	bool ok2 = bridge.Passthrough(10);
-	bool ok3 = bridge.Passthrough(source_fifo.AvailableBytes());
-	ASSERT_TRUE(fn_name, ok1);
-	ASSERT_TRUE(fn_name, ok2);
-	ASSERT_TRUE(fn_name, ok3);
-
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_passthrough_zero_reads_all() {
-	const std::string fn_name = "test_passthrough_zero_reads_all";
-	const std::string test_data = "Mr. Jock, TV quiz PhD, bags few lynx.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 32);
-	// Original semantics: request all currently available bytes
-	bool ok = bridge.Passthrough(source_fifo.AvailableBytes());
-	ASSERT_TRUE(fn_name, ok);
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_destruction_flush_with_failing_writer() {
-	const std::string fn_name = "test_destruction_flush_with_failing_writer";
-	const std::string test_data = "Waltz, bad nymph, for quick jigs vex.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	FailingWriterOnce writer(target_fifo);
-
-	{
-		Bridge bridge(reader, writer, 64);
-		bool ok = bridge.Passthrough(10);
-		ASSERT_TRUE(fn_name, ok);
-		// destructor calls Flush()
-	}
-
-	ASSERT_TRUE(fn_name, target_fifo.Size() <= test_data.size());
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_large_transfer_stress() {
-	const std::string fn_name = "test_large_transfer_stress";
-	std::string test_data;
-	test_data.reserve(200 * 1024);
-	for (size_t i = 0; i < 200 * 1024; ++i)
-		test_data.push_back(static_cast<char>('A' + (i % 26)));
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 4096);
-	// Original test used Passthrough(0) meaning "all available" via reader
-	bool ok = bridge.Passthrough(0);
-	ASSERT_TRUE(fn_name, ok);
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_chunk_size_zero_passthrough_no_flush() {
-	const std::string fn_name = "test_chunk_size_zero_passthrough_no_flush";
-	const std::string test_data = "Chunkless passthrough test data: 0123456789";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 0);
-
-	std::size_t total_bytes = source_fifo.Size();
-	bool ok = bridge.Passthrough(total_bytes);
-	ASSERT_TRUE(fn_name, ok);
-
-	ASSERT_EQUAL(fn_name, test_data.size(), static_cast<std::size_t>(target_fifo.Size()));
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_const_bridge_passthrough_non_destructive() {
-	const std::string fn_name = "test_const_bridge_passthrough_non_destructive";
-	const std::string test_data = "Const bridge passthrough test.";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 16);
-
-	std::size_t size_before = source_fifo.Size();
-
-	const Bridge& cbridge = bridge;
-	bool ok = cbridge.Passthrough(source_fifo.AvailableBytes());
-	ASSERT_TRUE(fn_name, ok);
-
-	// Storage size unchanged; logical available bytes consumed by Read
-	ASSERT_EQUAL(fn_name, size_before, source_fifo.Size());
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), source_fifo.AvailableBytes());
-
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
-}
-
-// ---------------------------------------------------------------------------
-// New tests for the enriched API
-// ---------------------------------------------------------------------------
-
-int test_flush_and_close() {
-	const std::string fn_name = "test_flush_and_close";
-	const std::string test_data = "Flush and close me";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 4096);
-	ASSERT_TRUE(fn_name, bridge.Passthrough(test_data.size()));
-	ASSERT_TRUE(fn_name, bridge.IsWritable());
-
-	ASSERT_TRUE(fn_name, bridge.FlushAndClose());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-	ASSERT_TRUE(fn_name, !bridge.IsWritable());
-
-	// Further writes through the writer should fail
-	ASSERT_TRUE(fn_name, !target_fifo.IsWritable());
-
-	RETURN_TEST(fn_name, 0);
-}
-
-int test_bridge_set_error_propagation() {
-	const std::string fn_name = "test_bridge_set_error_propagation";
-	const std::string test_data = "error path";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 16);
-	ASSERT_TRUE(fn_name, bridge.IsWritable());
-	ASSERT_TRUE(fn_name, bridge.IsReadable());
-
+int test_ext_set_error() {
+	const std::string fn = "test_ext_set_error";
+	FIFO src = FromText("ERR");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.IsWritable());
 	bridge.SetError();
-	ASSERT_TRUE(fn_name, !bridge.IsWritable());
-
-	RETURN_TEST(fn_name, 0);
+	ASSERT_FALSE(fn, bridge.IsWritable());
+	ASSERT_TRUE(fn, bridge.IsReadable());
+	ASSERT_FALSE(fn, bridge.Passthrough(3));
+	RETURN_TEST(fn, 0);
 }
 
-int test_bridge_eof_delegation() {
-	const std::string fn_name = "test_bridge_eof_delegation";
-	const std::string test_data = "eof";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-	source_fifo.Close();
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 8);
-
-	// Drain everything
-	ASSERT_TRUE(fn_name, bridge.Passthrough(0));
-	ASSERT_TRUE(fn_name, bridge.Flush());
-
-	// Source closed + empty → EoF
-	ASSERT_TRUE(fn_name, bridge.EoF());
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_eof_after_close_source() {
+	const std::string fn = "test_ext_eof_after_close_source";
+	FIFO src = FromText("X");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(1));
+	src.Close();
+	ASSERT_TRUE(fn, bridge.EoF());
+	RETURN_TEST(fn, 0);
 }
 
-int test_pending_bytes_invariant() {
-	const std::string fn_name = "test_pending_bytes_invariant";
-	const std::string test_data = "0123456789ABCDEFGHIJ"; // 20 bytes
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	source_fifo.Write(test_data);
-
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	const std::size_t chunk = 8;
-	Bridge bridge(reader, writer, chunk);
-
-	ASSERT_TRUE(fn_name, bridge.Passthrough(5));
-	ASSERT_TRUE(fn_name, bridge.PendingBytes() < chunk);
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(5), bridge.PendingBytes());
-
-	ASSERT_TRUE(fn_name, bridge.Passthrough(10));
-	ASSERT_TRUE(fn_name, bridge.PendingBytes() < chunk);
-
-	// Drenar el resto del source
-	ASSERT_TRUE(fn_name, bridge.Passthrough(source_fifo.AvailableBytes()));
-	ASSERT_TRUE(fn_name, bridge.Flush());
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), bridge.PendingBytes());
-	ASSERT_EQUAL(fn_name, test_data, StormByte::String::FromByteVector(target_fifo.Data()));
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_reader_fail_then_recover() {
+	const std::string fn = "test_ext_reader_fail_then_recover";
+	const std::string text = "Pack my box with five dozen liquor jugs.";
+	FIFO src = FromText(text);
+	FIFO dst;
+	FaultyReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Passthrough(8));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	ASSERT_TRUE(fn, bridge.Passthrough(src.AvailableBytes()));
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	RETURN_TEST(fn, 0);
 }
 
-int test_chunk_size_accessor() {
-	const std::string fn_name = "test_chunk_size_accessor";
-
-	FIFO source_fifo;
-	FIFO target_fifo;
-	ExternalBufferReader reader(source_fifo);
-	ExternalBufferWriter writer(target_fifo);
-
-	Bridge bridge(reader, writer, 1234);
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(1234), bridge.ChunkSize());
-
-	Bridge bridge0(reader, writer, 0);
-	ASSERT_EQUAL(fn_name, static_cast<std::size_t>(0), bridge0.ChunkSize());
-
-	RETURN_TEST(fn_name, 0);
+int test_ext_writer_failure() {
+	const std::string fn = "test_ext_writer_failure";
+	const std::string text = "Sphinx of black quartz, judge my vow.";
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	FailingWriter out(dst, 0);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Passthrough(src.AvailableBytes()));
+	RETURN_TEST(fn, 0);
 }
 
-// ---------------------------------------------------------------------------
+int test_ext_large_transfer() {
+	const std::string fn = "test_ext_large_transfer";
+	std::string text;
+	text.reserve(200 * 1024);
+	for (std::size_t i = 0; i < 200 * 1024; ++i)
+		text.push_back(static_cast<char>('A' + (i % 26)));
+	FIFO src = FromText(text);
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(src.AvailableBytes()));
+	ASSERT_EQUAL(fn, text, FifoText(dst));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ext_move_bridge() {
+	const std::string fn = "test_ext_move_bridge";
+	FIFO src = FromText("MOVEOK");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge first(in, out);
+	Bridge second(std::move(first));
+	ASSERT_FALSE(fn, first.Passthrough(6));
+	ASSERT_TRUE(fn, second.Passthrough(6));
+	ASSERT_EQUAL(fn, std::string("MOVEOK"), FifoText(dst));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ext_move_assign_bridge() {
+	const std::string fn = "test_ext_move_assign_bridge";
+	FIFO src_a = FromText("AAAA");
+	FIFO dst_a;
+	ExternalBufferReader in_a(src_a);
+	ExternalBufferWriter out_a(dst_a);
+	Bridge a(in_a, out_a);
+
+	FIFO src_b = FromText("BBBB");
+	FIFO dst_b;
+	ExternalBufferReader in_b(src_b);
+	ExternalBufferWriter out_b(dst_b);
+	Bridge b(in_b, out_b);
+	b = std::move(a);
+	ASSERT_TRUE(fn, b.Passthrough(4));
+	ASSERT_EQUAL(fn, std::string("AAAA"), FifoText(dst_a));
+	ASSERT_FALSE(fn, a.Passthrough(4));
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// IO → IO
+// -------------------
+
+int test_io_file_to_file() {
+	const std::string fn = "test_io_file_to_file";
+	const auto out_path = Scratch("io2io");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.IsReadable());
+	ASSERT_TRUE(fn, bridge.IsWritable());
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.Tell());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.Tell());
+	ASSERT_TRUE(fn, bridge.Passthrough(1));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_file_to_file_short_end() {
+	const std::string fn = "test_io_file_to_file_short_end";
+	const auto out_path = Scratch("short");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(64));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_passthrough_zero_is_window_only() {
+	const std::string fn = "test_io_passthrough_zero_is_window_only";
+	const auto out_path = Scratch("win0");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"), 0, 0);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(0));
+	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_split_then_rest() {
+	const std::string fn = "test_io_split_then_rest";
+	const auto out_path = Scratch("split");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(2));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), in.Tell());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), out.Tell());
+	ASSERT_TRUE(fn, bridge.Passthrough(3));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_unopened_passthrough_fails() {
+	const std::string fn = "test_io_unopened_passthrough_fails";
+	const auto out_path = Scratch("unopen");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.IsReadable());
+	ASSERT_FALSE(fn, bridge.IsWritable());
+	ASSERT_FALSE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_chunked_writer_flush() {
+	const std::string fn = "test_io_chunked_writer_flush";
+	const auto out_path = Scratch("chunk");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 8, 4);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.Tell());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.Dirty());
+	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_flush_and_close_does_not_close_file() {
+	const std::string fn = "test_io_flush_and_close_does_not_close_file";
+	const auto out_path = Scratch("noclose");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(2));
+	ASSERT_TRUE(fn, bridge.FlushAndClose());
+	ASSERT_TRUE(fn, static_cast<bool>(out));
+	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(out.State()));
+	ASSERT_TRUE(fn, bridge.Passthrough(3));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_set_error_noop() {
+	const std::string fn = "test_io_set_error_noop";
+	const auto out_path = Scratch("seterr");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	bridge.SetError();
+	ASSERT_TRUE(fn, bridge.IsWritable());
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_empty_file() {
+	const std::string fn = "test_io_empty_file";
+	const auto out_path = Scratch("empty");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("empty.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(16));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_pattern_256() {
+	const std::string fn = "test_io_pattern_256";
+	const auto out_path = Scratch("pat");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("pattern_256.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(256));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_block_4k_loop() {
+	const std::string fn = "test_io_block_4k_loop";
+	const auto out_path = Scratch("4k");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("block_4k.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	while (!in.EoF() && static_cast<bool>(in))
+		ASSERT_TRUE(fn, bridge.Passthrough(512));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, Slurp(File("block_4k.bin")), Slurp(out_path));
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// Buffer → IO
+// -------------------
+
+int test_buf_to_io() {
+	const std::string fn = "test_buf_to_io";
+	const auto out_path = Scratch("b2io");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("HELLO");
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), src.AvailableBytes());
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_buf_to_io_zero() {
+	const std::string fn = "test_buf_to_io_zero";
+	const auto out_path = Scratch("b2io0");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("ZYX");
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(0));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ZYX"), Slurp(out_path));
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_buf_to_io_splits() {
+	const std::string fn = "test_buf_to_io_splits";
+	const auto out_path = Scratch("b2ios");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("ABCDEF");
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(2));
+	ASSERT_TRUE(fn, bridge.Passthrough(2));
+	ASSERT_TRUE(fn, bridge.Passthrough(2));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDEF"), Slurp(out_path));
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_buf_to_io_writer_not_open() {
+	const std::string fn = "test_buf_to_io_writer_not_open";
+	const auto out_path = Scratch("b2ion");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("NOPE");
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Passthrough(4));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), src.AvailableBytes());
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// IO → buffer
+// -------------------
+
+int test_io_to_buf() {
+	const std::string fn = "test_io_to_buf";
+	FIFO dst;
+	BufferedFileReader in(File("five.bin"));
+	ExternalBufferWriter out(dst);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), FifoText(dst));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.Tell());
+	ASSERT_TRUE(fn, bridge.Passthrough(1));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_to_buf_splits() {
+	const std::string fn = "test_io_to_buf_splits";
+	FIFO dst;
+	BufferedFileReader in(File("five.bin"));
+	ExternalBufferWriter out(dst);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(1));
+	ASSERT_TRUE(fn, bridge.Passthrough(4));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), FifoText(dst));
+	in.Close();
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_to_buf_reader_not_open() {
+	const std::string fn = "test_io_to_buf_reader_not_open";
+	FIFO dst;
+	BufferedFileReader in(File("five.bin"));
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	ASSERT_FALSE(fn, bridge.Passthrough(5));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_to_buf_nul_and_binary() {
+	const std::string fn = "test_io_to_buf_nul_and_binary";
+	FIFO dst;
+	BufferedFileReader in(File("nul.bin"));
+	ExternalBufferWriter out(dst);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out);
+	ASSERT_TRUE(fn, bridge.Passthrough(16));
+	ASSERT_EQUAL(fn, Slurp(File("nul.bin")), FifoText(dst));
+	in.Close();
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
 // main
-// ---------------------------------------------------------------------------
+// -------------------
 
 int main() {
 	int result = 0;
 
-	result += test_simple_bridge_passthrough();
-	result += test_little_data_and_flush();
-	result += test_flush_on_destruct();
-	result += test_reader_false_prevents_write_then_recover();
-	result += test_writer_failure_stops_passthrough();
-	result += test_multiple_passthrough_calls();
-	result += test_passthrough_zero_reads_all();
-	result += test_destruction_flush_with_failing_writer();
-	result += test_large_transfer_stress();
-	result += test_chunk_size_zero_passthrough_no_flush();
-	result += test_const_bridge_passthrough_non_destructive();
+	// -------------------
+	// Buffer → buffer
+	// -------------------
+	result += test_ext_passthrough_all();
+	result += test_ext_passthrough_zero_available_now();
+	result += test_ext_passthrough_zero_when_empty();
+	result += test_ext_passthrough_consumes_source();
+	result += test_ext_multiple_passthrough();
+	result += test_ext_flush_is_noop();
+	result += test_ext_dtor_flush_noop_data_already_there();
+	result += test_ext_flush_and_close();
+	result += test_ext_set_error();
+	result += test_ext_eof_after_close_source();
+	result += test_ext_reader_fail_then_recover();
+	result += test_ext_writer_failure();
+	result += test_ext_large_transfer();
+	result += test_ext_move_bridge();
+	result += test_ext_move_assign_bridge();
 
-	// New coverage
-	result += test_flush_and_close();
-	result += test_bridge_set_error_propagation();
-	result += test_bridge_eof_delegation();
-	result += test_pending_bytes_invariant();
-	result += test_chunk_size_accessor();
+	// -------------------
+	// IO → IO
+	// -------------------
+	result += test_io_file_to_file();
+	result += test_io_file_to_file_short_end();
+	result += test_io_passthrough_zero_is_window_only();
+	result += test_io_split_then_rest();
+	result += test_io_unopened_passthrough_fails();
+	result += test_io_chunked_writer_flush();
+	result += test_io_flush_and_close_does_not_close_file();
+	result += test_io_set_error_noop();
+	result += test_io_empty_file();
+	result += test_io_pattern_256();
+	result += test_io_block_4k_loop();
 
-	if (result == 0) {
+	// -------------------
+	// Buffer → IO
+	// -------------------
+	result += test_buf_to_io();
+	result += test_buf_to_io_zero();
+	result += test_buf_to_io_splits();
+	result += test_buf_to_io_writer_not_open();
+
+	// -------------------
+	// IO → buffer
+	// -------------------
+	result += test_io_to_buf();
+	result += test_io_to_buf_splits();
+	result += test_io_to_buf_reader_not_open();
+	result += test_io_to_buf_nul_and_binary();
+
+	if (result == 0)
 		std::cout << "Bridge tests passed!" << std::endl;
-	} else {
+	else
 		std::cout << result << " Bridge tests failed." << std::endl;
-	}
-
 	return result;
 }

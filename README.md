@@ -21,11 +21,11 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 - **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
 - **Hopper** — single-producer single-consumer (SPSC) queue of typed items with optional capacity ceiling. `Push` / `Pop` stay; `<<` / `>>` are the same operations. `Notify(cv)` does not own the CV; call `Unnotify` before that CV dies.
 - **Sink** — map of integer keys to Hopper buckets. Wire with `To(key)` / `>>` / `<<`. Round-robin or custom `Select`, plus terminal producer `Drain`.
-- **Bridge** — chunked passthrough from `ExternalReader` to `ExternalWriter`.
 - **Pipeline** — stages chained with `ExecutionMode`: `Sync`, `Async`, `Parallel` (combinable). A non-null logger is scoped as `Buffer/Pipeline` before it reaches the stages.
 - **IO::BufferedReader** — public base for a binary read origin with optional prefetch. Leaves implement `Origin*` hooks only; they do not override `Read` / `Peek` / `Seek`.
 - **IO::BufferedWriter** — public base for a binary write sink with optional write-behind chunks. Leaves implement `Origin*` hooks only; they do not override `Write` / `Flush`.
 - **IO::BufferedFileReader** / **IO::BufferedFileWriter** — filesystem leaves over those bases (binary `ifstream` / append `ofstream`).
+- **Bridge** — move octets from any readable tip to any writable tip: in-memory buffers (`ExternalReader` / `ExternalWriter`) and/or IO sessions (`IO::BufferedReader` / `IO::BufferedWriter`), in any pairing. Not a typed Hopper pump.
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
 
 ## The rest of the suite
@@ -57,9 +57,10 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
   - [IO::BufferedWriter](#iobufferedwriter)
   - [IO::BufferedFileReader](#iobufferedfilereader)
   - [IO::BufferedFileWriter](#iobufferedfilewriter)
-- [Support](#support)
+  - [Bridge](#bridge)
 - [Contributing](#contributing)
 - [License](#license)
+- [Support](#support)
 
 ## Installation
 
@@ -138,85 +139,40 @@ int main() {
 
 ### Hopper
 
-`Hopper<T>` is a single-producer single-consumer (SPSC) queue for discrete typed items (`StormByte::Type::MoveConstructible T`). Capacity `0` is unbounded; `Push` blocks when a bounded hopper is full. `Eof()` ends production. Smart pointer types (`StormByte::Type::SmartPointer<T>`) discard null items on `Push`.
-
-`Push` and `Pop` are the stable API. `hopper << item`, `hopper >> item` and `item >> hopper` do the same thing.
-
-`Notify(cv)` stores a pointer to a condition variable the Hopper does **not** own. The Hopper outlives a typical consumer. Call `Unnotify()` before that CV is destroyed, otherwise a later producer `Eof` can signal a freed object.
+`Hopper<T>` is an SPSC **item** queue, not a byte buffer. Use it for `shared_ptr<Item>` and similar. It is not a Bridge tip.
 
 ```cpp
 #include <StormByte/buffer/hopper.hxx>
-#include <thread>
 #include <memory>
-#include <iostream>
 
 using StormByte::Buffer::Hopper;
 
 int main() {
-	Hopper<std::unique_ptr<int>> hopper(5);
-
-	std::thread producer([&hopper]() {
-		for (int i = 0; i < 10; ++i)
-			hopper << std::make_unique<int>(i);
-		hopper.Eof();
-	});
-
-	std::thread consumer([&hopper]() {
-		while (!hopper.Empty() || !hopper.EoF()) {
-			auto item = hopper.Pop();
-			if (item)
-				std::cout << "Popped: " << *item << "\n";
-		}
-	});
-
-	producer.join();
-	consumer.join();
+	Hopper<std::shared_ptr<int>> hopper(8);
+	hopper << std::make_shared<int>(1);
+	auto item = hopper.Pop();
+	hopper.Eof();
 }
 ```
 
+`Notify(cv)` does not own `cv`. Call `Unnotify` before that condition variable is destroyed.
+
 ### Sink
 
-`Sink<T>` maps integer keys to `Hopper<T>` buckets. Wire a consumer with `To(key)` / `>>` / `<<`. `Bind` is the old name and is `[[deprecated]]`.
-
-`Sink::EoF()` contract:
-
-- **Zero hoppers:** `true` only if this `Sink` was closed (`Eof()` or destruction).
-- **With hoppers:** `true` when every hopper is empty and `Hopper::EoF()` is `true`, even if this `Sink` did not call `Eof()` (the producer may have closed a shared hopper).
-- **Dynamic wire:** attaching a new key after `EoF()` was `true` may make `EoF()` `false` again.
-- **Meaning:** no items remain and none can enter the current buckets.
+`Sink<T>` is a map of integer keys to `Hopper<T>` buckets. Wire with `To(key)` / `>>` / `<<`. It is not a Bridge tip.
 
 ```cpp
 #include <StormByte/buffer/sink.hxx>
-#include <thread>
 #include <memory>
-#include <string>
-#include <iostream>
 
 using StormByte::Buffer::Sink;
+using StormByte::Buffer::Hopper;
 
 int main() {
-	Sink<std::shared_ptr<std::string>> producerSink;
-	Sink<std::shared_ptr<std::string>> consumerSink;
-
-	producerSink.To(1, consumerSink);
-	producerSink.To(2, consumerSink);
-
-	std::thread writer([&producerSink]() {
-		producerSink.Push(1, std::make_shared<std::string>("Message on Channel 1"));
-		producerSink.Push(2, std::make_shared<std::string>("Message on Channel 2"));
-		producerSink.Eof();
-	});
-
-	std::thread reader([&consumerSink]() {
-		while (!consumerSink.EoF()) {
-			auto msg = consumerSink.Pop();
-			if (msg)
-				std::cout << "Received: " << *msg << "\n";
-		}
-	});
-
-	writer.join();
-	reader.join();
+	Sink<std::shared_ptr<int>> sink;
+	Hopper<std::shared_ptr<int>> hopper;
+	sink.To(0) << hopper;
+	sink << std::make_shared<int>(7);
 }
 ```
 
@@ -351,6 +307,91 @@ int main() {
 ```
 
 Missing parent is `State::Missing`. Path is a directory → `State::Directory`. No write permission → `State::NotWritable`.
+
+### Bridge
+
+`StormByte::Buffer::Bridge` moves **octets** from a readable tip to a writable tip. It is not tied to one buffer class.
+
+**Sources (in)** — anything that can yield bytes:
+
+- `ExternalReader` (and leaves such as `ExternalBufferReader` over a `FIFO` / `Consumer`)
+- `const IO::BufferedReader&` (and leaves such as `IO::BufferedFileReader`, or a future Network/Multimedia reader)
+
+**Sinks (out)** — anything that can take bytes:
+
+- `ExternalWriter` (and leaves such as `ExternalBufferWriter`)
+- `IO::BufferedWriter&` (and leaves such as `IO::BufferedFileWriter`, or a future Network writer)
+
+A reader never goes on `out`. A writer never goes on `in`. The four legal pairings are:
+
+| in | out |
+| --- | --- |
+| `ExternalReader` | `ExternalWriter` |
+| `IO::BufferedReader` | `IO::BufferedWriter` |
+| `ExternalReader` | `IO::BufferedWriter` |
+| `IO::BufferedReader` | `ExternalWriter` |
+
+`Hopper` / `Sink` are item queues. They are not Bridge tips. A Multimedia remux of raw bytes is a Bridge; a graph of `shared_ptr<Item>` stays on Hopper.
+
+The Bridge holds **references only**. Tips must already be armed (`Open` on IO) and must outlive every `Passthrough`. There is no configured chunk and no local cache: `Passthrough(n)` is the unit. `n == 0` moves whatever is available on the source **now** (IO without prefetch: the current window, which may be empty). External sources are consumed with `Extract`. IO sources use `Read`, which already consumes.
+
+`Passthrough` blocks and is transactional: `IsWritable` / `WillWrite` is checked before the source is pulled. If the sink cannot take the request, the source is left untouched. A short read at end-of-origin is success and is not `Failed`. IO `EoF` is marked when a read returns `End` (asking past the last byte), not necessarily after an exact-size read.
+
+`Flush()` is a no-op on an External sink and `BufferedWriter::Flush` on an IO sink. `FlushAndClose()` closes only an External writer. `SetError()` is External only. The destructor calls `Flush`. The type is movable, not copyable; `Passthrough` on a moved-from instance is a no-op.
+
+```cpp
+#include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/external.hxx>
+#include <StormByte/buffer/fifo.hxx>
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
+
+using StormByte::Buffer::Bridge;
+using StormByte::Buffer::ExternalBufferReader;
+using StormByte::Buffer::ExternalBufferWriter;
+using StormByte::Buffer::FIFO;
+using StormByte::Buffer::IO::BufferedFileReader;
+using StormByte::Buffer::IO::BufferedFileWriter;
+
+void buffer_to_buffer(FIFO& src, FIFO& dst) {
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out);
+	(void)bridge.Passthrough(0); // everything available on src now
+}
+
+void file_to_file() {
+	BufferedFileReader in("in.bin");
+	BufferedFileWriter out("out.bin");
+	if (!in.Open() || !out.Open())
+		return;
+	Bridge bridge(in, out);
+	while (!in.EoF() && static_cast<bool>(in))
+		(void)bridge.Passthrough(4096);
+	(void)bridge.Flush();
+}
+
+void fifo_to_file(FIFO& src) {
+	ExternalBufferReader in(src);
+	BufferedFileWriter out("out.bin");
+	if (!out.Open())
+		return;
+	Bridge bridge(in, out);
+	(void)bridge.Passthrough(src.AvailableBytes());
+	(void)bridge.Flush();
+}
+
+void file_to_fifo(FIFO& dst) {
+	BufferedFileReader in("in.bin");
+	ExternalBufferWriter out(dst);
+	if (!in.Open())
+		return;
+	Bridge bridge(in, out);
+	(void)bridge.Passthrough(64);
+}
+```
+
+A Network `BufferedReader` or `BufferedWriter` leaf drops into the same constructors without changing Bridge.
 
 ## Contributing
 
