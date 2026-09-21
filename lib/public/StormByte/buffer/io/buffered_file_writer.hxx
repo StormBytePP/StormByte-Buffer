@@ -114,13 +114,13 @@ namespace StormByte {
 					/**
 					 * @brief Open @c m_path as a binary append file. Creates the file
 					 *        when the parent directory exists.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					Result OriginOpen() override;
 
 					/**
 					 * @brief Close the file stream.
-					 * @return @ref IO::Status::Ok.
+					 * @return @ref Status::Ok.
 					 */
 					Result OriginClose() override;
 
@@ -133,15 +133,26 @@ namespace StormByte {
 
 					/**
 					 * @brief Flush the output stream.
-					 * @return @ref IO::Status::Ok, Error or Failed.
+					 * @return @ref Status::Ok, Error or Failed.
 					 */
 					Result OriginFlush() override;
 
 					/**
 					 * @brief Resize the file to zero bytes.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					Result OriginTruncate() override;
+
+					/**
+					 * @brief Ring cap and indicative free space on the volume.
+					 * @param n Prospective Write size.
+					 * @return @c false if the base rejects @p n or free space is
+					 *         below @p n. Query failure is @c false.
+					 *
+					 * Indicative. Another process, quotas or a network filesystem
+					 * can still reject the later Write.
+					 */
+					bool WillWrite(std::size_t n) const override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.

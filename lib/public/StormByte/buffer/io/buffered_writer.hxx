@@ -51,9 +51,15 @@ namespace StormByte {
 			namespace Backend {
 				/**
 				 * @class BufferedWriter
-				 * @brief Private implementation of @ref StormByte::Buffer::BufferedWriter.
+				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedWriter.
 				 */
 				class BufferedWriter;
+
+				/**
+				 * @class Bridge
+				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
+				 */
+				class Bridge;
 			}
 
 			/**
@@ -82,8 +88,8 @@ namespace StormByte {
 			 * @c Write consumes the whole visible source or nothing
 			 * (atomic). @c FIFO is read from the current read position
 			 * (@c FIFO::Read is const; the cursor is mutable). The FIFO
-			 * / span is left untouched on @ref IO::Status::TryAgain,
-			 * @ref IO::Status::Failed and @ref IO::Status::Error.
+			 * / span is left untouched on @ref Status::TryAgain,
+			 * @ref Status::Failed and @ref Status::Error.
 			 *
 			 * @par WriteChunk / BackPressure
 			 * Either knob @c 0 disables the ring: @c Write calls
@@ -91,10 +97,10 @@ namespace StormByte {
 			 * accepted bytes are pushed. Both knobs @c > 0 enable an
 			 * internal SPSC ring. Capacity is
 			 * @c BackPressure * WriteChunk bytes. A @c Write that would
-			 * exceed that cap returns @ref IO::Status::TryAgain.
+			 * exceed that cap returns @ref Status::TryAgain.
 			 * The worker pushes full @c WriteChunk spans when possible;
 			 * short @ref OriginPush results are retried until complete
-			 * or @ref IO::Status::Error.
+			 * or @ref Status::Error.
 			 *
 			 * Setters take effect immediately. They are not deferred to
 			 * the next @c Write. Turning the ring off or lowering the cap
@@ -103,7 +109,7 @@ namespace StormByte {
 			 *
 			 * @par Flush / Truncate
 			 * @ref Flush blocks, drains the ring including a short tail,
-			 * calls @ref OriginFlush, and never returns @ref IO::Status::TryAgain.
+			 * calls @ref OriginFlush, and never returns @ref Status::TryAgain.
 			 * @ref Truncate drops the ring without pushing and calls
 			 * @ref OriginTruncate. @ref Tell becomes 0.
 			 *
@@ -112,14 +118,21 @@ namespace StormByte {
 			 * @c 0ms waits without limit. The ring itself is not timed.
 			 * Setting @c MaxWait does not abort an in-flight push.
 			 *
+			 * @par WillWrite
+			 * Protected probe used by @ref Backend::Bridge. Default asks
+			 * the ring cap. Leaves may tighten it (disk space, socket).
+			 * The answer is indicative: another process, quotas or a
+			 * network filesystem can still make the later @c Write fail.
+			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
 			 * is Unavailable.
 			 *
-			 * @see IO::Status, State, Result, FIFO, IO::BufferedWriter
+			 * @see Status, State, Result, FIFO, Backend::BufferedWriter
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedWriter {
 				friend class Backend::BufferedWriter;
+				friend class Backend::Bridge;
 
 				public:
 					/**
@@ -210,8 +223,8 @@ namespace StormByte {
 
 					/**
 					 * @brief Push every dirty byte to the origin and @ref OriginFlush.
-					 * @return @ref IO::Status::Ok, @ref IO::Status::Error or
-					 *         @ref IO::Status::Failed. Never @ref IO::Status::TryAgain.
+					 * @return @ref Status::Ok, @ref Status::Error or
+					 *         @ref Status::Failed. Never @ref Status::TryAgain.
 					 *
 					 * Blocking. @ref Tell is unchanged.
 					 */
@@ -219,7 +232,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Drop dirty bytes and truncate the origin.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 *
 					 * Does not push the ring. Sets @ref Tell to 0.
 					 */
@@ -351,19 +364,30 @@ namespace StormByte {
 					void SetState(enum State state) noexcept;
 
 					/**
+					 * @brief Whether @p n more bytes can be accepted now.
+					 * @param n Byte count to probe.
+					 * @return @c true if the ring (or direct mode) can take @p n.
+					 *
+					 * Indicative. Another writer, quotas or the filesystem can
+					 * still reject the later @c Write. Override to tighten
+					 * (disk space, socket window). Used by @ref Backend::Bridge.
+					 */
+					virtual bool WillWrite(std::size_t n) const;
+
+					/**
 					 * @name Origin hooks
 					 * @{
 					 */
 
 					/**
 					 * @brief Arm the device and @ref SetState.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					virtual Result OriginOpen() = 0;
 
 					/**
 					 * @brief Release the device and @ref SetState Unavailable.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					virtual Result OriginClose() = 0;
 
@@ -377,7 +401,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Make accepted bytes visible on the device.
-					 * @return @ref IO::Status::Ok, Error or Failed.
+					 * @return @ref Status::Ok, Error or Failed.
 					 *
 					 * The base calls this after a completed direct Write and after
 					 * Flush has drained the ring. Do not buffer here.
@@ -386,7 +410,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Discard origin contents. Network may no-op Ok.
-					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					virtual Result OriginTruncate() = 0;
 

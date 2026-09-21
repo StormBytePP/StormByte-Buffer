@@ -79,6 +79,10 @@ bool BufferedWriter::WouldAccept(const std::size_t bytes) const noexcept {
 	return m_ring->AvailableBytes() + bytes <= PendingCap();
 }
 
+bool BufferedWriter::WillWrite(const std::size_t n) const noexcept {
+	return WouldAccept(n);
+}
+
 bool BufferedWriter::Open() {
 	if (!m_owner)
 		return false;

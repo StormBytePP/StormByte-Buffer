@@ -59,7 +59,7 @@ namespace StormByte {
 			namespace Backend {
 				/**
 				 * @class BufferedWriter
-				 * @brief Private implementation of @ref StormByte::Buffer::BufferedWriter.
+				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedWriter.
 				 *
 				 * Owns session flags, the optional SPSC ring, the logical cursor
 				 * and the push worker. Invokes @c Origin* hooks on @c m_owner.
@@ -75,9 +75,9 @@ namespace StormByte {
 						/**
 						 * @brief Bind to the public leaf and store policy knobs.
 						 * @param owner Public instance (the most-derived object).
-						 * @param write_chunk Initial @ref WriteChunk in bytes.
-						 * @param back_pressure Initial @ref BackPressure in chunks.
-						 * @param max_wait Initial @ref MaxWait.
+						 * @param write_chunk Initial WriteChunk in bytes.
+						 * @param back_pressure Initial BackPressure in chunks.
+						 * @param max_wait Initial MaxWait.
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
@@ -162,7 +162,7 @@ namespace StormByte {
 						void Shutdown();
 
 						/**
-						 * @brief @ref Close then @ref Open when currently armed.
+						 * @brief Close then Open when currently armed.
 						 * @return @c true if Idle afterwards.
 						 */
 						bool Rewind();
@@ -268,6 +268,13 @@ namespace StormByte {
 						 */
 						void MaxWait(std::chrono::milliseconds wait);
 
+						/**
+						 * @brief Whether @p n bytes fit under the current ring cap.
+						 * @param n Prospective Write size.
+						 * @return @c true in direct mode, or if Dirty + n <= cap.
+						 */
+						bool WillWrite(std::size_t n) const noexcept;
+
 					private:
 						/**
 						 * @brief Whether both knobs enable the ring.
@@ -322,7 +329,7 @@ namespace StormByte {
 						 */
 						Result WriteSpan(std::span<const std::byte> src);
 
-						IO::BufferedWriter* m_owner;					///< Public leaf (hooks).
+						IO::BufferedWriter* m_owner;				///< Public leaf (hooks).
 
 						mutable std::mutex m_mutex;					///< Session + knobs.
 						mutable std::condition_variable m_cv;		///< Worker / flush waits.

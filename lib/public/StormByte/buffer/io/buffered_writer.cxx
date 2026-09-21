@@ -85,31 +85,31 @@ bool BufferedWriter::IsOpen() const noexcept {
 
 Result BufferedWriter::Flush() {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	return m_io->Flush();
 }
 
 Result BufferedWriter::Truncate() {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	return m_io->Truncate();
 }
 
 Result BufferedWriter::Write(const FIFO& src) {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
 Result BufferedWriter::Write(FIFO& src) {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
 Result BufferedWriter::Write(const std::span<const std::byte> src) {
 	if (!m_io)
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	return m_io->Write(src);
 }
 
@@ -146,4 +146,8 @@ std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {
 void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 	if (m_io)
 		m_io->MaxWait(wait);
+}
+
+bool BufferedWriter::WillWrite(const std::size_t n) const {
+	return m_io && m_io->WillWrite(n);
 }

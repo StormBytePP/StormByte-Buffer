@@ -19,11 +19,54 @@
 
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 
+#include <cstdint>
 #include <ios>
 #include <system_error>
-#include <utility>
+
+#ifdef WINDOWS
+#	include <windows.h>
+#else
+#	include <sys/statvfs.h>
+#endif
 
 using namespace StormByte::Buffer::IO;
+
+namespace {
+	std::filesystem::path SpacePath(const std::filesystem::path& path) {
+		std::error_code ec;
+		if (std::filesystem::exists(path, ec) && !ec)
+			return path;
+		const auto parent = path.parent_path();
+		if (!parent.empty())
+			return parent;
+		return std::filesystem::current_path(ec);
+	}
+
+	bool VolumeHas(const std::filesystem::path& path, const std::size_t n) {
+		if (n == 0)
+			return true;
+		const auto probe = SpacePath(path);
+		if (probe.empty())
+			return false;
+
+#ifdef WINDOWS
+		ULARGE_INTEGER avail {};
+		const auto wide = probe.wstring();
+		if (wide.empty())
+			return false;
+		if (!GetDiskFreeSpaceExW(wide.c_str(), &avail, nullptr, nullptr))
+			return false;
+		return avail.QuadPart >= static_cast<ULONGLONG>(n);
+#else
+		struct statvfs st {};
+		if (statvfs(probe.c_str(), &st) != 0)
+			return false;
+		const std::uint64_t avail = static_cast<std::uint64_t>(st.f_bavail) *
+			static_cast<std::uint64_t>(st.f_frsize);
+		return avail >= static_cast<std::uint64_t>(n);
+#endif
+	}
+}
 
 BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const std::size_t write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
@@ -53,10 +96,16 @@ const std::filesystem::path& BufferedFileWriter::Path() const noexcept {
 	return m_path;
 }
 
+bool BufferedFileWriter::WillWrite(const std::size_t n) const {
+	if (!BufferedWriter::WillWrite(n))
+		return false;
+	return VolumeHas(m_path, n);
+}
+
 Result BufferedFileWriter::OriginOpen() {
 	std::lock_guard lock(m_file_mutex);
 	if (m_file.is_open())
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 
 	std::error_code ec;
 	const auto parent = m_path.parent_path();
@@ -64,39 +113,39 @@ Result BufferedFileWriter::OriginOpen() {
 		const auto pst = std::filesystem::status(parent, ec);
 		if (ec) {
 			SetState(State::Missing);
-			return { IO::Status::Failed, 0 };
+			return { Status::Failed, 0 };
 		}
 		if (!std::filesystem::is_directory(pst)) {
 			SetState(State::Missing);
-			return { IO::Status::Failed, 0 };
+			return { Status::Failed, 0 };
 		}
 	}
 
 	const auto st = std::filesystem::status(m_path, ec);
 	if (ec && ec != std::errc::no_such_file_or_directory) {
 		SetState(State::NotWritable);
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	}
 
 	if (!ec) {
 		if (std::filesystem::is_directory(st)) {
 			SetState(State::Directory);
-			return { IO::Status::Failed, 0 };
+			return { Status::Failed, 0 };
 		}
 		if (!std::filesystem::is_regular_file(st)) {
 			SetState(State::NotWritable);
-			return { IO::Status::Failed, 0 };
+			return { Status::Failed, 0 };
 		}
 	}
 
 	m_file.open(m_path, std::ios::out | std::ios::app | std::ios::binary);
 	if (!m_file) {
 		SetState(State::NotWritable);
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	}
 
 	SetState(State::Idle);
-	return { IO::Status::Ok, 0 };
+	return { Status::Ok, 0 };
 }
 
 Result BufferedFileWriter::OriginClose() {
@@ -104,55 +153,55 @@ Result BufferedFileWriter::OriginClose() {
 	if (m_file.is_open())
 		m_file.close();
 	SetState(State::Unavailable);
-	return { IO::Status::Ok, 0 };
+	return { Status::Ok, 0 };
 }
 
 Result BufferedFileWriter::OriginPush(const std::span<const std::byte> data) {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	if (data.empty())
-		return { IO::Status::Ok, 0 };
+		return { Status::Ok, 0 };
 
 	m_file.write(reinterpret_cast<const char*>(data.data()),
 		static_cast<std::streamsize>(data.size()));
 	if (m_file.bad()) {
 		SetState(State::Fault);
-		return { IO::Status::Error, 0 };
+		return { Status::Error, 0 };
 	}
 
-	return { IO::Status::Ok, data.size() };
+	return { Status::Ok, data.size() };
 }
 
 Result BufferedFileWriter::OriginFlush() {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	m_file.flush();
 	if (m_file.bad()) {
 		SetState(State::Fault);
-		return { IO::Status::Error, 0 };
+		return { Status::Error, 0 };
 	}
-	return { IO::Status::Ok, 0 };
+	return { Status::Ok, 0 };
 }
 
 Result BufferedFileWriter::OriginTruncate() {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 
 	m_file.close();
 	std::error_code ec;
 	std::filesystem::resize_file(m_path, 0, ec);
 	if (ec) {
 		SetState(State::Fault);
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	}
 
 	m_file.open(m_path, std::ios::out | std::ios::app | std::ios::binary);
 	if (!m_file) {
 		SetState(State::NotWritable);
-		return { IO::Status::Failed, 0 };
+		return { Status::Failed, 0 };
 	}
-	return { IO::Status::Ok, 0 };
+	return { Status::Ok, 0 };
 }
