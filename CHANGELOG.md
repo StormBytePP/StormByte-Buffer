@@ -22,6 +22,14 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
+- `StormByte::Buffer::IO::Status` and `StormByte::Buffer::IO::Result` in `buffer/io/typedefs.hxx`. `Ok` / `End` / `Failed` plus a byte `count`. No would-block status: coordinated reads wait until the requested count or origin EOF.
+- `StormByte::Buffer::BufferedRead`. Public base for a binary read origin with optional prefetch. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`. They do not override `Open`, `Close`, `Rewind`, `Read`, `Peek`, `Seek` or `Tell`.
+- Session: idempotent `Open` / `Close`; `Rewind` is `Close` then `Open` only while open (fails if never opened or already closed). `operator bool` is true when armed and readable; EOF yields false. Movable, not copyable.
+- `Read(n, FIFO&)` / `Peek(n, FIFO&)`: synchronous, block until `n` bytes or origin end. Destination FIFO is replaced on `Ok` / `End` and left untouched on `Failed`. `Read` consumes cache and advances `Tell`; `Peek` does not. `Read(0)` / `Peek(0)` serve the current window only.
+- `ReadAhead` / `MaxMemory` (overridable get/set). Ahead runs after the request on a private worker and uses the same `OriginPull`. An in-flight prefetch is flushed (“publish what you have”) before the next `Read` / `Peek` / `Seek` / `Close`. `MaxMemory(0)` disables cache and prefetch. Device EOF from prefetch does not set public `EoF()` while cached bytes remain.
+- `IsSeekable`, `IsSized`, `Size`, `Tell`. Seek does not invent a size. v1 cache is a single internal `FIFO` window (multi-span map later).
+- Private `StormByte::Buffer::IO::BufferedRead` PIMPL (`m_io`).
+
 ### Changed
 
 ### Fixed
