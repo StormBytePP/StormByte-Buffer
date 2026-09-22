@@ -61,6 +61,8 @@ BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	m_probe_on_setup(other.m_probe_on_setup) {
 	other.m_size.reset();
 	other.m_probe_on_setup = false;
+	if (IsOpen())
+		static_cast<void>(Seek(static_cast<std::ptrdiff_t>(Tell()), Position::Absolute));
 }
 
 BufferedFileReader::~BufferedFileReader() noexcept {
@@ -77,6 +79,8 @@ BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) no
 		m_probe_on_setup = other.m_probe_on_setup;
 		other.m_size.reset();
 		other.m_probe_on_setup = false;
+		if (IsOpen())
+			static_cast<void>(Seek(static_cast<std::ptrdiff_t>(Tell()), Position::Absolute));
 	}
 	return *this;
 }
@@ -149,6 +153,8 @@ Result BufferedFileReader::OriginPull(const std::size_t n, FIFO& dest) {
 		return { IO::Status::Failed, 0 };
 	if (n == 0)
 		return { IO::Status::Ok, 0 };
+
+	m_file.clear();
 
 	DataType chunk(n);
 	m_file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(n));

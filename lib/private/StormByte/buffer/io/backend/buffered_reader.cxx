@@ -73,7 +73,6 @@ BufferedReader::~BufferedReader() {
 }
 
 void BufferedReader::Rebind(IO::BufferedReader& owner) noexcept {
-	FlushPrefetch();
 	m_owner = &owner;
 }
 
@@ -571,14 +570,16 @@ Result BufferedReader::EnsureOrigin(const std::size_t pos) const {
 	bool valid = false;
 	std::size_t origin = 0;
 	bool seekable = false;
+	bool exhausted = false;
 	{
 		std::lock_guard lock(m_mutex);
 		valid = m_origin_valid;
 		origin = m_origin_pos;
+		exhausted = m_origin_exhausted;
 		seekable = m_owner->OriginCanSeek();
 	}
 
-	if (valid && origin == pos)
+	if (valid && origin == pos && !exhausted)
 		return { Status::Ok, 0 };
 	if (!seekable)
 		return { Status::Failed, 0 };
@@ -592,6 +593,7 @@ Result BufferedReader::EnsureOrigin(const std::size_t pos) const {
 	std::lock_guard lock(m_mutex);
 	m_origin_pos = pos;
 	m_origin_valid = true;
+	m_origin_exhausted = false;
 	return { Status::Ok, 0 };
 }
 

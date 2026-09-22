@@ -165,8 +165,12 @@ namespace StormByte {
 					Result OriginPush(std::span<const std::byte> data) override;
 
 					/**
-					 * @brief Flush the output stream.
+					 * @brief Make written bytes visible to later readers of the path.
 					 * @return @ref Status::Ok, Error or Failed.
+					 *
+					 * After Ok the filesystem size is the written length.
+					 * On Windows this includes FlushFileBuffers when the
+					 * volume allows a shared handle.
 					 */
 					Result OriginFlush() override;
 

@@ -47,8 +47,10 @@ BufferedReader::BufferedReader(const std::size_t read_ahead, const std::size_t m
 
 BufferedReader::BufferedReader(BufferedReader&& other) noexcept:
 	m_io(std::move(other.m_io)) {
-	if (m_io)
+	if (m_io) {
+		m_io->FlushPrefetch();
 		m_io->Rebind(*this);
+	}
 }
 
 BufferedReader::~BufferedReader() noexcept {
@@ -61,8 +63,10 @@ BufferedReader& BufferedReader::operator=(BufferedReader&& other) noexcept {
 		if (m_io)
 			static_cast<void>(Close());
 		m_io = std::move(other.m_io);
-		if (m_io)
+		if (m_io) {
+			m_io->FlushPrefetch();
 			m_io->Rebind(*this);
+		}
 	}
 	return *this;
 }

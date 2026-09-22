@@ -124,6 +124,14 @@ namespace StormByte {
 						void Rebind(IO::BufferedReader& owner) noexcept;
 
 						/**
+						 * @brief Cancel the in-flight pull and wait until the worker is idle.
+						 *
+						 * Call this before @ref Rebind on a move, while the leaf
+						 * origin still belongs to the source object.
+						 */
+						void FlushPrefetch() const;
+
+						/**
 						 * @brief Whether the source is prepared to read.
 						 * @return @ref IsReadable.
 						 */
@@ -332,11 +340,6 @@ namespace StormByte {
 						void RequestPrefetch() const;
 
 						/**
-						 * @brief Cancel the in-flight pull and wait until the worker is idle.
-						 */
-						void FlushPrefetch() const;
-
-						/**
 						 * @brief Worker loop: wait for a target, pull, park.
 						 */
 						void Worker();
@@ -402,8 +405,11 @@ namespace StormByte {
 						 * @param pos Desired origin offset.
 						 * @return @ref Status::Ok or @ref Status::Failed.
 						 *
-						 * Must not run under @c m_mutex. Not seekable only
-						 * succeeds when the origin is already at @p pos.
+						 * Must not run under @c m_mutex. Seekable always
+						 * calls @c OriginSeek when @p pos differs from the
+						 * last device cursor or the origin reported End.
+						 * Not seekable only succeeds when the origin is
+						 * already at @p pos.
 						 */
 						Result EnsureOrigin(std::size_t pos) const;
 

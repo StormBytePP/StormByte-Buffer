@@ -35,6 +35,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <system_error>
 #include <thread>
 
 using StormByte::Buffer::Bridge;
@@ -111,11 +112,15 @@ static bool WaitSize(const StormByte::Buffer::Generic& buf, const std::size_t n)
 
 static bool WaitFile(const std::filesystem::path& path, const std::size_t n) {
 	for (int i = 0; i < 500; ++i) {
-		if (Slurp(path).size() >= n)
+		std::error_code ec;
+		const auto size = std::filesystem::file_size(path, ec);
+		if (!ec && static_cast<std::size_t>(size) >= n)
 			return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
-	return Slurp(path).size() >= n;
+	std::error_code ec;
+	const auto size = std::filesystem::file_size(path, ec);
+	return !ec && static_cast<std::size_t>(size) >= n;
 }
 
 static bool WaitDirtyZero(BufferedFileWriter& out) {
@@ -189,6 +194,10 @@ class FailingWriter final : public ExternalWriter {
 		bool m_closed;
 		bool m_error;
 };
+
+// -------------------
+// External
+// -------------------
 
 int test_ext_drains_all() {
 	const std::string fn = "test_ext_drains_all";
@@ -329,6 +338,10 @@ int test_close_source_while_started() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// File to file
+// -------------------
+
 int test_io_file_to_file() {
 	const std::string fn = "test_io_file_to_file";
 	const auto out_path = Scratch("io2io");
@@ -454,6 +467,10 @@ int test_io_pattern_256() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// Buffer to file
+// -------------------
+
 int test_buf_to_io() {
 	const std::string fn = "test_buf_to_io";
 	const auto out_path = Scratch("b2io");
@@ -485,6 +502,10 @@ int test_buf_to_io_writer_not_open() {
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
+
+// -------------------
+// File to buffer
+// -------------------
 
 int test_io_to_buf() {
 	const std::string fn = "test_io_to_buf";
@@ -536,6 +557,10 @@ int test_io_to_buf_pattern() {
 	in.Close();
 	RETURN_TEST(fn, 0);
 }
+
+// -------------------
+// Drainer
+// -------------------
 
 int test_toggle_pauses_and_resumes_buffer() {
 	const std::string fn = "test_toggle_pauses_and_resumes_buffer";
@@ -676,6 +701,10 @@ int test_backpressure_shared_fifo() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// Producer
+// -------------------
+
 int test_producer_close_while_started_wakes_worker() {
 	const std::string fn = "test_producer_close_while_started_wakes_worker";
 	Producer producer;
@@ -711,6 +740,10 @@ int test_producer_close_empty() {
 	ASSERT_TRUE(fn, bridge.EoF());
 	RETURN_TEST(fn, 0);
 }
+
+// -------------------
+// Muxer / demuxer
+// -------------------
 
 int test_muxer_producer_to_file_high_water() {
 	const std::string fn = "test_muxer_producer_to_file_high_water";
@@ -852,6 +885,9 @@ int test_muxer_then_demuxer_roundtrip() {
 int main() {
 	int result = 0;
 
+	// -------------------
+	// External
+	// -------------------
 	result += test_ext_drains_all();
 	result += test_ext_high_water_zero_starts_running();
 	result += test_ext_flush_and_close();
@@ -862,6 +898,9 @@ int main() {
 	result += test_ext_move_assign_bridge();
 	result += test_close_source_while_started();
 
+	// -------------------
+	// File to file
+	// -------------------
 	result += test_io_file_to_file();
 	result += test_io_high_water_zero_pumps();
 	result += test_io_unopened_does_not_write();
@@ -870,14 +909,23 @@ int main() {
 	result += test_io_empty_file();
 	result += test_io_pattern_256();
 
+	// -------------------
+	// Buffer to file
+	// -------------------
 	result += test_buf_to_io();
 	result += test_buf_to_io_writer_not_open();
 
+	// -------------------
+	// File to buffer
+	// -------------------
 	result += test_io_to_buf();
 	result += test_io_to_buf_reader_not_open();
 	result += test_io_to_buf_nul_and_binary();
 	result += test_io_to_buf_pattern();
 
+	// -------------------
+	// Drainer
+	// -------------------
 	result += test_toggle_pauses_and_resumes_buffer();
 	result += test_toggle_pauses_with_high_water_zero();
 	result += test_high_water_setter_does_not_toggle();
@@ -886,8 +934,15 @@ int main() {
 	result += test_drainer_ops_on_moved_from();
 	result += test_backpressure_shared_fifo();
 
+	// -------------------
+	// Producer
+	// -------------------
 	result += test_producer_close_while_started_wakes_worker();
 	result += test_producer_close_empty();
+
+	// -------------------
+	// Muxer / demuxer
+	// -------------------
 	result += test_muxer_producer_to_file_high_water();
 	result += test_demuxer_file_to_producer();
 	result += test_demuxer_file_to_producer_high_water();
