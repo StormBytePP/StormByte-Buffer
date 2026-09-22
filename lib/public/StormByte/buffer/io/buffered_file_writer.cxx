@@ -18,6 +18,7 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/io/device_throughput.hxx>
 
 #include <cstdint>
 #include <ios>
@@ -32,6 +33,19 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
+	constexpr std::size_t MinWindow = 16ull * 1024ull;
+	constexpr std::size_t MaxWindow = 1024ull * 1024ull;
+	constexpr std::size_t DefaultBackPressure = 4;
+
+	std::size_t WindowFromBps(const std::size_t bps) noexcept {
+		const std::size_t raw = bps / 500ull;
+		if (raw < MinWindow)
+			return MinWindow;
+		if (raw > MaxWindow)
+			return MaxWindow;
+		return raw;
+	}
+
 	std::filesystem::path SpacePath(const std::filesystem::path& path) {
 		std::error_code ec;
 		if (std::filesystem::exists(path, ec) && !ec)
@@ -68,15 +82,24 @@ namespace {
 	}
 }
 
+BufferedFileWriter::BufferedFileWriter(std::filesystem::path path):
+	BufferedWriter(0, 0),
+	m_path(std::move(path)),
+	m_probe_on_setup(true) {}
+
 BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const std::size_t write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
 	BufferedWriter(write_chunk, back_pressure, max_wait),
-	m_path(std::move(path)) {}
+	m_path(std::move(path)),
+	m_probe_on_setup(false) {}
 
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedWriter(std::move(other)),
 	m_path(std::move(other.m_path)),
-	m_file(std::move(other.m_file)) {}
+	m_file(std::move(other.m_file)),
+	m_probe_on_setup(other.m_probe_on_setup) {
+	other.m_probe_on_setup = false;
+}
 
 BufferedFileWriter::~BufferedFileWriter() noexcept {
 	static_cast<void>(Close());
@@ -88,12 +111,22 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 		BufferedWriter::operator=(std::move(other));
 		m_path = std::move(other.m_path);
 		m_file = std::move(other.m_file);
+		m_probe_on_setup = other.m_probe_on_setup;
+		other.m_probe_on_setup = false;
 	}
 	return *this;
 }
 
 const std::filesystem::path& BufferedFileWriter::Path() const noexcept {
 	return m_path;
+}
+
+void BufferedFileWriter::Setup() {
+	if (!m_probe_on_setup)
+		return;
+	const auto rate = ProbeDeviceThroughput(m_path);
+	WriteChunk(WindowFromBps(rate.write_bps));
+	BackPressure(DefaultBackPressure);
 }
 
 bool BufferedFileWriter::WillWrite(const std::size_t n) const {

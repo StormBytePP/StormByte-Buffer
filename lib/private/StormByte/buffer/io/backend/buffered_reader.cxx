@@ -73,6 +73,7 @@ BufferedReader::~BufferedReader() {
 }
 
 void BufferedReader::Rebind(IO::BufferedReader& owner) noexcept {
+	FlushPrefetch();
 	m_owner = &owner;
 }
 

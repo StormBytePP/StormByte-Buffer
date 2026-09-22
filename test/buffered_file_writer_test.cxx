@@ -78,6 +78,8 @@ int test_ctor_unavailable() {
 	ASSERT_FALSE("test_ctor_unavailable", out.IsOpen());
 	ASSERT_EQUAL("test_ctor_unavailable", static_cast<std::size_t>(0), out.Tell());
 	ASSERT_EQUAL("test_ctor_unavailable", static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL("test_ctor_unavailable", static_cast<std::size_t>(0), out.WriteChunk());
+	ASSERT_EQUAL("test_ctor_unavailable", static_cast<std::size_t>(0), out.BackPressure());
 	ASSERT_EQUAL("test_ctor_unavailable", path, out.Path());
 	RETURN_TEST("test_ctor_unavailable", 0);
 }
@@ -135,7 +137,7 @@ int test_close_then_reopen_appends() {
 	const auto path = Scratch("reopen");
 	std::filesystem::remove(path);
 	{
-		BufferedFileWriter out(path);
+		BufferedFileWriter out(path, 0, 0);
 		ASSERT_TRUE("test_close_then_reopen_appends", out.Open());
 		FIFO a = FromText("AB");
 		ASSERT_EQUAL("test_close_then_reopen_appends", ToString(Status::Ok), ToString(out.Write(a).status));
@@ -157,7 +159,7 @@ int test_close_then_reopen_appends() {
 }
 
 // -------------------
-// Direct write
+// Direct write (explicit 0, 0)
 // -------------------
 
 int test_direct_write_hits_disk() {
@@ -165,6 +167,8 @@ int test_direct_write_hits_disk() {
 	std::filesystem::remove(path);
 	BufferedFileWriter out(path, 0, 0);
 	ASSERT_TRUE("test_direct_write_hits_disk", out.Open());
+	ASSERT_EQUAL("test_direct_write_hits_disk", static_cast<std::size_t>(0), out.WriteChunk());
+	ASSERT_EQUAL("test_direct_write_hits_disk", static_cast<std::size_t>(0), out.BackPressure());
 	FIFO src = FromText("HELLO");
 	const auto written = out.Write(src);
 	ASSERT_EQUAL("test_direct_write_hits_disk", ToString(Status::Ok), ToString(written.status));
@@ -181,7 +185,7 @@ int test_direct_write_hits_disk() {
 int test_direct_span_write() {
 	const auto path = Scratch("span");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(path, 0, 0);
 	ASSERT_TRUE("test_direct_span_write", out.Open());
 	const char raw[] = { 'Z', 'Y', 'X' };
 	const auto written = out.Write(std::span<const std::byte>(
@@ -198,7 +202,7 @@ int test_direct_span_write() {
 int test_empty_write_ok() {
 	const auto path = Scratch("empty");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(path, 0, 0);
 	ASSERT_TRUE("test_empty_write_ok", out.Open());
 	FIFO empty;
 	const auto written = out.Write(empty);
@@ -209,6 +213,69 @@ int test_empty_write_ok() {
 	ASSERT_TRUE("test_empty_write_ok", out.Close());
 	std::filesystem::remove(path);
 	RETURN_TEST("test_empty_write_ok", 0);
+}
+
+int test_explicit_zero_survives_open() {
+	const auto path = Scratch("zero");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE("test_explicit_zero_survives_open", out.Open());
+	ASSERT_EQUAL("test_explicit_zero_survives_open", static_cast<std::size_t>(0), out.WriteChunk());
+	ASSERT_EQUAL("test_explicit_zero_survives_open", static_cast<std::size_t>(0), out.BackPressure());
+	ASSERT_TRUE("test_explicit_zero_survives_open", out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST("test_explicit_zero_survives_open", 0);
+}
+
+// -------------------
+// Path-only ctor / Setup
+// -------------------
+
+int test_path_only_setup_sets_device_knobs() {
+	const auto path = Scratch("probe");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path);
+	ASSERT_EQUAL("test_path_only_setup_sets_device_knobs", static_cast<std::size_t>(0), out.WriteChunk());
+	ASSERT_EQUAL("test_path_only_setup_sets_device_knobs", static_cast<std::size_t>(0), out.BackPressure());
+	ASSERT_TRUE("test_path_only_setup_sets_device_knobs", out.Open());
+	ASSERT_TRUE("test_path_only_setup_sets_device_knobs", out.WriteChunk() >= 16ull * 1024ull);
+	ASSERT_TRUE("test_path_only_setup_sets_device_knobs", out.WriteChunk() <= 1024ull * 1024ull);
+	ASSERT_EQUAL("test_path_only_setup_sets_device_knobs", static_cast<std::size_t>(4), out.BackPressure());
+	ASSERT_TRUE("test_path_only_setup_sets_device_knobs", out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST("test_path_only_setup_sets_device_knobs", 0);
+}
+
+int test_path_only_short_write_holds_until_flush() {
+	const auto path = Scratch("phold");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path);
+	ASSERT_TRUE("test_path_only_short_write_holds_until_flush", out.Open());
+	FIFO src = FromText("ZYX");
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", ToString(Status::Ok),
+		ToString(out.Write(src).status));
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", static_cast<std::size_t>(3), out.Tell());
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", static_cast<std::size_t>(3), out.Dirty());
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", std::string(""), Slurp(path));
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", ToString(Status::Ok),
+		ToString(out.Flush().status));
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL("test_path_only_short_write_holds_until_flush", std::string("ZYX"), Slurp(path));
+	ASSERT_TRUE("test_path_only_short_write_holds_until_flush", out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST("test_path_only_short_write_holds_until_flush", 0);
+}
+
+int test_explicit_chunk_survives_setup() {
+	const auto path = Scratch("keep");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 8, 2);
+	ASSERT_TRUE("test_explicit_chunk_survives_setup", out.Open());
+	ASSERT_EQUAL("test_explicit_chunk_survives_setup", static_cast<std::size_t>(8), out.WriteChunk());
+	ASSERT_EQUAL("test_explicit_chunk_survives_setup", static_cast<std::size_t>(2), out.BackPressure());
+	ASSERT_TRUE("test_explicit_chunk_survives_setup", out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST("test_explicit_chunk_survives_setup", 0);
 }
 
 // -------------------
@@ -311,7 +378,7 @@ int test_close_flushes_dirty() {
 int test_truncate_zeros_file_and_tell() {
 	const auto path = Scratch("trunc");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(path, 0, 0);
 	ASSERT_TRUE("test_truncate_zeros_file_and_tell", out.Open());
 	FIFO src = FromText("XYZ");
 	ASSERT_EQUAL("test_truncate_zeros_file_and_tell", ToString(Status::Ok), ToString(out.Write(src).status));
@@ -353,7 +420,7 @@ int test_truncate_drops_dirty() {
 int test_move_transfers_session() {
 	const auto path = Scratch("move");
 	std::filesystem::remove(path);
-	BufferedFileWriter out(path);
+	BufferedFileWriter out(path, 0, 0);
 	ASSERT_TRUE("test_move_transfers_session", out.Open());
 	FIFO first = FromText("AB");
 	ASSERT_EQUAL("test_move_transfers_session", ToString(Status::Ok), ToString(out.Write(first).status));
@@ -390,6 +457,14 @@ int main() {
 	result += test_direct_write_hits_disk();
 	result += test_direct_span_write();
 	result += test_empty_write_ok();
+	result += test_explicit_zero_survives_open();
+
+	// -------------------
+	// Path-only ctor / Setup
+	// -------------------
+	result += test_path_only_setup_sets_device_knobs();
+	result += test_path_only_short_write_holds_until_flush();
+	result += test_explicit_chunk_survives_setup();
 
 	// -------------------
 	// Ring / Flush / BackPressure

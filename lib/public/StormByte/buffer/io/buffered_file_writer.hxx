@@ -52,12 +52,20 @@ namespace StormByte {
 			 * Does not open in the constructor. Does not create parent directories.
 			 * Not sealed.
 			 *
-			 * A derived class may override any @c Origin* hook and
-			 * @ref WillWrite. When the transport is still this file, call
-			 * the File implementation and then add behaviour. When it is
-			 * not, override every hook that touches the stream and do not
-			 * call these File implementations. The write ring stays in
-			 * @ref BufferedWriter.
+			 * The device does not change after construction: @ref WriteChunk
+			 * and @ref BackPressure are chosen once. @ref MaxWait stays
+			 * dynamic.
+			 *
+			 * @par Constructors
+			 * @c BufferedFileWriter(path) defers chunk and backpressure to
+			 * @ref Setup (device probe). @c BufferedFileWriter(path,
+			 * write_chunk, back_pressure, max_wait) stores those values.
+			 * A zero chunk or backpressure disables the ring.
+			 *
+			 * A derived class may override any @c Origin* hook, @ref WillWrite
+			 * and @ref Setup. When the transport is still this file, call the
+			 * File implementation and then add behaviour. When it is not,
+			 * do not call these File implementations.
 			 *
 			 * The derived destructor must call @ref Close first.
 			 * File @ref Close is idempotent.
@@ -72,14 +80,20 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Store the path and policy knobs. Does not open.
+					 * @brief Store the path. Chunk and backpressure come from @ref Setup.
+					 * @param path Filesystem path.
+					 */
+					explicit BufferedFileWriter(std::filesystem::path path);
+
+					/**
+					 * @brief Store the path and explicit knobs. Does not open.
 					 * @param path Filesystem path.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.
 					 * @param max_wait Initial @ref MaxWait.
 					 */
-					explicit BufferedFileWriter(std::filesystem::path path,
-						std::size_t write_chunk = 0, std::size_t back_pressure = 0,
+					BufferedFileWriter(std::filesystem::path path,
+						std::size_t write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -122,6 +136,14 @@ namespace StormByte {
 					const std::filesystem::path& Path() const noexcept;
 
 				protected:
+					/**
+					 * @brief Apply device chunk and backpressure for the path-only ctor.
+					 *
+					 * No-op when the explicit constructor already set those knobs
+					 * (including 0 = ring off).
+					 */
+					void Setup() override;
+
 					/**
 					 * @brief Open @c m_path as a binary append file. Creates the file
 					 *        when the parent directory exists.
@@ -170,6 +192,7 @@ namespace StormByte {
 					std::filesystem::path m_path;			///< Path given at construction.
 					std::ofstream m_file;					///< Binary output stream.
 					mutable std::mutex m_file_mutex;		///< Serialises ofstream access.
+					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};
 		}
 	}

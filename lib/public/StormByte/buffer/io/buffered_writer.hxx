@@ -67,8 +67,9 @@ namespace StormByte {
 			 * @brief Coordinated binary write sink with optional chunked write-behind.
 			 *
 			 * Public base for byte destinations. Leaves implement only the
-			 * @c Origin* hooks. They do not override @c Write, @c Flush,
-			 * @c Open, @c Close, @c Rewind or @c Truncate.
+			 * @c Origin* hooks and may override @ref Setup. They do not
+			 * override @c Write, @c Flush, @c Open, @c Close, @c Rewind
+			 * or @c Truncate.
 			 *
 			 * @par Binary only
 			 * Octets only. No text mode.
@@ -196,6 +197,7 @@ namespace StormByte {
 					 * @brief Arm the origin.
 					 * @return @c true if @ref State is Idle afterwards.
 					 *
+					 * Calls @ref Setup then the backend @c Open.
 					 * Not idempotent.
 					 */
 					virtual bool Open() final;
@@ -362,6 +364,14 @@ namespace StormByte {
 					 * @param state New @ref State.
 					 */
 					void SetState(enum State state) noexcept;
+
+					/**
+					 * @brief Leaf policy hook. Called from @ref Open before the origin.
+					 *
+					 * Default does nothing. File uses it for the path-only ctor.
+					 * The most-derived vtable is live.
+					 */
+					virtual void Setup();
 
 					/**
 					 * @brief Whether @p n more bytes can be accepted now.

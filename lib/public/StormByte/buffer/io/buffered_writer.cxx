@@ -61,9 +61,12 @@ void BufferedWriter::SetState(const enum State state) noexcept {
 		m_io->SetState(state);
 }
 
+void BufferedWriter::Setup() {}
+
 bool BufferedWriter::Open() {
 	if (!m_io)
 		return false;
+	Setup();
 	return m_io->Open();
 }
 

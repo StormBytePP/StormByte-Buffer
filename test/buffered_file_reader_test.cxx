@@ -69,6 +69,8 @@ int test_ctor_unavailable_bool_false() {
 	ASSERT_FALSE("test_ctor_unavailable_bool_false", in.IsOpen());
 	ASSERT_FALSE("test_ctor_unavailable_bool_false", in.IsReadable());
 	ASSERT_EQUAL("test_ctor_unavailable_bool_false", static_cast<std::size_t>(0), in.Tell());
+	ASSERT_EQUAL("test_ctor_unavailable_bool_false", static_cast<std::size_t>(0), in.ReadAhead());
+	ASSERT_EQUAL("test_ctor_unavailable_bool_false", File("five.bin"), in.Path());
 	RETURN_TEST("test_ctor_unavailable_bool_false", 0);
 }
 
@@ -715,6 +717,45 @@ int test_block_4k_chunked() {
 }
 
 // -------------------
+// Path-only ctor / Setup
+// -------------------
+
+int test_path_only_setup_sets_readahead() {
+	BufferedFileReader in(File("five.bin"));
+	ASSERT_EQUAL("test_path_only_setup_sets_readahead", static_cast<std::size_t>(0), in.ReadAhead());
+	ASSERT_TRUE("test_path_only_setup_sets_readahead", in.Open());
+	ASSERT_TRUE("test_path_only_setup_sets_readahead", in.ReadAhead() >= 16ull * 1024ull);
+	ASSERT_TRUE("test_path_only_setup_sets_readahead", in.ReadAhead() <= 1024ull * 1024ull);
+	ASSERT_EQUAL("test_path_only_setup_sets_readahead", static_cast<std::size_t>(1024ull * 1024ull), in.MaxMemory());
+	FIFO dest;
+	ASSERT_EQUAL("test_path_only_setup_sets_readahead", ToString(Status::Ok), ToString(in.Read(5, dest).status));
+	ASSERT_EQUAL("test_path_only_setup_sets_readahead", std::string("ABCDE"), Text(dest));
+	RETURN_TEST("test_path_only_setup_sets_readahead", 0);
+}
+
+int test_explicit_zero_survives_open() {
+	BufferedFileReader in(File("five.bin"), 0, 0);
+	ASSERT_TRUE("test_explicit_zero_survives_open", in.Open());
+	ASSERT_EQUAL("test_explicit_zero_survives_open", static_cast<std::size_t>(0), in.ReadAhead());
+	ASSERT_EQUAL("test_explicit_zero_survives_open", static_cast<std::size_t>(0), in.MaxMemory());
+	FIFO dest;
+	ASSERT_EQUAL("test_explicit_zero_survives_open", ToString(Status::Ok), ToString(in.Read(5, dest).status));
+	ASSERT_EQUAL("test_explicit_zero_survives_open", std::string("ABCDE"), Text(dest));
+	RETURN_TEST("test_explicit_zero_survives_open", 0);
+}
+
+int test_explicit_readahead_survives_setup() {
+	BufferedFileReader in(File("ahead.bin"), 25, 1024);
+	ASSERT_TRUE("test_explicit_readahead_survives_setup", in.Open());
+	ASSERT_EQUAL("test_explicit_readahead_survives_setup", static_cast<std::size_t>(25), in.ReadAhead());
+	ASSERT_EQUAL("test_explicit_readahead_survives_setup", static_cast<std::size_t>(1024), in.MaxMemory());
+	FIFO dest;
+	ASSERT_EQUAL("test_explicit_readahead_survives_setup", ToString(Status::Ok), ToString(in.Read(5, dest).status));
+	ASSERT_EQUAL("test_explicit_readahead_survives_setup", std::string("01234"), Text(dest));
+	RETURN_TEST("test_explicit_readahead_survives_setup", 0);
+}
+
+// -------------------
 // Move
 // -------------------
 
@@ -805,6 +846,13 @@ int main() {
 	result += test_max_memory_zero_still_reads();
 	result += test_max_memory_zero_span_reads();
 	result += test_block_4k_chunked();
+
+	// -------------------
+	// Path-only ctor / Setup
+	// -------------------
+	result += test_path_only_setup_sets_readahead();
+	result += test_explicit_zero_survives_open();
+	result += test_explicit_readahead_survives_setup();
 
 	// -------------------
 	// Move

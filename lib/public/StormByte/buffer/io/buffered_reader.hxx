@@ -63,8 +63,9 @@ namespace StormByte {
 			 *
 			 * Public base for byte origins. Callers take
 			 * @c const BufferedReader&. Leaves implement only the
-			 * @c Origin* hooks. They do not override @c Read, @c Peek,
-			 * @c Seek, @c Open, @c Close or @c Rewind.
+			 * @c Origin* hooks and may override @ref Setup. They do not
+			 * override @c Read, @c Peek, @c Seek, @c Open, @c Close or
+			 * @c Rewind.
 			 *
 			 * @par Binary only
 			 * Octets only (@ref DataType / @ref FIFO / @c std::span<std::byte>). No text mode.
@@ -209,6 +210,7 @@ namespace StormByte {
 					 * @brief Arm the origin.
 					 * @return @c true if @ref State is @ref State::Idle afterwards.
 					 *
+					 * Calls @ref Setup then the backend @c Open.
 					 * Not idempotent. A second call while Idle returns @c false
 					 * and leaves the session Idle.
 					 */
@@ -434,6 +436,14 @@ namespace StormByte {
 					 * @ref OriginPull. Not for user code.
 					 */
 					void SetState(enum State state) noexcept;
+
+					/**
+					 * @brief Leaf policy hook. Called from @ref Open before the origin.
+					 *
+					 * Default does nothing. File uses it for the path-only ctor.
+					 * The most-derived vtable is live.
+					 */
+					virtual void Setup();
 
 					/**
 					 * @name Origin hooks

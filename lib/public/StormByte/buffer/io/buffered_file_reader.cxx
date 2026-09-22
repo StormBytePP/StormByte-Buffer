@@ -18,6 +18,7 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/device_throughput.hxx>
 #include <StormByte/buffer/fifo.hxx>
 
 #include <ios>
@@ -26,17 +27,40 @@
 
 using namespace StormByte::Buffer::IO;
 
+namespace {
+	constexpr std::size_t DefaultMaxMemory = 1024ull * 1024ull;
+	constexpr std::size_t MinWindow = 16ull * 1024ull;
+	constexpr std::size_t MaxWindow = 1024ull * 1024ull;
+
+	std::size_t WindowFromBps(const std::size_t bps) noexcept {
+		const std::size_t raw = bps / 500ull;
+		if (raw < MinWindow)
+			return MinWindow;
+		if (raw > MaxWindow)
+			return MaxWindow;
+		return raw;
+	}
+}
+
+BufferedFileReader::BufferedFileReader(std::filesystem::path path):
+	BufferedReader(0, DefaultMaxMemory),
+	m_path(std::move(path)),
+	m_probe_on_setup(true) {}
+
 BufferedFileReader::BufferedFileReader(std::filesystem::path path, const std::size_t read_ahead,
 		const std::size_t max_memory):
 	BufferedReader(read_ahead, max_memory),
-	m_path(std::move(path)) {}
+	m_path(std::move(path)),
+	m_probe_on_setup(false) {}
 
 BufferedFileReader::BufferedFileReader(BufferedFileReader&& other) noexcept:
 	BufferedReader(std::move(other)),
 	m_path(std::move(other.m_path)),
 	m_file(std::move(other.m_file)),
-	m_size(other.m_size) {
+	m_size(other.m_size),
+	m_probe_on_setup(other.m_probe_on_setup) {
 	other.m_size.reset();
+	other.m_probe_on_setup = false;
 }
 
 BufferedFileReader::~BufferedFileReader() noexcept {
@@ -50,13 +74,22 @@ BufferedFileReader& BufferedFileReader::operator=(BufferedFileReader&& other) no
 		m_path = std::move(other.m_path);
 		m_file = std::move(other.m_file);
 		m_size = other.m_size;
+		m_probe_on_setup = other.m_probe_on_setup;
 		other.m_size.reset();
+		other.m_probe_on_setup = false;
 	}
 	return *this;
 }
 
 const std::filesystem::path& BufferedFileReader::Path() const noexcept {
 	return m_path;
+}
+
+void BufferedFileReader::Setup() {
+	if (!m_probe_on_setup)
+		return;
+	const auto rate = ProbeDeviceThroughput(m_path);
+	ReadAhead(WindowFromBps(rate.read_bps));
 }
 
 Result BufferedFileReader::OriginOpen() {

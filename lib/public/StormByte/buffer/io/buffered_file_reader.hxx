@@ -38,8 +38,6 @@ namespace StormByte {
 	 * @brief Buffer module of the StormByte suite.
 	 */
 	namespace Buffer {
-		class FIFO;
-
 		/**
 		 * @namespace StormByte::Buffer::IO
 		 * @brief Buffered binary sources and sinks.
@@ -52,16 +50,23 @@ namespace StormByte {
 			 * Binary `ifstream` only. Hooks call @ref SetState.
 			 * Does not open in the constructor. Not sealed.
 			 *
-			 * A derived class may override any @c Origin* hook. Keep
-			 * @ref OriginCanSeek if the origin stays seekable. When the
-			 * transport is still this file, call the File implementation
-			 * and then add behaviour. When the transport is not this file,
-			 * override every hook that touches the stream and do not call
-			 * these File implementations. Prefetch and Seek stay in
-			 * @ref BufferedReader.
+			 * The device does not change after construction: @ref ReadAhead
+			 * is chosen once. Cache size (@ref MaxMemory) stays dynamic.
 			 *
-			 * The derived destructor must call @ref Close first so the
-			 * derived vtable is live. File @ref Close is idempotent.
+			 * @par Constructors
+			 * @c BufferedFileReader(path) defers @ref ReadAhead to
+			 * @ref Setup (device probe). Initial @ref MaxMemory is 1 MiB.
+			 * @c BufferedFileReader(path, read_ahead, max_memory) stores
+			 * those values. @c read_ahead 0 disables prefetch.
+			 *
+			 * A derived class may override any @c Origin* hook and
+			 * @ref Setup. When the transport is still this file, call the
+			 * File implementation and then add behaviour. When it is not,
+			 * do not call these File implementations. Prefetch and Seek
+			 * stay in @ref BufferedReader.
+			 *
+			 * The derived destructor must call @ref Close first.
+			 * File @ref Close is idempotent.
 			 *
 			 * @see BufferedReader, State
 			 */
@@ -73,13 +78,19 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Store the path and policy knobs. Does not open.
+					 * @brief Store the path. @ref ReadAhead comes from @ref Setup.
 					 * @param path Filesystem path.
-					 * @param read_ahead Initial @ref ReadAhead in bytes (0 = off).
-					 * @param max_memory Initial @ref MaxMemory in bytes (0 = no cache).
 					 */
-					explicit BufferedFileReader(std::filesystem::path path,
-						std::size_t read_ahead = 0, std::size_t max_memory = 0);
+					explicit BufferedFileReader(std::filesystem::path path);
+
+					/**
+					 * @brief Store the path and explicit knobs. Does not open.
+					 * @param path Filesystem path.
+					 * @param read_ahead Prefetch length. 0 disables prefetch.
+					 * @param max_memory Cache cap. 0 stores no cache.
+					 */
+					BufferedFileReader(std::filesystem::path path,
+						std::size_t read_ahead, std::size_t max_memory);
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -121,6 +132,14 @@ namespace StormByte {
 					const std::filesystem::path& Path() const noexcept;
 
 				protected:
+					/**
+					 * @brief Apply device @ref ReadAhead when constructed from path only.
+					 *
+					 * No-op when the three-argument constructor already set
+					 * an explicit prefetch length (including 0 = off).
+					 */
+					void Setup() override;
+
 					/**
 					 * @brief Open @c m_path as a binary input file and cache its size.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
@@ -172,6 +191,7 @@ namespace StormByte {
 					std::ifstream m_file;					///< Binary input stream.
 					std::optional<std::size_t> m_size;		///< Size after OriginOpen.
 					mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
+					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};
 		}
 	}

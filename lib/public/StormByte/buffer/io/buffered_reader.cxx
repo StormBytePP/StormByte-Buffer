@@ -80,9 +80,12 @@ void BufferedReader::SetState(const enum State state) noexcept {
 		m_io->SetState(state);
 }
 
+void BufferedReader::Setup() {}
+
 bool BufferedReader::Open() {
 	if (!m_io)
 		return false;
+	Setup();
 	return m_io->Open();
 }
 

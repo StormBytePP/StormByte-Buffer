@@ -7,26 +7,39 @@
 [![CI](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/StormBytePP/StormByte-Buffer/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-StormBytePP-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/StormBytePP)
 
-This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, pipelines and buffered I/O for the StormByte C++ suite.
+This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, pipelines, Bridge and buffered I/O for the StormByte C++ suite.
 
 It depends on [StormByte Base 1.2.0](https://github.com/StormBytePP/StormByte/releases/tag/1.2.0) or newer and optionally [StormByte Logger 1.2.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/1.2.0) or newer for pipeline stages (`Scope`). Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network and System are **other repositories**. This one does not implement them.
+
+## Designed to interconnect
+
+The point of this library is that its pieces plug into each other. A `Producer` is a `Consumer`. A `Bridge` pulls from any `ExternalReader` and pushes into any `ExternalWriter`. A `BufferedFileReader` *is* a `BufferedReader`; a `BufferedFileWriter` *is* a `BufferedWriter`. Leaves only implement origin hooks. Caches, prefetch, backpressure and `Seek` live in the bases.
+
+Typical wires:
+
+- `Producer` → `Consumer` (same ring).
+- `Bridge(Consumer, BufferedFileWriter)` — drain a ring to a file.
+- `BufferedFileReader` as a `BufferedReader` — sequential or seekable reads with a cache map.
+- Future leaves (remote file, socket) inherit the File leaves and override the same hooks.
+
+See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWriter](#iobufferedwriter) and [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 
 ## What this module does
 
 - **FIFO** — grow-on-demand byte buffer. Not thread-safe. `Read` / `Peek` keep data; `Extract` consumes it.
 - **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
 - **Ring** — concurrent ring (`shared_mutex`, many-to-many).
-- **Producer / Consumer** — write-only / read-only handles over a shared `Ring`.
-- **Hopper** — single-producer single-consumer (SPSC) queue of typed items with optional capacity ceiling. `Push` / `Pop` stay; `<<` / `>>` are the same operations. `Notify(cv)` does not own the CV; call `Unnotify` before that CV dies.
-- **Sink** — map of integer keys to Hopper buckets. Wire with `To(key)` / `>>` / `<<`. Round-robin or custom `Select`, plus terminal producer `Drain`.
-- **Pipeline** — stages chained with `ExecutionMode`: `Sync`, `Async`, `Parallel` (combinable). A non-null logger is scoped as `Buffer/Pipeline` before it reaches the stages.
-- **IO::BufferedReader** — coordinated binary read origin: prefetch, span cache, `Read` / `Peek` (FIFO or `std::span<std::byte>`), `Seek` / `Tell` / `Size`. Leaves implement `Origin*` only. See [IO::BufferedReader](#iobufferedreader).
-- **IO::BufferedWriter** — public base for a binary write sink with optional write-behind chunks. Leaves implement `Origin*` hooks only; they do not override `Write` / `Flush`.
-- **IO::BufferedFileReader** / **IO::BufferedFileWriter** — filesystem leaves over those bases (binary `ifstream` / append `ofstream`).
-- **Bridge** — move octets from any readable tip to any writable tip: in-memory buffers (`ExternalReader` / `ExternalWriter`) and/or IO sessions (`IO::BufferedReader` / `IO::BufferedWriter`), in any pairing. Not a typed Hopper pump.
+- **Producer / Consumer** — write-only / read-only handles over a shared `Ring`. See [Producer and Consumer](#producer-and-consumer).
+- **Hopper** — SPSC queue of typed items with optional capacity. See [Hopper](#hopper).
+- **Sink** — map of integer keys to Hopper buckets. See [Sink](#sink).
+- **Bridge** — chunked passthrough `ExternalReader` → `ExternalWriter`, with optional high-water. See [Bridge](#bridge).
+- **IO::BufferedReader / IO::BufferedWriter** — session bases (`Open` / `Close` / `Tell` / `EoF`). Leaves implement `Origin*`. See [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
+- **BufferedFileReader / BufferedFileWriter** — file leaves. Path-only constructors pick device-tuned windows at `Open`; explicit constructors keep the knobs you pass. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
+- **Pipeline** — stages chained with `ExecutionMode`. See [Pipeline](#pipeline).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
+- **Private** — `LockFreeRing` is SPSC only, used between pipeline stages.
 
 ## The rest of the suite
 
@@ -44,6 +57,7 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 
 ## Table of Contents
 
+- [Designed to interconnect](#designed-to-interconnect)
 - [What this module does](#what-this-module-does)
 - [The rest of the suite](#the-rest-of-the-suite)
 - [Installation](#installation)
@@ -52,15 +66,14 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
   - [Producer and Consumer](#producer-and-consumer)
   - [Hopper](#hopper)
   - [Sink](#sink)
-  - [Pipeline](#pipeline)
+  - [Bridge](#bridge)
   - [IO::BufferedReader](#iobufferedreader)
   - [IO::BufferedWriter](#iobufferedwriter)
-  - [IO::BufferedFileReader](#iobufferedfilereader)
-  - [IO::BufferedFileWriter](#iobufferedfilewriter)
-  - [Bridge](#bridge)
+  - [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter)
+  - [Pipeline](#pipeline)
+- [Support](#support)
 - [Contributing](#contributing)
 - [License](#license)
-- [Support](#support)
 
 ## Installation
 
@@ -75,7 +88,7 @@ cmake --build build
 
 ## Usage
 
-Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. IO types live in `StormByte::Buffer::IO`.
+Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. I/O types live in `StormByte::Buffer::IO`.
 
 ### FIFO
 
@@ -102,7 +115,7 @@ int main() {
 
 ### Producer and Consumer
 
-Prefer these over touching `SharedFIFO` / `Ring` by hand.
+Prefer these over touching `SharedFIFO` / `Ring` by hand. A `Producer` yields a `Consumer` over the same ring; that `Consumer` is an `ExternalReader` and can feed a [Bridge](#bridge).
 
 ```cpp
 #include <StormByte/buffer/producer.hxx>
@@ -139,40 +152,167 @@ int main() {
 
 ### Hopper
 
-`Hopper<T>` is an SPSC **item** queue, not a byte buffer. Use it for `shared_ptr<Item>` and similar. It is not a Bridge tip.
+`Hopper<T>` is a single-producer single-consumer (SPSC) queue for discrete typed items (`StormByte::Type::MoveConstructible T`). Capacity `0` is unbounded; `Push` blocks when a bounded hopper is full. `Eof()` ends production. Smart pointer types (`StormByte::Type::SmartPointer<T>`) discard null items on `Push`.
+
+`Push` and `Pop` are the stable API. `hopper << item`, `hopper >> item` and `item >> hopper` do the same thing.
+
+`Notify(cv)` stores a pointer to a condition variable the Hopper does **not** own. The Hopper outlives a typical consumer. Call `Unnotify()` before that CV is destroyed, otherwise a later producer `Eof` can signal a freed object.
 
 ```cpp
 #include <StormByte/buffer/hopper.hxx>
+#include <thread>
 #include <memory>
+#include <iostream>
 
 using StormByte::Buffer::Hopper;
 
 int main() {
-	Hopper<std::shared_ptr<int>> hopper(8);
-	hopper << std::make_shared<int>(1);
-	auto item = hopper.Pop();
-	hopper.Eof();
+	Hopper<std::unique_ptr<int>> hopper(5);
+
+	std::thread producer([&hopper]() {
+		for (int i = 0; i < 10; ++i)
+			hopper << std::make_unique<int>(i);
+		hopper.Eof();
+	});
+
+	std::thread consumer([&hopper]() {
+		while (!hopper.Empty() || !hopper.EoF()) {
+			auto item = hopper.Pop();
+			if (item)
+				std::cout << "Popped: " << *item << "\n";
+		}
+	});
+
+	producer.join();
+	consumer.join();
 }
 ```
 
-`Notify(cv)` does not own `cv`. Call `Unnotify` before that condition variable is destroyed.
-
 ### Sink
 
-`Sink<T>` is a map of integer keys to `Hopper<T>` buckets. Wire with `To(key)` / `>>` / `<<`. It is not a Bridge tip.
+`Sink<T>` maps integer keys to `Hopper<T>` buckets. Wire a consumer with `To(key)` / `>>` / `<<`. `Bind` is the old name and is `[[deprecated]]`.
+
+`Sink::EoF()` contract:
+
+- **Zero hoppers:** `true` only if this `Sink` was closed (`Eof()` or destruction).
+- **With hoppers:** `true` when every hopper is empty and `Hopper::EoF()` is `true`, even if this `Sink` did not call `Eof()` (the producer may have closed a shared hopper).
+- **Dynamic wire:** attaching a new key after `EoF()` was `true` may make `EoF()` `false` again.
+- **Meaning:** no items remain and none can enter the current buckets.
 
 ```cpp
 #include <StormByte/buffer/sink.hxx>
+#include <thread>
 #include <memory>
+#include <string>
+#include <iostream>
 
 using StormByte::Buffer::Sink;
-using StormByte::Buffer::Hopper;
 
 int main() {
-	Sink<std::shared_ptr<int>> sink;
-	Hopper<std::shared_ptr<int>> hopper;
-	sink.To(0) << hopper;
-	sink << std::make_shared<int>(7);
+	Sink<std::shared_ptr<std::string>> producerSink;
+	Sink<std::shared_ptr<std::string>> consumerSink;
+
+	producerSink.To(1, consumerSink);
+	producerSink.To(2, consumerSink);
+
+	std::thread writer([&producerSink]() {
+		producerSink.Push(1, std::make_shared<std::string>("Message on Channel 1"));
+		producerSink.Push(2, std::make_shared<std::string>("Message on Channel 2"));
+		producerSink.Eof();
+	});
+
+	std::thread reader([&consumerSink]() {
+		while (!consumerSink.EoF()) {
+			auto msg = consumerSink.Pop();
+			if (msg)
+				std::cout << "Received: " << *msg << "\n";
+		}
+	});
+
+	writer.join();
+	reader.join();
+}
+```
+
+### Bridge
+
+`Bridge` copies bytes from an `ExternalReader` to an `ExternalWriter` in chunks. Optional high-water (`0` = no extra cap; the writer may still apply its own backpressure). Use it when the source is a pipe or a ring and the sink is a file or another writer.
+
+```cpp
+#include <StormByte/buffer/io/bridge.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/producer.hxx>
+
+using StormByte::Buffer::Producer;
+using StormByte::Buffer::IO::Bridge;
+using StormByte::Buffer::IO::BufferedFileWriter;
+
+int main() {
+	Producer producer;
+	BufferedFileWriter out("out.bin"); // path-only: device-tuned chunk, see File leaves
+	out.Open();
+
+	Bridge bridge(producer.Consumer(), out, /*high_water=*/0);
+	producer.Write("payload");
+	producer.Close();
+	(void)bridge.Pump();
+	out.Close();
+}
+```
+
+### IO::BufferedReader
+
+Session over a byte origin. The public type owns cache, prefetch, `Tell` and `Seek`. A leaf only implements `OriginOpen` / `OriginClose` / `OriginPull` and, if it can, `OriginCanSeek` / `OriginSeek` / `OriginHasSize` / `OriginSize`.
+
+- `Open` is not idempotent. It calls the leaf `Setup()` once, then the origin.
+- `Read` / `Peek` take a `FIFO` or a writable `std::span<std::byte>`.
+- `Seek` is valid only when the origin is seekable. It is **not** guaranteed O(1): a remote or CPU-heavy origin may block. Seekable origins keep a map of cached spans; a hit does not drop the window. A miss seeks the origin and adds a span. `MaxMemory` is a cap; GC drops spans farthest from `Tell`. `MaxMemory == 0` disables the cache. Not seekable: one forward span; `Seek` returns `Failed` and does not call the hook.
+- Prefetch is stopped before `Seek` and before a move (`Rebind`). The next `Read` / `Peek` requests it again.
+
+### IO::BufferedWriter
+
+Session over a byte sink. The public type owns the write ring, `Dirty`, `Flush` and `Truncate`. A leaf implements `OriginOpen` / `OriginClose` / `OriginPush` and optionally `OriginFlush` / `OriginTruncate`.
+
+- `WriteChunk == 0` is direct: each `Write` hits the origin and `Dirty()` stays `0`.
+- `WriteChunk > 0` holds bytes until a full chunk, `Flush`, or `Close`.
+- `BackPressure` is in **chunks**, not bytes. `0` disables that extra cap (the leaf may still refuse work).
+- Device speed knobs are fixed at construction. `MaxMemory` / `MaxWait` remain settable.
+
+### BufferedFileReader / BufferedFileWriter
+
+File leaves of the bases above. They are meant to be derived from (same hooks, no extra setters for the path).
+
+Two constructors:
+
+| Constructor | What happens at `Open` |
+| --- | --- |
+| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` probes the device and sets `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). `MaxMemory` on the short reader ctor is 1 MiB. |
+| `BufferedFileReader(path, read_ahead, max_memory)` / `BufferedFileWriter(path, write_chunk, backpressure)` | Those values stay. `Setup()` does not overwrite them. `(path, 0, 0)` is direct / no prefetch. |
+
+The device does not change after construction, so there are no setters for `ReadAhead` / `WriteChunk` / `BackPressure` on the *policy of the device*. `MaxMemory` and `MaxWait` stay settable: they are cache and wait policy, not device speed.
+
+`Setup()` is a protected hook on the base, called from `Open` before `OriginOpen`, when the most-derived vtable is live. A derived leaf can override `Setup()` (or skip the probe) and still reuse File origin hooks.
+
+Probe is a nominal throughput estimate (HDD / SATA SSD / NVMe gen / USB / network at 80 % of NIC), not a benchmark. The window is clamped (16 KiB–1 MiB). It is a starting point, not a promise of disk or link speed.
+
+```cpp
+#include <StormByte/buffer/io/buffered_file_reader.hxx>
+#include <StormByte/buffer/io/buffered_file_writer.hxx>
+
+using StormByte::Buffer::FIFO;
+using StormByte::Buffer::IO::BufferedFileReader;
+using StormByte::Buffer::IO::BufferedFileWriter;
+
+int main() {
+	BufferedFileReader in("in.bin");          // auto window
+	in.Open();
+	FIFO dest;
+	(void)in.Read(16, dest);
+
+	BufferedFileWriter direct("out.bin", 0, 0); // no ring
+	direct.Open();
+	(void)direct.Write(dest);
+	direct.Close();
 }
 ```
 
@@ -223,181 +363,12 @@ int main() {
 
 `ExecutionMode`: `Sync` (caller thread), `Async` (background), `Parallel` (one thread per stage). Flags combine (`Async | Parallel`).
 
-### IO::BufferedReader
+## Support
 
-`StormByte::Buffer::IO::BufferedReader` is the public base for a **binary** read origin. It owns the session, optional prefetch, the cache map, `Read` / `Peek` / `Seek` / `Tell` / `Size` and `MaxWait`. Construction is `State::Unavailable`. `Open` arms it; `Close` is idempotent; `Open` is not.
+StormByte is developed in spare time. Sponsorship is optional and does not buy features, priority or support.
 
-`Read` / `Peek` take either `n` + `FIFO&` or `std::span<std::byte>`. The span size is the request. An empty span returns `{Ok, 0}` without consuming or pulling; that is not the FIFO `n == 0` “serve current cache” case. On `Ok` / `End` with `count > 0` the first `count` bytes of the span are written and the tail is left as-is. Failed / Error / TryAgain / End with count 0 leave the span untouched. There is no `Read(n, span)`.
-
-A leaf does **not** override `Read`, `Peek`, `Seek`, `Open`, `Close` or `Rewind`. It implements only:
-
-- `OriginOpen` / `OriginClose` — arm and release the device; call `SetState`.
-- `OriginPull(n, dest)` — read up to `n` raw bytes. Do not cache inside the hook.
-- `OriginCanSeek` / `OriginSeek` — or report not seekable.
-- `OriginHasSize` / `OriginSize` — or report unknown length.
-
-`IsSeekable()` is `OriginCanSeek`. When that is true, `Seek(offset, Position::Absolute)` / `Seek(offset, Position::Relative)` moves `Tell` and **always** calls `OriginSeek` for the resolved target, including a cache hit, so the next pull is not silent corruption. Cached spans stay; a hit only avoids re-pulling those bytes. When `IsSeekable()` is false, `Seek` returns `Failed` and does not call the hook.
-
-There is no `Whence`. End-relative positioning is `Seek(*Size() + off, Position::Absolute)` when `IsSized()`. Negative absolute offsets and relative steps before 0 fail. Seek without `Open` fails.
-
-Seek is not O(1) and is not guaranteed to return immediately (prefetch cancel, device seek, cache bookkeeping).
-
-Seekable origins keep a map of owned spans `[offset, offset+len)`. Overlap and abutment merge, even past `ReadAhead`. `MaxMemory` evicts the spans farthest from `Tell`. `MaxMemory` 0 stores no cache and still serves `Read` / `Peek` from the origin. A non-seekable origin keeps one forward span.
-
-`Tell` is the logical cursor: `0` after `Open` / `Rewind`, advanced only by a consuming `Read`, set by a successful `Seek`. `Peek` and an empty span do not move it. A failed `Seek` leaves it unchanged. Seeking past `Size()` is allowed; `Tell` stays at that offset and a later `Read` is `End` with count 0.
-
-Pass `const BufferedReader&` into a [Bridge](#bridge) when the pump should drain the session sequentially. Random access stays on the reader: call `Seek` / `Tell` / `Size` yourself. Do not put a Bridge in front of a source that must seek.
-
-### IO::BufferedWriter
-
-`StormByte::Buffer::IO::BufferedWriter` is the public base for a **binary** write sink. It owns the session, optional SPSC write-behind (`WriteChunk` / `BackPressure`), `Write`, `Flush`, `Truncate` and `Tell`. Either knob `0` is direct (blocking) write. Both `> 0` buffer until a full chunk or `Flush`. `Write` is atomic: the whole payload is accepted or nothing is (`TryAgain` if it would exceed backpressure).
-
-A leaf does **not** override `Write`, `Flush`, `Open`, `Close`, `Rewind` or `Truncate`. It implements only:
-
-- `OriginOpen` / `OriginClose` — arm and release; call `SetState`.
-- `OriginPush(span)` — write those bytes. Do not buffer in the hook.
-- `OriginFlush` — make accepted bytes visible on the device.
-- `OriginTruncate` — drop destination contents.
-
-The destructor of a leaf must call `Close` while its vtable is live.
-
-### IO::BufferedFileReader
-
-Filesystem leaf over `BufferedReader`. Binary `ifstream`. Does not open in the constructor. Seekable and sized when the path is a regular file. `Seek` stays on the base; this class only implements `OriginSeek`.
-
-```cpp
-#include <StormByte/buffer/io/buffered_file_reader.hxx>
-#include <StormByte/buffer/fifo.hxx>
-#include <iostream>
-
-using StormByte::Buffer::FIFO;
-using StormByte::Buffer::IO::BufferedFileReader;
-using StormByte::Buffer::IO::ToString;
-
-int main() {
-	BufferedFileReader in("payload.bin", /*read_ahead*/ 4096, /*max_memory*/ 1 << 20);
-	if (!in.Open()) {
-		std::cerr << ToString(in.State()) << "\n";
-		return 1;
-	}
-
-	FIFO dest;
-	auto got = in.Read(16, dest);
-	std::cout << ToString(got.status) << " " << got.count << "\n";
-	in.Close();
-}
-```
-
-Missing path is `State::Missing`. A directory is `State::Directory`. No read permission is `State::Permission`.
-
-### IO::BufferedFileWriter
-
-Filesystem leaf over `BufferedWriter`. Binary append `ofstream`. Creates the file when the parent directory exists. Does not `mkdir -p`. Overwrite is `Truncate`, not an open flag.
-
-```cpp
-#include <StormByte/buffer/io/buffered_file_writer.hxx>
-#include <span>
-#include <cstddef>
-#include <iostream>
-
-using StormByte::Buffer::IO::BufferedFileWriter;
-using StormByte::Buffer::IO::ToString;
-
-int main() {
-	BufferedFileWriter out("out.bin", /*write_chunk*/ 4096, /*back_pressure*/ 4);
-	if (!out.Open()) {
-		std::cerr << ToString(out.State()) << "\n";
-		return 1;
-	}
-
-	const char raw[] = { 'A', 'B', 'C', 'D' };
-	auto wr = out.Write(std::span<const std::byte>(
-		reinterpret_cast<const std::byte*>(raw), 4));
-	out.Flush();
-	out.Close();
-}
-```
-
-Missing parent is `State::Missing`. Path is a directory → `State::Directory`. No write permission → `State::NotWritable`.
-
-### Bridge
-
-`StormByte::Buffer::Bridge` moves **octets** from a readable tip to a writable tip. It is not tied to one buffer class.
-
-**Sources (in)** — anything that can yield bytes:
-
-- `ExternalReader` (and leaves such as `ExternalBufferReader` over a `FIFO` / `Consumer`)
-- `const IO::BufferedReader&` (and leaves such as `IO::BufferedFileReader`)
-
-**Sinks (out)** — anything that can take bytes:
-
-- `ExternalWriter` (and leaves such as `ExternalBufferWriter`)
-- `IO::BufferedWriter&` (and leaves such as `IO::BufferedFileWriter`)
-
-A reader never goes on `out`. A writer never goes on `in`. The four legal pairings are:
-
-| in | out |
-| --- | --- |
-| `ExternalReader` | `ExternalWriter` |
-| `IO::BufferedReader` | `IO::BufferedWriter` |
-| `ExternalReader` | `IO::BufferedWriter` |
-| `IO::BufferedReader` | `ExternalWriter` |
-
-`Hopper` / `Sink` are item queues. They are not Bridge tips.
-
-The Bridge holds **references only**. Tips must already be armed (`Open` on IO) and must outlive the Bridge.
-
-```cpp
-#include <StormByte/buffer/bridge.hxx>
-#include <StormByte/buffer/external.hxx>
-#include <StormByte/buffer/fifo.hxx>
-#include <StormByte/buffer/io/buffered_file_reader.hxx>
-#include <StormByte/buffer/io/buffered_file_writer.hxx>
-
-using StormByte::Buffer::Bridge;
-using StormByte::Buffer::ExternalBufferReader;
-using StormByte::Buffer::ExternalBufferWriter;
-using StormByte::Buffer::FIFO;
-using StormByte::Buffer::IO::BufferedFileReader;
-using StormByte::Buffer::IO::BufferedFileWriter;
-
-void buffer_to_buffer(FIFO& src, FIFO& dst) {
-	ExternalBufferReader in(src);
-	ExternalBufferWriter out(dst);
-	Bridge bridge(in, out);
-	(void)bridge.Passthrough(0);
-}
-
-void file_to_file() {
-	BufferedFileReader in("in.bin");
-	BufferedFileWriter out("out.bin");
-	if (!in.Open() || !out.Open())
-		return;
-	Bridge bridge(in, out);
-	while (!in.EoF() && static_cast<bool>(in))
-		(void)bridge.Passthrough(4096);
-	(void)bridge.Flush();
-}
-
-void fifo_to_file(FIFO& src) {
-	ExternalBufferReader in(src);
-	BufferedFileWriter out("out.bin");
-	if (!out.Open())
-		return;
-	Bridge bridge(in, out);
-	(void)bridge.Passthrough(src.AvailableBytes());
-	(void)bridge.Flush();
-}
-
-void file_to_fifo(FIFO& dst) {
-	BufferedFileReader in("in.bin");
-	ExternalBufferWriter out(dst);
-	if (!in.Open())
-		return;
-	Bridge bridge(in, out);
-	(void)bridge.Passthrough(64);
-}
-```
+- [GitHub Sponsors](https://github.com/sponsors/StormBytePP)
+- [PayPal](https://paypal.me/StormBytePP)
 
 ## Contributing
 
@@ -406,10 +377,3 @@ Issues only on this repository. Fork and open a pull request against `master`.
 ## License
 
 GNU Lesser General Public License version 3 or later. See [LICENSE](LICENSE) and <https://www.gnu.org/licenses/lgpl-3.0.html>.
-
-## Support
-
-StormByte is developed in spare time. Sponsorship is optional and does not buy features, priority or support.
-
-- [GitHub Sponsors](https://github.com/sponsors/StormBytePP)
-- [PayPal](https://paypal.me/StormBytePP)
