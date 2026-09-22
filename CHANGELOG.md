@@ -46,7 +46,8 @@ If you landed here from a release link and have not read the tree:
 - Device throughput probe (private): Linux / Windows / macOS classification (HDD, SATA SSD, NVMe gen, USB, network at 80 % of NIC). Nominal rates, not a benchmark. Device knobs have no setters; `MaxMemory` and `MaxWait` stay settable.
 - `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
 - `ExternalWriter::Occupied`.
-- `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` means no extra occupancy cap.
+- `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` starts the Drainer paused (`IO::Drainer::Status::Paused`); use `Toggle` to run. There is no constructor without `high_water`.
+- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`. The `Consumer` still has no default constructor; the `Ring` is born on `Producer()`. The returned `Producer` must outlive a `Bridge` that binds it by reference.
 
 ### Removed
 
@@ -54,10 +55,11 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek`, `Tell`, `Seek` (absolute, relative, end via `Size`, cache hit, `MaxMemory` 0), path-only vs explicit constructors, move with prefetch stopped.
+- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek`, `Tell`, `Seek` (absolute, relative, end via `Size`, cache hit, `MaxMemory` 0), path-only vs explicit constructors, move with prefetch stopped. `Seek(0)` after origin end clears `EoF` and does not drop the cache.
 - `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Direct `(path, 0, 0)`, path-only device knobs, Dirty / Flush / BackPressure / Truncate / move.
 - `BufferedMeteredFileTests`. Selective override example (`BytesRead` / `BytesWritten`).
 - Bridge coverage for pipe close-while-started and `high_water` 0.
+- `test_consumer_producer_shares_ring`. `Consumer::Producer()` writes the same store; `Close` on that tip closes the origin `Producer`.
 
 [1.4.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...1.4.0
 

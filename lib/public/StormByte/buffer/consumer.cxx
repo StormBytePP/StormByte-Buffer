@@ -18,10 +18,16 @@
  */
 
 #include <StormByte/buffer/consumer.hxx>
+#include <StormByte/buffer/producer.hxx>
 
 using namespace StormByte::Buffer;
 
 Consumer::~Consumer() noexcept = default;
+
+Producer Consumer::Producer() const noexcept {
+	return StormByte::Buffer::Producer{m_buffer};
+}
+
 std::size_t Consumer::AvailableBytes() const noexcept {
 	return m_buffer->AvailableBytes();
 }

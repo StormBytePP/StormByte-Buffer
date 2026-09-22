@@ -177,6 +177,22 @@ int test_producer_consumer_move_semantics() {
 	RETURN_TEST(fn, 0);
 }
 
+int test_consumer_producer_shares_ring() {
+	const std::string fn = "test_consumer_producer_shares_ring";
+	Producer origin;
+	auto consumer = origin.Consumer();
+	Producer tip = consumer.Producer();
+	ASSERT_TRUE(fn, origin == tip);
+	ASSERT_TRUE(fn, tip.Write("RING"));
+	DataType data;
+	ASSERT_TRUE(fn, consumer.Extract(4, data));
+	ASSERT_EQUAL(fn, std::string("RING"), StormByte::String::FromByteVector(data));
+	tip.Close();
+	ASSERT_FALSE(fn, origin.IsWritable());
+	ASSERT_TRUE(fn, consumer.EoF());
+	RETURN_TEST(fn, 0);
+}
+
 int test_producer_consumer_byte_vector_write() {
 	const std::string fn = "test_producer_consumer_byte_vector_write";
 	Producer producer;
@@ -1061,6 +1077,7 @@ int main() {
 	result += test_producer_consumer_seek_operations();
 	result += test_producer_consumer_copy_semantics();
 	result += test_producer_consumer_move_semantics();
+	result += test_consumer_producer_shares_ring();
 	result += test_producer_consumer_byte_vector_write();
 	result += test_producer_consumer_clear_operation();
 	result += test_producer_consumer_with_reserve();
