@@ -21,6 +21,7 @@
 #include <StormByte/buffer/lockfree_ring.hxx>
 
 #include <algorithm>
+#include <chrono>
 
 using namespace StormByte::Buffer::IO::Backend;
 using Result = StormByte::Buffer::IO::Result;
@@ -183,13 +184,18 @@ Result BufferedWriter::Flush() {
 
 	if (m_ring) {
 		std::unique_lock lock(m_mutex);
-		m_cv.wait(lock, [this] {
-			return m_stop.load() || m_failed
-				|| !m_ring || m_ring->AvailableBytes() == 0;
-		});
+		while (!m_stop.load() && !m_failed && m_ring
+				&& m_ring->AvailableBytes() > 0) {
+			m_flush.store(true);
+			m_drain_run = true;
+			m_cv.notify_all();
+			m_cv.wait_for(lock, std::chrono::milliseconds(10));
+		}
 		m_flush.store(false);
 		m_drain_run = false;
 		if (m_failed)
+			return { Status::Error, 0 };
+		if (m_ring && m_ring->AvailableBytes() > 0)
 			return { Status::Error, 0 };
 	}
 
@@ -396,8 +402,10 @@ void BufferedWriter::Worker() {
 		m_cv.wait(lock, [this] {
 			return m_stop.load() || m_drain_run || m_flush.load();
 		});
-		if (m_stop.load())
+		if (m_stop.load()) {
+			m_cv.notify_all();
 			return;
+		}
 
 		const std::size_t chunk = m_write_chunk;
 		lock.unlock();
@@ -411,11 +419,8 @@ void BufferedWriter::Worker() {
 				break;
 
 			auto front = m_ring->FrontSpan();
-			if (front.empty()) {
-				if (flush)
-					continue;
+			if (front.empty())
 				break;
-			}
 			const std::size_t want = flush ? front.size() : std::min(front.size(), chunk);
 			front = front.first(want);
 
@@ -432,12 +437,13 @@ void BufferedWriter::Worker() {
 		}
 
 		lock.lock();
-		if (m_flush.load() && m_ring && m_ring->AvailableBytes() > 0) {
+		m_drain_run = false;
+		m_cv.notify_all();
+		if (!m_stop.load() && m_flush.load() && m_ring
+				&& m_ring->AvailableBytes() > 0) {
 			m_drain_run = true;
 			continue;
 		}
-		m_drain_run = false;
-		m_cv.notify_all();
 	}
 }
 
