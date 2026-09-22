@@ -47,7 +47,8 @@ If you landed here from a release link and have not read the tree:
 - `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
 - `ExternalWriter::Occupied`.
 - `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` starts the Drainer paused (`IO::Drainer::Status::Paused`); use `Toggle` to run. There is no constructor without `high_water`.
-- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`. The `Consumer` still has no default constructor; the `Ring` is born on `Producer()`.
+- `Consumer()`. Creates a new shared `Ring`, same birth as `Producer()`. A reader-only owner does not need a `Producer` member; `Producer()` returns the write tip on that Ring.
+- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`.
 - `ExternalBufferWriter(Producer)` and `ExternalBufferReader(Consumer)` take the handle by value and own a copy. The source handle may die; the adapter keeps the `Ring`. `WriteOnly&` / `ReadOnly&` stay non-owning (`FIFO`, `SharedFIFO`, `Ring`). A `Producer` argument selects the handle constructor (Identity), not the base reference.
 
 ### Removed

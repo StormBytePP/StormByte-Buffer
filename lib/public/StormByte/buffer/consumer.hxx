@@ -41,9 +41,10 @@ namespace StormByte {
 		 *
 		 * Multiple Consumer instances may share the same underlying Ring,
 		 * allowing concurrent reads in a fully thread-safe manner.
-		 * Consumers can only be created through a @ref Producer
-		 * (see @ref Producer::Consumer()). @ref Producer() returns a writer
-		 * on the same Ring.
+		 *
+		 * An empty Consumer (`Consumer()`) creates its own Ring. @ref Producer()
+		 * then returns a writer on that Ring. A Consumer may also be obtained
+		 * from @ref Producer::Consumer().
 		 *
 		 * All operations are thread-safe and delegate to the shared Ring.
 		 * Blocking semantics match @ref Ring: Read / Extract / Peek block until
@@ -63,9 +64,17 @@ namespace StormByte {
 
 			public:
 				/**
-				 * @name Copy / move / assignment
+				 * @name Constructors / destructor / assignment
 				 * @{
 				 */
+
+				/**
+				 * @brief Empty Consumer. Creates a new shared @ref Ring.
+				 *
+				 * @ref Producer() returns a writer on that Ring. Use this when
+				 * the owner only reads and still needs a write tip for a @ref Bridge.
+				 */
+				inline Consumer() noexcept : m_buffer(std::make_shared<Ring>()) {}
 
 				/**
 				 * @brief Copy constructor.
@@ -197,8 +206,8 @@ namespace StormByte {
 				 * @brief Writer on the same Ring.
 				 * @return Producer that shares this Consumer’s store.
 				 *
-				 * Inverse of @ref Producer::Consumer. The Consumer must already
-				 * own a Ring (it was created by a Producer).
+				 * Inverse of @ref Producer::Consumer. The Ring already exists
+				 * (`Consumer()` or a Producer-born Consumer).
 				 */
 				class Producer Producer() const noexcept;
 
@@ -253,28 +262,28 @@ namespace StormByte {
 				/**
 				 * @brief Extract bytes into a @ref DataType (consumes data from the Ring).
 				 * @param count Number of bytes to extract; 0 extracts all available.
-				 * @param out Destination buffer (appended to / filled by the Ring).
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination (appended to).
+				 * @return @c true on success.
 				 */
 				bool Extract(const std::size_t& count, DataType& out) noexcept override;
 
 				/**
-				 * @brief Extract bytes into a @ref WriteOnly sink (consumes data from the Ring).
+				 * @brief Extract bytes into a @ref WriteOnly store.
 				 * @param count Number of bytes to extract; 0 extracts all available.
-				 * @param out Destination writer.
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination.
+				 * @return @c true on success.
 				 */
 				bool Extract(const std::size_t& count, WriteOnly& out) noexcept override;
 
 				/**
-				 * @brief Extract all remaining bytes until EoF into a @ref DataType.
-				 * @param out Destination buffer.
+				 * @brief Extract until EoF into a @ref DataType.
+				 * @param out Destination.
 				 */
 				void ExtractUntilEoF(DataType& out) noexcept override;
 
 				/**
-				 * @brief Extract all remaining bytes until EoF into a @ref WriteOnly.
-				 * @param out Destination writer.
+				 * @brief Extract until EoF into a @ref WriteOnly store.
+				 * @param out Destination.
 				 */
 				void ExtractUntilEoF(WriteOnly& out) noexcept override;
 
@@ -286,53 +295,53 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Non-destructive read into a @ref DataType (advances logical position).
+				 * @brief Read bytes into a @ref DataType. Advances the cursor.
 				 * @param count Number of bytes to read; 0 reads all available.
-				 * @param out Destination buffer.
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination (appended to).
+				 * @return @c true on success.
 				 */
 				bool Read(const std::size_t& count, DataType& out) const noexcept override;
 
 				/**
-				 * @brief Non-destructive read into a @ref WriteOnly (advances logical position).
+				 * @brief Read bytes into a @ref WriteOnly store. Advances the cursor.
 				 * @param count Number of bytes to read; 0 reads all available.
-				 * @param out Destination writer.
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination.
+				 * @return @c true on success.
 				 */
 				bool Read(const std::size_t& count, WriteOnly& out) const noexcept override;
 
 				/**
-				 * @brief Read all remaining bytes until EoF into a @ref DataType.
-				 * @param out Destination buffer.
+				 * @brief Read until EoF into a @ref DataType.
+				 * @param out Destination.
 				 */
 				void ReadUntilEoF(DataType& out) const noexcept override;
 
 				/**
-				 * @brief Read all remaining bytes until EoF into a @ref WriteOnly.
-				 * @param out Destination writer.
+				 * @brief Read until EoF into a @ref WriteOnly store.
+				 * @param out Destination.
 				 */
 				void ReadUntilEoF(WriteOnly& out) const noexcept override;
 
 				/** @} */
 
 				/**
-				 * @name Peek (non-destructive, does not advance position)
+				 * @name Peek
 				 * @{
 				 */
 
 				/**
-				 * @brief Peek bytes into a @ref DataType without advancing the read position.
+				 * @brief Peek bytes into a @ref DataType. Does not advance the cursor.
 				 * @param count Number of bytes to peek; 0 peeks all available.
-				 * @param out Destination buffer.
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination (appended to).
+				 * @return @c true on success.
 				 */
 				bool Peek(const std::size_t& count, DataType& out) const noexcept override;
 
 				/**
-				 * @brief Peek bytes into a @ref WriteOnly without advancing the read position.
+				 * @brief Peek bytes into a @ref WriteOnly store. Does not advance the cursor.
 				 * @param count Number of bytes to peek; 0 peeks all available.
-				 * @param out Destination writer.
-				 * @return @c true on success, @c false on insufficient data or error.
+				 * @param out Destination.
+				 * @return @c true on success.
 				 */
 				bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override;
 
@@ -342,8 +351,10 @@ namespace StormByte {
 				std::shared_ptr<Ring> m_buffer;	///< Shared ring storage
 
 				/**
-				 * @brief Private constructor used by @ref Producer.
+				 * @brief Construct over an existing Ring.
 				 * @param buffer Shared ring instance (must not be null).
+				 *
+				 * Used by @ref Producer::Consumer.
 				 */
 				inline explicit Consumer(std::shared_ptr<Ring> buffer) noexcept
 					: m_buffer(std::move(buffer)) {}
