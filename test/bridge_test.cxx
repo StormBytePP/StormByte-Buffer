@@ -35,7 +35,6 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <system_error>
 #include <thread>
 
 using StormByte::Buffer::Bridge;
@@ -112,15 +111,11 @@ static bool WaitSize(const StormByte::Buffer::Generic& buf, const std::size_t n)
 
 static bool WaitFile(const std::filesystem::path& path, const std::size_t n) {
 	for (int i = 0; i < 500; ++i) {
-		std::error_code ec;
-		const auto size = std::filesystem::file_size(path, ec);
-		if (!ec && static_cast<std::size_t>(size) >= n)
+		if (Slurp(path).size() >= n)
 			return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
-	std::error_code ec;
-	const auto size = std::filesystem::file_size(path, ec);
-	return !ec && static_cast<std::size_t>(size) >= n;
+	return Slurp(path).size() >= n;
 }
 
 static bool WaitDirtyZero(BufferedFileWriter& out) {
@@ -351,8 +346,8 @@ int test_io_file_to_file() {
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	ASSERT_TRUE(fn, in.EoF());
 	in.Close();
@@ -371,8 +366,8 @@ int test_io_high_water_zero_pumps() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 0);
 	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	in.Close();
 	out.Close();
@@ -404,8 +399,8 @@ int test_io_flush_and_close_does_not_close_file() {
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, bridge.FlushAndClose());
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, static_cast<bool>(out));
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(out.State()));
 	in.Close();
@@ -424,6 +419,7 @@ int test_io_set_error_noop() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	bridge.SetError();
+	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, bridge.IsWritable());
 	in.Close();
@@ -458,8 +454,8 @@ int test_io_pattern_256() {
 	ASSERT_TRUE(fn, in.Open());
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 512);
-	ASSERT_TRUE(fn, WaitFile(out_path, 256));
 	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitFile(out_path, 256));
 	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), Slurp(out_path));
 	in.Close();
 	out.Close();
@@ -481,6 +477,7 @@ int test_buf_to_io() {
 	BufferedFileWriter out(out_path, 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
+	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
 	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
@@ -761,9 +758,9 @@ int test_muxer_producer_to_file_high_water() {
 	BufferedFileWriter out(out_path, 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 4096);
-	ASSERT_TRUE(fn, WaitFile(out_path, total));
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	ASSERT_TRUE(fn, WaitFile(out_path, total));
 	ASSERT_TRUE(fn, consumer.EoF());
 	out.Close();
 
@@ -857,8 +854,8 @@ int test_muxer_then_demuxer_roundtrip() {
 		BufferedFileWriter out(path, 0, 0);
 		ASSERT_TRUE(fn, out.Open());
 		Bridge mux(in, out, 8);
-		ASSERT_TRUE(fn, WaitFile(path, text.size()));
 		ASSERT_TRUE(fn, mux.Flush());
+		ASSERT_TRUE(fn, WaitFile(path, text.size()));
 		out.Close();
 	}
 
