@@ -127,6 +127,15 @@ static bool WaitDirtyZero(BufferedFileWriter& out) {
 	return out.Dirty() == 0;
 }
 
+static bool WaitConsumerEof(const Consumer& consumer) {
+	for (int i = 0; i < 500; ++i) {
+		if (consumer.EoF())
+			return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	return consumer.EoF();
+}
+
 class FailingWriter final : public ExternalWriter {
 	public:
 		FailingWriter(FIFO& to, std::size_t succeed_calls) noexcept
@@ -757,9 +766,9 @@ int test_muxer_producer_to_file_high_water() {
 	BufferedFileWriter out(out_path, 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 4096);
+	ASSERT_TRUE(fn, WaitConsumerEof(consumer));
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
-	ASSERT_TRUE(fn, consumer.EoF());
 	out.Close();
 	ASSERT_TRUE(fn, WaitFile(out_path, total));
 
@@ -853,7 +862,9 @@ int test_muxer_then_demuxer_roundtrip() {
 		BufferedFileWriter out(path, 0, 0);
 		ASSERT_TRUE(fn, out.Open());
 		Bridge mux(in, out, 8);
+		ASSERT_TRUE(fn, WaitConsumerEof(consumer));
 		ASSERT_TRUE(fn, mux.Flush());
+		ASSERT_TRUE(fn, WaitDirtyZero(out));
 		out.Close();
 		ASSERT_TRUE(fn, WaitFile(path, text.size()));
 	}
