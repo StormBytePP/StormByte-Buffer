@@ -21,7 +21,6 @@
 #include <StormByte/buffer/lockfree_ring.hxx>
 
 #include <algorithm>
-#include <chrono>
 
 using namespace StormByte::Buffer::IO::Backend;
 using Result = StormByte::Buffer::IO::Result;
@@ -184,18 +183,13 @@ Result BufferedWriter::Flush() {
 
 	if (m_ring) {
 		std::unique_lock lock(m_mutex);
-		while (!m_stop.load() && !m_failed && m_ring
-				&& m_ring->AvailableBytes() > 0) {
-			m_flush.store(true);
-			m_drain_run = true;
-			m_cv.notify_all();
-			m_cv.wait_for(lock, std::chrono::milliseconds(10));
-		}
+		m_cv.wait(lock, [this] {
+			return m_stop.load() || m_failed
+				|| !m_ring || m_ring->AvailableBytes() == 0;
+		});
 		m_flush.store(false);
 		m_drain_run = false;
 		if (m_failed)
-			return { Status::Error, 0 };
-		if (m_ring && m_ring->AvailableBytes() > 0)
 			return { Status::Error, 0 };
 	}
 
