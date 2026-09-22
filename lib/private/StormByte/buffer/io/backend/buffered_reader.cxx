@@ -710,8 +710,15 @@ Result BufferedReader::Serve(const std::size_t n, FIFO& dest, const bool consume
 			continue;
 		}
 
-		if (exhausted)
-			break;
+		if (exhausted) {
+			bool seekable = false;
+			{
+				std::lock_guard lock(m_mutex);
+				seekable = m_owner && m_owner->OriginCanSeek();
+			}
+			if (!seekable)
+				break;
+		}
 
 		FIFO piece;
 		const Result pulled = PullAt(pos, n - have, piece);
