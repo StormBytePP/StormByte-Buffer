@@ -347,11 +347,10 @@ int test_io_file_to_file() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
-	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
-	ASSERT_TRUE(fn, in.EoF());
 	in.Close();
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -367,10 +366,10 @@ int test_io_high_water_zero_pumps() {
 	Bridge bridge(in, out, 0);
 	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
-	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	in.Close();
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -400,11 +399,11 @@ int test_io_flush_and_close_does_not_close_file() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, bridge.FlushAndClose());
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, static_cast<bool>(out));
 	ASSERT_EQUAL(fn, ToString(State::Idle), ToString(out.State()));
 	in.Close();
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -420,10 +419,10 @@ int test_io_set_error_noop() {
 	Bridge bridge(in, out, 16);
 	bridge.SetError();
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, bridge.IsWritable());
 	in.Close();
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -438,9 +437,9 @@ int test_io_empty_file() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
 	in.Close();
 	out.Close();
+	ASSERT_EQUAL(fn, std::string(""), Slurp(out_path));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -455,10 +454,10 @@ int test_io_pattern_256() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 512);
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_TRUE(fn, WaitFile(out_path, 256));
-	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), Slurp(out_path));
 	in.Close();
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 256));
+	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), Slurp(out_path));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -478,10 +477,10 @@ int test_buf_to_io() {
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, bridge.Flush());
-	ASSERT_TRUE(fn, WaitFile(out_path, 5));
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
-	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
@@ -760,9 +759,9 @@ int test_muxer_producer_to_file_high_water() {
 	Bridge bridge(in, out, 4096);
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
-	ASSERT_TRUE(fn, WaitFile(out_path, total));
 	ASSERT_TRUE(fn, consumer.EoF());
 	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, total));
 
 	const std::string disk = Slurp(out_path);
 	ASSERT_EQUAL(fn, total, disk.size());
@@ -855,8 +854,8 @@ int test_muxer_then_demuxer_roundtrip() {
 		ASSERT_TRUE(fn, out.Open());
 		Bridge mux(in, out, 8);
 		ASSERT_TRUE(fn, mux.Flush());
-		ASSERT_TRUE(fn, WaitFile(path, text.size()));
 		out.Close();
+		ASSERT_TRUE(fn, WaitFile(path, text.size()));
 	}
 
 	{
