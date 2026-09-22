@@ -17,14 +17,18 @@
  * <https://www.gnu.org/licenses/lgpl-3.0.html>.
  */
 
+#include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/external.hxx>
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/producer.hxx>
+#include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <iostream>
+#include <optional>
 #include <string>
 
+using StormByte::Buffer::Consumer;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalBufferWriter;
@@ -235,6 +239,86 @@ int test_occupied_survives_close() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// Owned handles
+// -------------------
+
+int test_writer_owns_producer_after_source_dies() {
+	const std::string fn = "test_writer_owns_producer_after_source_dies";
+	std::optional<Consumer> reader;
+	std::optional<ExternalBufferWriter> adapter;
+	{
+		Producer tip;
+		reader = tip.Consumer();
+		adapter.emplace(tip);
+	}
+	ASSERT_TRUE(fn, adapter->IsWritable());
+	ASSERT_TRUE(fn, adapter->Write("LIVE"));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), adapter->Occupied());
+	DataType got;
+	ASSERT_TRUE(fn, reader->Extract(4, got));
+	ASSERT_EQUAL(fn, std::string("LIVE"), StormByte::String::FromByteVector(got));
+	adapter->Close();
+	ASSERT_FALSE(fn, adapter->IsWritable());
+	ASSERT_TRUE(fn, reader->EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_reader_owns_consumer_after_source_dies() {
+	const std::string fn = "test_reader_owns_consumer_after_source_dies";
+	std::optional<Producer> writer;
+	std::optional<ExternalBufferReader> adapter;
+	{
+		Producer origin;
+		writer = origin;
+		adapter.emplace(origin.Consumer());
+	}
+	ASSERT_TRUE(fn, writer->Write("KEEP"));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), adapter->AvailableBytes());
+	DataType got;
+	ASSERT_TRUE(fn, adapter->Extract(4, got));
+	ASSERT_EQUAL(fn, std::string("KEEP"), StormByte::String::FromByteVector(got));
+	writer->Close();
+	ASSERT_TRUE(fn, adapter->EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_writer_owns_temporary_producer() {
+	const std::string fn = "test_writer_owns_temporary_producer";
+	Producer origin;
+	auto reader = origin.Consumer();
+	ExternalBufferWriter adapter(origin);
+	ASSERT_TRUE(fn, adapter.Write("TIP"));
+	DataType got;
+	ASSERT_TRUE(fn, reader.Extract(3, got));
+	ASSERT_EQUAL(fn, std::string("TIP"), StormByte::String::FromByteVector(got));
+	adapter.Close();
+	ASSERT_FALSE(fn, origin.IsWritable());
+	ASSERT_TRUE(fn, reader.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_owned_writer_clone_shares_ring() {
+	const std::string fn = "test_owned_writer_clone_shares_ring";
+	std::optional<Consumer> reader;
+	std::optional<ExternalBufferWriter> adapter;
+	{
+		Producer tip;
+		reader = tip.Consumer();
+		adapter.emplace(std::move(tip));
+	}
+	auto clone = adapter->Clone();
+	ASSERT_TRUE(fn, static_cast<bool>(clone));
+	ASSERT_TRUE(fn, clone->Write("CLON"));
+	DataType got;
+	ASSERT_TRUE(fn, reader->Extract(4, got));
+	ASSERT_EQUAL(fn, std::string("CLON"), StormByte::String::FromByteVector(got));
+	clone->Close();
+	ASSERT_FALSE(fn, adapter->IsWritable());
+	ASSERT_TRUE(fn, reader->EoF());
+	RETURN_TEST(fn, 0);
+}
+
 int main() {
 	int result = 0;
 
@@ -257,6 +341,14 @@ int main() {
 	result += test_occupied_leaf_matches_store();
 	result += test_occupied_producer();
 	result += test_occupied_survives_close();
+
+	// -------------------
+	// Owned handles
+	// -------------------
+	result += test_writer_owns_producer_after_source_dies();
+	result += test_reader_owns_consumer_after_source_dies();
+	result += test_writer_owns_temporary_producer();
+	result += test_owned_writer_clone_shares_ring();
 
 	if (result == 0) {
 		std::cout << "External tests passed!" << std::endl;

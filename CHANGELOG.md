@@ -47,7 +47,8 @@ If you landed here from a release link and have not read the tree:
 - `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
 - `ExternalWriter::Occupied`.
 - `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` starts the Drainer paused (`IO::Drainer::Status::Paused`); use `Toggle` to run. There is no constructor without `high_water`.
-- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`. The `Consumer` still has no default constructor; the `Ring` is born on `Producer()`. The returned `Producer` must outlive a `Bridge` that binds it by reference.
+- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`. The `Consumer` still has no default constructor; the `Ring` is born on `Producer()`.
+- `ExternalBufferWriter(Producer)` and `ExternalBufferReader(Consumer)` take the handle by value and own a copy. The source handle may die; the adapter keeps the `Ring`. `WriteOnly&` / `ReadOnly&` stay non-owning (`FIFO`, `SharedFIFO`, `Ring`). A `Producer` argument selects the handle constructor (Identity), not the base reference.
 
 ### Removed
 
@@ -60,6 +61,9 @@ If you landed here from a release link and have not read the tree:
 - `BufferedMeteredFileTests`. Selective override example (`BytesRead` / `BytesWritten`).
 - Bridge coverage for pipe close-while-started and `high_water` 0.
 - `test_consumer_producer_shares_ring`. `Consumer::Producer()` writes the same store; `Close` on that tip closes the origin `Producer`.
+- `test_writer_owns_producer_after_source_dies`, `test_reader_owns_consumer_after_source_dies`: write / extract after the stack handle is destroyed.
+- `test_writer_owns_temporary_producer`: lvalue `Producer` binds the owned constructor; `Close` on the adapter closes the origin.
+- `test_owned_writer_clone_shares_ring`: `Clone()` copies the handle, not a dead reference.
 
 [1.4.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...1.4.0
 

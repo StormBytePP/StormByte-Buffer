@@ -19,12 +19,15 @@
 
 #pragma once
 
+#include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/generic.hxx>
+#include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/typedefs.hxx>
 #include <StormByte/clonable.hxx>
 
 #include <functional>
 #include <string_view>
+#include <variant>
 
 /**
  * @namespace StormByte
@@ -45,8 +48,9 @@ namespace StormByte {
 		 * @ref Consumer. Device origins (file, socket) are @ref IO::BufferedReader
 		 * leaves, not ExternalReader.
 		 *
-		 * Lightweight: storage lives in the referenced buffer. Does not Open
-		 * or prefetch. @c Read / @c Extract return bool; there is no TryAgain.
+		 * Lightweight: storage lives in the referenced buffer or in an owned
+		 * @ref Consumer handle. Does not Open or prefetch. @c Read / @c Extract
+		 * return bool; there is no TryAgain.
 		 *
 		 * @see ExternalBufferReader, ExternalWriter, Pipeline, Bridge
 		 */
@@ -186,23 +190,36 @@ namespace StormByte {
 
 		/**
 		 * @class ExternalBufferReader
-		 * @brief @ref ExternalReader over a @ref ReadOnly store.
+		 * @brief @ref ExternalReader over a @ref ReadOnly store or an owned @ref Consumer.
 		 *
-		 * Does not own the store. The @ref ReadOnly must outlive the adapter.
+		 * @ref ReadOnly& does not own the store; that object must outlive this
+		 * adapter. @ref Consumer is taken by value and shares the @ref Ring.
+		 * A @ref Consumer argument selects the handle constructor (Identity),
+		 * not the @ref ReadOnly& constructor.
 		 *
-		 * @see ExternalReader, ReadOnly
+		 * @see ExternalReader, ReadOnly, Consumer
 		 */
 		class STORMBYTE_BUFFER_PUBLIC ExternalBufferReader final : public ExternalReader {
 			public:
 				/**
-				 * @brief Adapt a @ref ReadOnly store.
+				 * @brief Adapt a @ref ReadOnly store. Not owned.
 				 * @param buffer Store. Must outlive this object.
 				 */
 				explicit ExternalBufferReader(ReadOnly& buffer) noexcept
-					: m_buffer(buffer) {}
+					: m_store(std::ref(buffer)) {}
 
 				/**
-				 * @brief Copy constructor.
+				 * @brief Adapt a @ref Consumer. Owns a copy of the handle.
+				 * @param consumer Reader on a shared @ref Ring.
+				 *
+				 * The source @ref Consumer may die. This adapter keeps the Ring
+				 * alive. Use this when a @ref Bridge holds the adapter.
+				 */
+				explicit ExternalBufferReader(Consumer consumer) noexcept
+					: m_store(std::move(consumer)) {}
+
+				/**
+				 * @brief Copy constructor. Copies the ref or the handle.
 				 * @param other Instance to copy.
 				 */
 				ExternalBufferReader(const ExternalBufferReader& other) = default;
@@ -233,7 +250,7 @@ namespace StormByte {
 				ExternalBufferReader& operator=(ExternalBufferReader&& other) noexcept = default;
 
 				/**
-				 * @brief Polymorphic copy. Same store.
+				 * @brief Polymorphic copy. Same store or a copy of the handle.
 				 * @return New adapter.
 				 */
 				PointerType Clone() const noexcept override;
@@ -319,7 +336,19 @@ namespace StormByte {
 				void Clean() noexcept override;
 
 			private:
-				std::reference_wrapper<ReadOnly> m_buffer;	///< Store. Not owned.
+				std::variant<std::reference_wrapper<ReadOnly>, Consumer> m_store;	///< Ref or owned handle
+
+				/**
+				 * @brief Active store.
+				 * @return ReadOnly view of the ref or the owned Consumer.
+				 */
+				ReadOnly& Store() noexcept;
+
+				/**
+				 * @brief Active store.
+				 * @return ReadOnly view of the ref or the owned Consumer.
+				 */
+				const ReadOnly& Store() const noexcept;
 		};
 
 		/**
@@ -466,24 +495,38 @@ namespace StormByte {
 
 		/**
 		 * @class ExternalBufferWriter
-		 * @brief @ref ExternalWriter over a @ref WriteOnly store.
+		 * @brief @ref ExternalWriter over a @ref WriteOnly store or an owned @ref Producer.
 		 *
-		 * Does not own the store. The @ref WriteOnly must outlive the adapter.
-		 * @ref Occupied is @ref Generic::Size of that store.
+		 * @ref WriteOnly& does not own the store; that object must outlive this
+		 * adapter. @ref Producer is taken by value and shares the @ref Ring.
+		 * A @ref Producer argument selects the handle constructor (Identity),
+		 * not the @ref WriteOnly& constructor.
+		 *
+		 * @ref Occupied is @ref Generic::Size of the active store.
 		 *
 		 * @see ExternalWriter, WriteOnly, Producer, Ring
 		 */
 		class STORMBYTE_BUFFER_PUBLIC ExternalBufferWriter final : public ExternalWriter {
 			public:
 				/**
-				 * @brief Adapt a @ref WriteOnly store.
+				 * @brief Adapt a @ref WriteOnly store. Not owned.
 				 * @param buffer Store. Must outlive this object.
 				 */
 				explicit ExternalBufferWriter(WriteOnly& buffer) noexcept
-					: m_buffer(buffer) {}
+					: m_store(std::ref(buffer)) {}
 
 				/**
-				 * @brief Copy constructor.
+				 * @brief Adapt a @ref Producer. Owns a copy of the handle.
+				 * @param producer Writer on a shared @ref Ring.
+				 *
+				 * The source @ref Producer may die. This adapter keeps the Ring
+				 * alive. Use this when a @ref Bridge holds the adapter.
+				 */
+				explicit ExternalBufferWriter(Producer producer) noexcept
+					: m_store(std::move(producer)) {}
+
+				/**
+				 * @brief Copy constructor. Copies the ref or the handle.
 				 * @param other Instance to copy.
 				 */
 				ExternalBufferWriter(const ExternalBufferWriter& other) = default;
@@ -514,7 +557,7 @@ namespace StormByte {
 				ExternalBufferWriter& operator=(ExternalBufferWriter&& other) noexcept = default;
 
 				/**
-				 * @brief Polymorphic copy. Same store.
+				 * @brief Polymorphic copy. Same store or a copy of the handle.
 				 * @return New adapter.
 				 */
 				PointerType Clone() const noexcept override;
@@ -583,7 +626,19 @@ namespace StormByte {
 				void SetError() noexcept override;
 
 			private:
-				std::reference_wrapper<WriteOnly> m_buffer;	///< Store. Not owned.
+				std::variant<std::reference_wrapper<WriteOnly>, Producer> m_store;	///< Ref or owned handle
+
+				/**
+				 * @brief Active store.
+				 * @return WriteOnly view of the ref or the owned Producer.
+				 */
+				WriteOnly& Store() noexcept;
+
+				/**
+				 * @brief Active store.
+				 * @return WriteOnly view of the ref or the owned Producer.
+				 */
+				const WriteOnly& Store() const noexcept;
 		};
 	}
 }
