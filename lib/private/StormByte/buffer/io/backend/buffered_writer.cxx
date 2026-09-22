@@ -399,11 +399,11 @@ void BufferedWriter::Worker() {
 		if (m_stop.load())
 			return;
 
-		const bool flush = m_flush.load();
 		const std::size_t chunk = m_write_chunk;
 		lock.unlock();
 
 		while (!m_stop.load() && m_ring && m_owner) {
+			const bool flush = m_flush.load();
 			const std::size_t dirty = m_ring->AvailableBytes();
 			if (dirty == 0)
 				break;
@@ -411,8 +411,11 @@ void BufferedWriter::Worker() {
 				break;
 
 			auto front = m_ring->FrontSpan();
-			if (front.empty())
+			if (front.empty()) {
+				if (flush)
+					continue;
 				break;
+			}
 			const std::size_t want = flush ? front.size() : std::min(front.size(), chunk);
 			front = front.first(want);
 
@@ -429,6 +432,10 @@ void BufferedWriter::Worker() {
 		}
 
 		lock.lock();
+		if (m_flush.load() && m_ring && m_ring->AvailableBytes() > 0) {
+			m_drain_run = true;
+			continue;
+		}
 		m_drain_run = false;
 		m_cv.notify_all();
 	}
