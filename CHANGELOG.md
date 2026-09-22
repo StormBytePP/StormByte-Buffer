@@ -28,12 +28,13 @@ If you landed here from a release link and have not read the tree:
 - `StormByte::Buffer::IO::State`: `Idle`, `Missing`, `Directory`, `Permission`, `NotWritable`, `Fault`, `Unavailable`.
 - `StormByte::Buffer::IO::BufferedReader`. Public base for a binary read origin with optional prefetch. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`.
 - Read session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` is idempotent. `Open` is not. `Close` then `Open` is a valid round-trip. `operator bool` is true when `State` is Idle and not `EoF`.
-- `Read(n, FIFO&)` / `Peek(n, FIFO&)`. Destination overwritten on `Ok` / `End` with a non-zero count. Untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `MaxWait` of `0ms` waits without limit. A positive `MaxWait` returns `TryAgain` on timeout.
-- `BufferedReader::Seek` / `Tell` / `IsSeekable` / `IsSized` / `Size`. `Position::Absolute` or `Relative` only; there is no `Whence`. End-relative positioning is `Seek(*Size() + off, Absolute)` when sized. Not currently armed, a non-seekable origin, a negative absolute offset or a relative step before 0 is `Failed`. A non-seekable `Seek` does not call `OriginSeek`.
-- Seekable cache is a map of owned spans `[offset, offset+len)`. A hit serves from the map and does not drop other spans. Overlap and abutment merge, even past `ReadAhead`. `MaxMemory` evicts the spans farthest from `Tell`. `MaxMemory` 0 stores no cache and still serves `Read` / `Peek` from the origin. A non-seekable origin keeps one forward span.
-- Seekable `Seek` always calls `OriginSeek` for the resolved target, including a cache hit, so the device cursor stays aligned with `Tell`. Seek is not O(1) and is not guaranteed to return immediately (prefetch cancel, `OriginSeek`, cache bookkeeping).
+- `Read(n, FIFO&)` / `Peek(n, FIFO&)`. Destination overwritten on `Ok` / `End` with a non-zero count. Untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `MaxWait` of `0ms` waits without limit. A positive `MaxWait` returns `TryAgain` on timeout. FIFO `n == 0` serves the current cached span from `Tell`.
+- `Read(std::span<std::byte>)` / `Peek(std::span<std::byte>)`. Request size is `dest.size()`. Empty span is `{Ok, 0}` with no consume and no pull. On `Ok` / `End` with `count > 0` the first `count` bytes of the span are written; the tail is left as-is. Same untouched rules as the FIFO overloads. No `Read(n, span)`.
+- `BufferedReader::Seek` / `Tell` / `IsSeekable` / `IsSized` / `Size`. `Position::Absolute` or `Relative` only. End-relative positioning is `Seek(*Size() + off, Absolute)` when sized. Seekable `Seek` always calls `OriginSeek` for the resolved target, including a cache hit. Non-seekable `Seek` is `Failed` and does not call the hook. Seek is not O(1).
+- Seekable cache is a map of owned spans. Overlap and abutment merge. `MaxMemory` evicts farthest from `Tell`. `MaxMemory` 0 stores no cache and still serves `Read` / `Peek` from the origin.
+- `Tell` is the logical cursor: `0` after `Open` / `Rewind`, advanced only by a consuming `Read`, set by a successful `Seek`. `Peek` and an empty span do not move it. A failed `Seek` leaves it unchanged. Seeking past `Size()` is allowed; `Tell` stays there and a later `Read` is `End` with count 0.
 - Policy setters (`ReadAhead`, `MaxMemory`, `MaxWait`) take effect immediately. Lowering a cap may drop cached bytes. The setter waits until prefetch is cancelled and the cache is trimmed.
-- `StormByte::Buffer::IO::BufferedFileReader`. File leaf (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory`. Seekable and sized. Does not open in the constructor. `Seek` stays on the base; the leaf only implements `OriginSeek`.
+- `StormByte::Buffer::IO::BufferedFileReader`. File leaf (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory`. Seekable and sized. Does not open in the constructor. `Seek` stays on the base.
 - `StormByte::Buffer::IO::BufferedWriter`. Public base for a binary write sink. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush` and `OriginTruncate`. Movable, not copyable.
 - Write session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` always `Flush` then `OriginClose`. Flush failure leaves `Fault`. `operator bool` is true when `State` is Idle. No `Seek`. `Tell` is bytes accepted since `Open` or `Truncate`.
 - `Write(const FIFO&)`, `Write(FIFO&)` and `Write(std::span<const std::byte>)`. Atomic. FIFO read from the current position. Source untouched on `TryAgain` / `Failed` / `Error`.
@@ -52,7 +53,7 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `BufferedFileReaderTests`. Fixtures under `test/files/`. Seek: absolute / relative, negative, without `Open`, relative before 0, `Seek(0)` reread, end via `Size`, prefetch then seek (`seek.bin`).
+- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek` (exact, empty, short tail intact, before `Open`). `Tell` after open, each consume, peek, empty span, successful and failed `Seek`, `Size()`, past `Size()`, `Rewind`, move, `MaxMemory` 0. Seek: absolute / relative, negative, without `Open`, relative before 0, `Seek(0)` reread, end via `Size`, prefetch then seek (`seek.bin`, `ahead.bin`).
 - `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Dirty / Tell / Flush / BackPressure / Truncate / move.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD

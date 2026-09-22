@@ -20,7 +20,26 @@
 #include <StormByte/buffer/io/backend/buffered_reader.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
 
+#include <algorithm>
+
 using namespace StormByte::Buffer::IO;
+
+namespace {
+	StormByte::Buffer::IO::Result CopyToSpan(StormByte::Buffer::FIFO& src,
+			const StormByte::Buffer::IO::Result got,
+			std::span<std::byte> dest) {
+		if (got.count == 0)
+			return got;
+		if (got.count > dest.size())
+			return { StormByte::Buffer::IO::Status::Failed, 0 };
+
+		StormByte::Buffer::DataType raw;
+		if (!src.Extract(got.count, raw))
+			return { StormByte::Buffer::IO::Status::Failed, 0 };
+		std::copy_n(raw.begin(), got.count, dest.begin());
+		return got;
+	}
+}
 
 BufferedReader::BufferedReader(const std::size_t read_ahead, const std::size_t max_memory,
 		const std::chrono::milliseconds max_wait):
@@ -97,10 +116,26 @@ Result BufferedReader::Read(const std::size_t n, FIFO& dest) const {
 	return m_io->Read(n, dest);
 }
 
+Result BufferedReader::Read(const std::span<std::byte> dest) const {
+	if (dest.empty())
+		return { IO::Status::Ok, 0 };
+	FIFO fifo;
+	const Result got = Read(dest.size(), fifo);
+	return CopyToSpan(fifo, got, dest);
+}
+
 Result BufferedReader::Peek(const std::size_t n, FIFO& dest) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Peek(n, dest);
+}
+
+Result BufferedReader::Peek(const std::span<std::byte> dest) const {
+	if (dest.empty())
+		return { IO::Status::Ok, 0 };
+	FIFO fifo;
+	const Result got = Peek(dest.size(), fifo);
+	return CopyToSpan(fifo, got, dest);
 }
 
 Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) const {

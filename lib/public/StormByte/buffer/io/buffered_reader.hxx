@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <span>
 
 /**
  * @namespace StormByte
@@ -66,7 +67,7 @@ namespace StormByte {
 			 * @c Seek, @c Open, @c Close or @c Rewind.
 			 *
 			 * @par Binary only
-			 * Octets only (@ref DataType / @ref FIFO). No text mode.
+			 * Octets only (@ref DataType / @ref FIFO / @c std::span<std::byte>). No text mode.
 			 *
 			 * @par Session
 			 * Construction leaves @ref State::Unavailable. A successful
@@ -85,13 +86,20 @@ namespace StormByte {
 			 * A positive @ref MaxWait caps the wait; timeout yields
 			 * @ref IO::Status::TryAgain, destination untouched, state Idle.
 			 * Origin failure during a pull is @ref IO::Status::Error; the
-			 * destination FIFO is not written; session state becomes
+			 * destination is not written; session state becomes
 			 * @ref State::Fault or @ref State::Unavailable.
 			 *
-			 * @par Destination FIFO
-			 * Overwritten on @ref IO::Status::Ok or @ref IO::Status::End with
-			 * a non-zero count. Untouched on @ref IO::Status::Failed,
-			 * @ref IO::Status::Error, @ref IO::Status::TryAgain, or End with count 0.
+			 * FIFO overloads: @c n == 0 serves the current cached span from
+			 * @ref Tell. Span overloads: @c dest.size() is the request;
+			 * an empty span returns @ref IO::Status::Ok and count 0 without
+			 * consuming or pulling. There is no @c Read(n, span).
+			 *
+			 * @par Destination
+			 * FIFO: overwritten on @ref IO::Status::Ok or @ref IO::Status::End
+			 * with a non-zero count. Span: the first @c count bytes of
+			 * @p dest are written; the remainder of the span is left as-is.
+			 * Untouched on @ref IO::Status::Failed, @ref IO::Status::Error,
+			 * @ref IO::Status::TryAgain, or End with count 0.
 			 *
 			 * @par Read vs Peek vs cache
 			 * @c Read advances @ref Tell and removes served bytes from the cache.
@@ -258,12 +266,34 @@ namespace StormByte {
 					virtual Result Read(std::size_t n, FIFO& dest) const final;
 
 					/**
+					 * @brief Read into @p dest, consuming cache / origin.
+					 * @param dest Caller span. Request size is @c dest.size().
+					 * @return Status and byte count written to the front of @p dest.
+					 *
+					 * An empty span returns @ref IO::Status::Ok and count 0
+					 * without consuming or pulling. The first @c count bytes of
+					 * @p dest are written; the tail is left unchanged.
+					 */
+					virtual Result Read(std::span<std::byte> dest) const final;
+
+					/**
 					 * @brief Copy @p n bytes into @p dest without consuming cache.
 					 * @param n Byte count. Zero copies the current span from @ref Tell.
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
 					virtual Result Peek(std::size_t n, FIFO& dest) const final;
+
+					/**
+					 * @brief Copy into @p dest without consuming cache.
+					 * @param dest Caller span. Request size is @c dest.size().
+					 * @return Status and byte count written to the front of @p dest.
+					 *
+					 * An empty span returns @ref IO::Status::Ok and count 0
+					 * without pulling. The first @c count bytes of @p dest are
+					 * written; the tail is left unchanged.
+					 */
+					virtual Result Peek(std::span<std::byte> dest) const final;
 
 					/**
 					 * @}
