@@ -28,7 +28,7 @@ IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::
 	m_ext_in(&in),
 	m_ext_out(&out),
 	m_high_water(high_water),
-	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
@@ -36,7 +36,7 @@ IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& ou
 	m_io_in(&in),
 	m_io_out(&out),
 	m_high_water(high_water),
-	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
@@ -44,7 +44,7 @@ IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const s
 	m_ext_in(&in),
 	m_io_out(&out),
 	m_high_water(high_water),
-	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
@@ -52,7 +52,7 @@ IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, c
 	m_ext_out(&out),
 	m_io_in(&in),
 	m_high_water(high_water),
-	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
@@ -301,15 +301,18 @@ void IO::Backend::Bridge::Worker() noexcept {
 		const std::size_t hw = m_high_water.load();
 		const std::size_t occupied = OccupiedNow();
 		std::size_t room = 0;
-		if (hw > occupied)
+		if (hw == 0)
+			room = m_chunk_max;
+		else if (hw > occupied)
 			room = hw - occupied;
 
-		if (!hurry && !barrier && (hw == 0 || room == 0)) {
+		if (!hurry && !barrier && hw != 0 && room == 0) {
 			lock.lock();
 			m_busy = false;
 			m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
 				return m_stop || m_barrier || m_hurry ||
 					m_status != IO::Drainer::Status::Started ||
+					m_high_water.load() == 0 ||
 					(m_high_water.load() > OccupiedNow());
 			});
 			continue;

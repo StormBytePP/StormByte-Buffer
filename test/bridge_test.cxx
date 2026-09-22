@@ -56,10 +56,6 @@ using StormByte::Buffer::IO::Drainer::Operation;
 using StormByte::Buffer::IO::Drainer::Status;
 using StormByte::System::TempFileName;
 
-// -------------------
-// Helpers
-// -------------------
-
 static std::filesystem::path File(const char* name) {
 	return CurrentFileDirectory / "files" / name;
 }
@@ -194,10 +190,6 @@ class FailingWriter final : public ExternalWriter {
 		bool m_error;
 };
 
-// -------------------
-// Buffer → buffer
-// -------------------
-
 int test_ext_drains_all() {
 	const std::string fn = "test_ext_drains_all";
 	const std::string text = "The quick brown fox jumps over the lazy dog.";
@@ -215,16 +207,17 @@ int test_ext_drains_all() {
 	RETURN_TEST(fn, 0);
 }
 
-int test_ext_high_water_zero_starts_paused() {
-	const std::string fn = "test_ext_high_water_zero_starts_paused";
+int test_ext_high_water_zero_starts_running() {
+	const std::string fn = "test_ext_high_water_zero_starts_running";
 	FIFO src = FromText("ABCDE");
+	src.Close();
 	FIFO dst;
 	ExternalBufferReader in(src);
 	ExternalBufferWriter out(dst);
 	Bridge bridge(in, out, 0);
-	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 5));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), FifoText(dst));
 	RETURN_TEST(fn, 0);
 }
 
@@ -336,10 +329,6 @@ int test_close_source_while_started() {
 	RETURN_TEST(fn, 0);
 }
 
-// -------------------
-// IO → IO
-// -------------------
-
 int test_io_file_to_file() {
 	const std::string fn = "test_io_file_to_file";
 	const auto out_path = Scratch("io2io");
@@ -353,6 +342,25 @@ int test_io_file_to_file() {
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	out.Close();
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_io_high_water_zero_pumps() {
+	const std::string fn = "test_io_high_water_zero_pumps";
+	const auto out_path = Scratch("iohw0");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out, 0);
+	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
 	in.Close();
 	out.Close();
 	std::filesystem::remove(out_path);
@@ -446,10 +454,6 @@ int test_io_pattern_256() {
 	RETURN_TEST(fn, 0);
 }
 
-// -------------------
-// Buffer → IO
-// -------------------
-
 int test_buf_to_io() {
 	const std::string fn = "test_buf_to_io";
 	const auto out_path = Scratch("b2io");
@@ -481,10 +485,6 @@ int test_buf_to_io_writer_not_open() {
 	std::filesystem::remove(out_path);
 	RETURN_TEST(fn, 0);
 }
-
-// -------------------
-// IO → buffer
-// -------------------
 
 int test_io_to_buf() {
 	const std::string fn = "test_io_to_buf";
@@ -537,10 +537,6 @@ int test_io_to_buf_pattern() {
 	RETURN_TEST(fn, 0);
 }
 
-// -------------------
-// Drainer Toggle / Flush
-// -------------------
-
 int test_toggle_pauses_and_resumes_buffer() {
 	const std::string fn = "test_toggle_pauses_and_resumes_buffer";
 	FIFO src = FromText("HELLO");
@@ -564,21 +560,23 @@ int test_toggle_pauses_and_resumes_buffer() {
 	RETURN_TEST(fn, 0);
 }
 
-int test_toggle_from_ctor_paused() {
-	const std::string fn = "test_toggle_from_ctor_paused";
+int test_toggle_pauses_with_high_water_zero() {
+	const std::string fn = "test_toggle_pauses_with_high_water_zero";
 	FIFO src = FromText("ABC");
 	FIFO dst;
 	ExternalBufferReader in(src);
 	ExternalBufferWriter out(dst);
 	Bridge bridge(in, out, 0);
-	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
-	bridge.HighWater(16);
-	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
-	ASSERT_TRUE(fn, bridge.Drainer(Operation::Toggle));
+	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
 	ASSERT_TRUE(fn, WaitFifoSize(dst, 3));
+	ASSERT_TRUE(fn, bridge.Drainer(Operation::Toggle));
+	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
+	ASSERT_TRUE(fn, src.Write("DEF"));
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	ASSERT_EQUAL(fn, std::string("ABC"), FifoText(dst));
+	ASSERT_TRUE(fn, bridge.Drainer(Operation::Toggle));
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 6));
+	ASSERT_EQUAL(fn, std::string("ABCDEF"), FifoText(dst));
 	RETURN_TEST(fn, 0);
 }
 
@@ -588,13 +586,16 @@ int test_high_water_setter_does_not_toggle() {
 	FIFO dst;
 	ExternalBufferReader in(src);
 	ExternalBufferWriter out(dst);
-	Bridge bridge(in, out, 0);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), bridge.HighWater());
-	bridge.HighWater(32);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(32), bridge.HighWater());
+	Bridge bridge(in, out, 16);
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 3));
+	ASSERT_TRUE(fn, bridge.Drainer(Operation::Toggle));
 	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
+	bridge.HighWater(0);
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), bridge.HighWater());
+	ASSERT_EQUAL(fn, ToString(Status::Paused), ToString(bridge.Drainer()));
+	ASSERT_TRUE(fn, src.Write("!!!"));
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	ASSERT_EQUAL(fn, std::string("XYZ"), FifoText(dst));
 	RETURN_TEST(fn, 0);
 }
 
@@ -674,10 +675,6 @@ int test_backpressure_shared_fifo() {
 	ASSERT_EQUAL(fn, text, StormByte::String::FromByteVector(collected));
 	RETURN_TEST(fn, 0);
 }
-
-// -------------------
-// Producer / Consumer (Muxer & Demuxer pipe)
-// -------------------
 
 int test_producer_close_while_started_wakes_worker() {
 	const std::string fn = "test_producer_close_while_started_wakes_worker";
@@ -855,11 +852,8 @@ int test_muxer_then_demuxer_roundtrip() {
 int main() {
 	int result = 0;
 
-	// -------------------
-	// Buffer → buffer
-	// -------------------
 	result += test_ext_drains_all();
-	result += test_ext_high_water_zero_starts_paused();
+	result += test_ext_high_water_zero_starts_running();
 	result += test_ext_flush_and_close();
 	result += test_ext_set_error();
 	result += test_ext_eof_after_close_source();
@@ -868,44 +862,30 @@ int main() {
 	result += test_ext_move_assign_bridge();
 	result += test_close_source_while_started();
 
-	// -------------------
-	// IO → IO
-	// -------------------
 	result += test_io_file_to_file();
+	result += test_io_high_water_zero_pumps();
 	result += test_io_unopened_does_not_write();
 	result += test_io_flush_and_close_does_not_close_file();
 	result += test_io_set_error_noop();
 	result += test_io_empty_file();
 	result += test_io_pattern_256();
 
-	// -------------------
-	// Buffer → IO
-	// -------------------
 	result += test_buf_to_io();
 	result += test_buf_to_io_writer_not_open();
 
-	// -------------------
-	// IO → buffer
-	// -------------------
 	result += test_io_to_buf();
 	result += test_io_to_buf_reader_not_open();
 	result += test_io_to_buf_nul_and_binary();
 	result += test_io_to_buf_pattern();
 
-	// -------------------
-	// Drainer Toggle / Flush
-	// -------------------
 	result += test_toggle_pauses_and_resumes_buffer();
-	result += test_toggle_from_ctor_paused();
+	result += test_toggle_pauses_with_high_water_zero();
 	result += test_high_water_setter_does_not_toggle();
 	result += test_drainer_flush_hurry_on_buffer();
 	result += test_bridge_flush_is_barrier();
 	result += test_drainer_ops_on_moved_from();
 	result += test_backpressure_shared_fifo();
 
-	// -------------------
-	// Producer / Consumer (Muxer & Demuxer pipe)
-	// -------------------
 	result += test_producer_close_while_started_wakes_worker();
 	result += test_producer_close_empty();
 	result += test_muxer_producer_to_file_high_water();

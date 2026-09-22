@@ -58,6 +58,7 @@ namespace StormByte {
 				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
 				 *
 				 * Owns the worker thread. @c Passthrough is the atomic unit.
+				 * @p high_water 0 means no occupancy cap.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE Bridge {
 					public:
@@ -65,7 +66,7 @@ namespace StormByte {
 						 * @brief Buffer → buffer.
 						 * @param in Source.
 						 * @param out Sink.
-						 * @param high_water Occupancy cap.
+						 * @param high_water Occupancy cap. 0 means no cap.
 						 */
 						Bridge(ExternalReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
@@ -73,7 +74,7 @@ namespace StormByte {
 						 * @brief IO → IO.
 						 * @param in Source.
 						 * @param out Sink.
-						 * @param high_water Occupancy cap.
+						 * @param high_water Occupancy cap. 0 means no cap.
 						 */
 						Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
@@ -81,7 +82,7 @@ namespace StormByte {
 						 * @brief Buffer → IO.
 						 * @param in Source.
 						 * @param out Sink.
-						 * @param high_water Occupancy cap.
+						 * @param high_water Occupancy cap. 0 means no cap.
 						 */
 						Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
@@ -89,7 +90,7 @@ namespace StormByte {
 						 * @brief IO → buffer.
 						 * @param in Source.
 						 * @param out Sink.
-						 * @param high_water Occupancy cap.
+						 * @param high_water Occupancy cap. 0 means no cap.
 						 */
 						Bridge(const IO::BufferedReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
@@ -124,13 +125,13 @@ namespace StormByte {
 
 						/**
 						 * @brief Sink occupancy cap.
-						 * @return Current high_water.
+						 * @return Current high_water. 0 means no cap.
 						 */
 						std::size_t HighWater() const noexcept;
 
 						/**
 						 * @brief Set the sink occupancy cap. Does not toggle.
-						 * @param high_water New cap.
+						 * @param high_water New cap. 0 means no cap.
 						 */
 						void HighWater(std::size_t high_water) noexcept;
 
@@ -232,8 +233,8 @@ namespace StormByte {
 						mutable std::mutex m_mutex;						///< Status / flags.
 						mutable std::condition_variable m_cv;			///< Worker and barriers.
 
-						std::atomic<std::size_t> m_high_water {0};		///< Occupancy cap.
-						IO::Drainer::Status m_status {IO::Drainer::Status::Paused}; ///< Pump switch.
+						std::atomic<std::size_t> m_high_water {0};		///< Occupancy cap. 0 means none.
+						IO::Drainer::Status m_status {IO::Drainer::Status::Started}; ///< Pump switch.
 
 						bool m_stop {false};							///< Worker teardown.
 						bool m_barrier {false};							///< Bridge::Flush in flight.

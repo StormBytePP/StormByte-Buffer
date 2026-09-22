@@ -66,13 +66,16 @@ namespace StormByte {
 		 * or Seek. No local cache. @c Passthrough is private.
 		 *
 		 * The worker starts in the constructor, like std::thread.
-		 * @p high_water > 0 → @ref IO::Drainer::Status::Started.
-		 * @p high_water == 0 → @ref IO::Drainer::Status::Paused; @ref Toggle
-		 * to run. Setters never start or pause.
+		 * Status is @ref IO::Drainer::Status::Started for any @p high_water,
+		 * including 0. Setters never start or pause. Use @ref Toggle to pause.
 		 *
-		 * @p high_water is backpressure on the sink (@c Occupied / Dirty).
-		 * The worker never Extracts more than fits under the cap. A
-		 * single-thread FIFO that nobody reads will wait forever.
+		 * @p high_water > 0 is an extra occupancy cap on the sink
+		 * (@c Occupied / Dirty). The worker does not pull more than fits
+		 * under that cap. @p high_water == 0 disables the Bridge cap; the
+		 * only backpressure is the sink itself (@c Write TryAgain,
+		 * @c BackPressure on a BufferedWriter). A single-thread FIFO that
+		 * nobody drains can grow without bound or block forever. Prefer 0
+		 * when the writer already has its own cap.
 		 *
 		 * @ref Flush waits for the in-flight transaction, writes it, then
 		 * flushes the destination. @ref IO::Drainer::Operation::Flush pushes
@@ -90,7 +93,7 @@ namespace StormByte {
 				 * @brief Buffer → buffer. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
-				 * @param high_water Sink occupancy cap. 0 starts Paused.
+				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
 				Bridge(ExternalReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
@@ -98,7 +101,7 @@ namespace StormByte {
 				 * @brief IO → IO. Tips must already be armed. Not owned.
 				 * @param in Source.
 				 * @param out Sink.
-				 * @param high_water Sink occupancy cap. 0 starts Paused.
+				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
 				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
@@ -106,7 +109,7 @@ namespace StormByte {
 				 * @brief Buffer → IO. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
-				 * @param high_water Sink occupancy cap. 0 starts Paused.
+				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
 				Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
@@ -114,7 +117,7 @@ namespace StormByte {
 				 * @brief IO → buffer. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
-				 * @param high_water Sink occupancy cap. 0 starts Paused.
+				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
 				Bridge(const IO::BufferedReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
@@ -160,13 +163,13 @@ namespace StormByte {
 
 				/**
 				 * @brief Sink occupancy cap.
-				 * @return Current high_water. Does not report status.
+				 * @return Current high_water. 0 means no Bridge cap.
 				 */
 				std::size_t HighWater() const noexcept;
 
 				/**
 				 * @brief Set the sink occupancy cap. Does not start or pause.
-				 * @param high_water New cap. 0 means no room until raised.
+				 * @param high_water New cap. 0 means no Bridge cap.
 				 */
 				void HighWater(std::size_t high_water) noexcept;
 
