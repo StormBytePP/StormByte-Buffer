@@ -383,6 +383,26 @@ int test_io_high_water_zero_pumps() {
 	RETURN_TEST(fn, 0);
 }
 
+int test_io_uncapped_ctor() {
+	const std::string fn = "test_io_uncapped_ctor";
+	const auto out_path = Scratch("iouncap");
+	std::filesystem::remove(out_path);
+	BufferedFileReader in(File("five.bin"));
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, in.Open());
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), bridge.HighWater());
+	ASSERT_TRUE(fn, bridge.Flush());
+	in.Close();
+	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_EQUAL(fn, std::string("ABCDE"), Slurp(out_path));
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
 int test_io_unopened_does_not_write() {
 	const std::string fn = "test_io_unopened_does_not_write";
 	const auto out_path = Scratch("unopen");
@@ -485,6 +505,27 @@ int test_buf_to_io() {
 	BufferedFileWriter out(out_path, 0, 0);
 	ASSERT_TRUE(fn, out.Open());
 	Bridge bridge(in, out, 16);
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	out.Close();
+	ASSERT_TRUE(fn, WaitFile(out_path, 5));
+	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(out_path));
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_buf_to_io_uncapped_ctor() {
+	const std::string fn = "test_buf_to_io_uncapped_ctor";
+	const auto out_path = Scratch("b2ioun");
+	std::filesystem::remove(out_path);
+	FIFO src = FromText("HELLO");
+	src.Close();
+	ExternalBufferReader in(src);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out);
+	ASSERT_EQUAL(fn, ToString(Status::Started), ToString(bridge.Drainer()));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), bridge.HighWater());
 	ASSERT_TRUE(fn, bridge.Flush());
 	ASSERT_TRUE(fn, WaitDirtyZero(out));
 	out.Close();
@@ -910,6 +951,7 @@ int main() {
 	// -------------------
 	result += test_io_file_to_file();
 	result += test_io_high_water_zero_pumps();
+	result += test_io_uncapped_ctor();
 	result += test_io_unopened_does_not_write();
 	result += test_io_flush_and_close_does_not_close_file();
 	result += test_io_set_error_noop();
@@ -920,6 +962,7 @@ int main() {
 	// Buffer to file
 	// -------------------
 	result += test_buf_to_io();
+	result += test_buf_to_io_uncapped_ctor();
 	result += test_buf_to_io_writer_not_open();
 
 	// -------------------

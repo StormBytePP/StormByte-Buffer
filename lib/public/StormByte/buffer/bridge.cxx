@@ -28,8 +28,14 @@ Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::size_t high_w
 Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
+Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
+	Bridge(in, out, 0) {}
+
 Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
+
+Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
+	Bridge(in, out, 0) {}
 
 Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}

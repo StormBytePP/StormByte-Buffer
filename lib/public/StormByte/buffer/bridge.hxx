@@ -67,15 +67,21 @@ namespace StormByte {
 		 *
 		 * The worker starts in the constructor, like std::thread.
 		 * Status is @ref IO::Drainer::Status::Started for any @p high_water,
-		 * including 0. Setters never start or pause. Use @ref Toggle to pause.
+		 * including 0, and for constructors that omit @p high_water.
+		 * Setters never start or pause. Use @ref Toggle to pause.
 		 *
-		 * @p high_water > 0 is an extra occupancy cap on the sink
+		 * @p high_water > 0 is an occupancy cap on the sink
 		 * (@c Occupied / Dirty). The worker does not pull more than fits
-		 * under that cap. @p high_water == 0 disables the Bridge cap; the
-		 * only backpressure is the sink itself (@c Write TryAgain,
-		 * @c BackPressure on a BufferedWriter). A single-thread FIFO that
-		 * nobody drains can grow without bound or block forever. Prefer 0
-		 * when the writer already has its own cap.
+		 * under that cap. @p high_water == 0, and the two-argument
+		 * constructors that take a BufferedWriter, apply no Bridge cap.
+		 * The only backpressure is the sink itself (@c Write TryAgain,
+		 * @c BackPressure on a BufferedWriter).
+		 *
+		 * Omitting @p high_water is intended for BufferedFileWriter:
+		 * those leaves already cap Dirty with WriteChunk and BackPressure.
+		 * Toward a FIFO, SharedFIFO, Ring or Producer the same no-cap
+		 * path can pull the whole source into RAM if nothing consumes
+		 * the sink. Those pairings have no two-argument constructor.
 		 *
 		 * @ref Flush waits for the in-flight transaction, writes it, then
 		 * flushes the destination. @ref IO::Drainer::Operation::Flush pushes
@@ -106,12 +112,34 @@ namespace StormByte {
 				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
 				/**
+				 * @brief IO → IO with no Bridge occupancy cap.
+				 * @param in Source. Must already be armed.
+				 * @param out Sink. Must already be armed.
+				 *
+				 * No occupancy limit at this layer. Worker starts
+				 * (@ref IO::Drainer::Status::Started). Intended when
+				 * @p out already has WriteChunk / BackPressure.
+				 */
+				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept;
+
+				/**
 				 * @brief Buffer → IO. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
 				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
 				Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
+
+				/**
+				 * @brief Buffer → IO with no Bridge occupancy cap.
+				 * @param in Source.
+				 * @param out Sink. Must already be armed.
+				 *
+				 * No occupancy limit at this layer. Worker starts
+				 * (@ref IO::Drainer::Status::Started). Intended when
+				 * @p out already has WriteChunk / BackPressure.
+				 */
+				Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept;
 
 				/**
 				 * @brief IO → buffer. Tips not owned.

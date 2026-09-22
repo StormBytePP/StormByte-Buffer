@@ -46,10 +46,14 @@ If you landed here from a release link and have not read the tree:
 - Device throughput probe (private): Linux / Windows / macOS classification (HDD, SATA SSD, NVMe gen, USB, network at 80 % of NIC). Nominal rates, not a benchmark. Device knobs have no setters; `MaxMemory` and `MaxWait` stay settable.
 - `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
 - `ExternalWriter::Occupied`.
-- `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` starts the Drainer paused (`IO::Drainer::Status::Paused`); use `Toggle` to run. There is no constructor without `high_water`.
-- `Consumer()`. Creates a new shared `Ring`, same birth as `Producer()`. A reader-only owner does not need a `Producer` member; `Producer()` returns the write tip on that Ring.
-- `Consumer::Producer()`. Writer on the same `Ring` as this `Consumer`. Inverse of `Producer::Consumer()`.
-- `ExternalBufferWriter(Producer)` and `ExternalBufferReader(Consumer)` take the handle by value and own a copy. The source handle may die; the adapter keeps the `Ring`. `WriteOnly&` / `ReadOnly&` stay non-owning (`FIFO`, `SharedFIFO`, `Ring`). A `Producer` argument selects the handle constructor (Identity), not the base reference.
+- `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` means no extra occupancy cap. The worker starts, including when `high_water` is 0. Pause is only `Drainer(Toggle)`.
+- Two-argument `Bridge` constructors for `BufferedWriter` sinks:
+  `Bridge(const IO::BufferedReader&, IO::BufferedWriter&)` and
+  `Bridge(ExternalReader&, IO::BufferedWriter&)`. No occupancy cap at
+  the Bridge layer. Same pump path as `high_water == 0`. Intended for
+  `BufferedFileWriter` (WriteChunk / BackPressure already cap Dirty).
+  Pairings into FIFO / SharedFIFO / Ring / Producer keep the
+  three-argument constructor.
 
 ### Removed
 
@@ -57,14 +61,10 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek`, `Tell`, `Seek` (absolute, relative, end via `Size`, cache hit, `MaxMemory` 0), path-only vs explicit constructors, move with prefetch stopped. `Seek(0)` after origin end clears `EoF` and does not drop the cache.
+- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek`, `Tell`, `Seek` (absolute, relative, end via `Size`, cache hit, `MaxMemory` 0), path-only vs explicit constructors, move with prefetch stopped.
 - `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Direct `(path, 0, 0)`, path-only device knobs, Dirty / Flush / BackPressure / Truncate / move.
 - `BufferedMeteredFileTests`. Selective override example (`BytesRead` / `BytesWritten`).
-- Bridge coverage for pipe close-while-started and `high_water` 0.
-- `test_consumer_producer_shares_ring`. `Consumer::Producer()` writes the same store; `Close` on that tip closes the origin `Producer`.
-- `test_writer_owns_producer_after_source_dies`, `test_reader_owns_consumer_after_source_dies`: write / extract after the stack handle is destroyed.
-- `test_writer_owns_temporary_producer`: lvalue `Producer` binds the owned constructor; `Close` on the adapter closes the origin.
-- `test_owned_writer_clone_shares_ring`: `Clone()` copies the handle, not a dead reference.
+- Bridge coverage for pipe close-while-started, `high_water` 0, and the two-argument writer ctors (`test_io_uncapped_ctor`, `test_buf_to_io_uncapped_ctor`).
 
 [1.4.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...1.4.0
 
