@@ -51,7 +51,7 @@ namespace StormByte {
 			namespace Backend {
 				/**
 				 * @class BufferedReader
-				 * @brief Private implementation of @ref StormByte::Buffer::BufferedReader.
+				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedReader.
 				 */
 				class BufferedReader;
 			}
@@ -60,11 +60,10 @@ namespace StormByte {
 			 * @class BufferedReader
 			 * @brief Coordinated binary read source with optional prefetch and cache.
 			 *
-			 * BufferedReader is the public base for byte origins that Multimedia
-			 * (and later Network or a third party) pass as @c const BufferedReader&.
-			 * Leaves inherit this class and implement only the @c Origin* hooks.
-			 * They do not override @c Read, @c Peek, @c Seek, @c Open, @c Close
-			 * or @c Rewind.
+			 * Public base for byte origins. Callers take
+			 * @c const BufferedReader&. Leaves implement only the
+			 * @c Origin* hooks. They do not override @c Read, @c Peek,
+			 * @c Seek, @c Open, @c Close or @c Rewind.
 			 *
 			 * @par Binary only
 			 * Octets only (@ref DataType / @ref FIFO). No text mode.
@@ -98,6 +97,28 @@ namespace StormByte {
 			 * @c Read advances @ref Tell and removes served bytes from the cache.
 			 * @c Peek does not.
 			 *
+			 * @par Cache map
+			 * A seekable origin stores owned spans keyed by stream offset.
+			 * Overlap and abutment merge, even past @ref ReadAhead.
+			 * @ref MaxMemory is an approximate cap: overflow evicts the
+			 * spans farthest from @ref Tell, not the whole cache.
+			 * @ref MaxMemory of 0 stores no cache. A non-seekable origin
+			 * keeps a single forward span.
+			 *
+			 * @par Seek
+			 * Moves the logical cursor. When the origin is seekable the
+			 * device is realigned with @ref OriginSeek even on a cache hit,
+			 * so a later pull is not silent corruption. Cached spans are
+			 * not discarded solely because of Seek. A hit only avoids
+			 * re-pulling those bytes. A non-seekable origin rejects Seek
+			 * without calling the hook.
+			 *
+			 * Seek is not guaranteed to be O(1) or to return immediately.
+			 * The call may wait for an in-flight prefetch to cancel, run
+			 * @ref OriginSeek (local file, remote origin, or a leaf that
+			 * does CPU work first), and update the cache map. Immediate
+			 * return is not part of the contract.
+			 *
 			 * @par ReadAhead
 			 * Applied after the synchronous request. Prefetch uses @ref OriginPull.
 			 * Leaves must not buffer inside the hook.
@@ -107,13 +128,13 @@ namespace StormByte {
 			 * immediately. They are not deferred to the next Read. Lowering
 			 * ReadAhead or MaxMemory may drop cached bytes that no longer fit.
 			 * The setter does not return until prefetch is cancelled and the
-			 * window is trimmed. That wait is blocking even though it is not
+			 * cache is trimmed. That wait is blocking even though it is not
 			 * an origin pull.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. Moved-from is Unavailable.
 			 *
-			 * @see IO::Status, State, Result, FIFO, IO::BufferedReader
+			 * @see IO::Status, State, Result, FIFO
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedReader {
 				friend class Backend::BufferedReader;
@@ -145,7 +166,6 @@ namespace StormByte {
 
 					/**
 					 * @brief Copy assignment is deleted.
-					 * @return *this.
 					 */
 					BufferedReader& operator=(const BufferedReader&) = delete;
 
@@ -215,8 +235,8 @@ namespace StormByte {
 
 					/**
 					 * @brief Whether no further bytes can be produced.
-					 * @return @c true when caches are empty and the origin is
-					 *         exhausted, or after @ref Close.
+					 * @return @c true when no cached byte remains at @ref Tell
+					 *         and the origin is exhausted, or after @ref Close.
 					 */
 					virtual bool EoF() const noexcept final;
 
@@ -231,7 +251,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Read @p n bytes into @p dest, consuming cache / origin.
-					 * @param n Byte count. Zero serves the current window only.
+					 * @param n Byte count. Zero serves the current span from @ref Tell.
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
@@ -239,7 +259,7 @@ namespace StormByte {
 
 					/**
 					 * @brief Copy @p n bytes into @p dest without consuming cache.
-					 * @param n Byte count. Zero copies the current cache window.
+					 * @param n Byte count. Zero copies the current span from @ref Tell.
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
@@ -259,6 +279,18 @@ namespace StormByte {
 					 * @param offset Byte offset.
 					 * @param mode @ref Position::Absolute or @ref Position::Relative.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 *
+					 * Seekable origins call @ref OriginSeek for the resolved
+					 * target whether or not that offset is already cached.
+					 * The cache map is kept. Non-seekable origins return
+					 * Failed without invoking the hook. Negative absolute
+					 * offsets and relative steps before offset 0 fail.
+					 * Not currently armed also fails.
+					 *
+					 * @par Latency
+					 * Not O(1). May block on prefetch cancellation,
+					 * @ref OriginSeek, and cache bookkeeping. Immediate
+					 * return is not part of the contract.
 					 */
 					virtual Result Seek(std::ptrdiff_t offset, Position mode) const final;
 
@@ -314,9 +346,9 @@ namespace StormByte {
 					 * @brief Set prefetch length. Takes effect immediately.
 					 * @param bytes Bytes to hold ahead of the cursor after a Read.
 					 *
-					 * Cancels in-flight prefetch and trims the window before
-					 * returning. Cached bytes past the new target may be discarded.
-					 * Does not pull from the origin. Still waits for the worker.
+					 * Cancels in-flight prefetch and may trim the cache before
+					 * returning. Does not pull from the origin. Still waits
+					 * for the worker.
 					 */
 					virtual void ReadAhead(std::size_t bytes);
 
@@ -328,11 +360,10 @@ namespace StormByte {
 
 					/**
 					 * @brief Set cache memory cap. Takes effect immediately.
-					 * @param bytes Approximate maximum resident cache. 0 drops the window.
+					 * @param bytes Approximate maximum resident cache. 0 drops all spans.
 					 *
-					 * Cancels prefetch and trims or drops the window before
-					 * returning. Bytes that no longer fit are discarded.
-					 * Waits for the worker; not an origin pull.
+					 * Cancels prefetch and evicts farthest spans before
+					 * returning. Waits for the worker; not an origin pull.
 					 */
 					virtual void MaxMemory(std::size_t bytes);
 
@@ -347,7 +378,7 @@ namespace StormByte {
 					 * @param wait @c 0ms = unlimited. Positive = timeout then TryAgain.
 					 *
 					 * Overridable so a leaf can clamp. Does not cancel an in-flight
-					 * prefetch. Does not trim the window.
+					 * prefetch. Does not trim the cache.
 					 */
 					virtual void MaxWait(std::chrono::milliseconds wait);
 
@@ -414,6 +445,9 @@ namespace StormByte {
 					 * @param offset Byte offset.
 					 * @param mode Absolute or relative to the device cursor.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
+					 *
+					 * May be slow (remote origin, heavy leaf setup). The public
+					 * @ref Seek path assumes this can block.
 					 */
 					virtual Result OriginSeek(std::ptrdiff_t offset, Position mode) = 0;
 

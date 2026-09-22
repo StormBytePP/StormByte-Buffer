@@ -344,6 +344,92 @@ int test_seek_negative_absolute_fails() {
 	RETURN_TEST("test_seek_negative_absolute_fails", 0);
 }
 
+int test_seek_without_open_fails() {
+	BufferedFileReader in(File("seek.bin"));
+	FIFO dest("KEEP");
+	ASSERT_EQUAL("test_seek_without_open_fails", ToString(Status::Failed), ToString(in.Seek(0, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_without_open_fails", static_cast<std::size_t>(0), in.Tell());
+	ASSERT_EQUAL("test_seek_without_open_fails", ToString(Status::Failed), ToString(in.Read(1, dest).status));
+	ASSERT_EQUAL("test_seek_without_open_fails", std::string("KEEP"), Text(dest));
+	RETURN_TEST("test_seek_without_open_fails", 0);
+}
+
+int test_seek_relative_before_start_fails() {
+	BufferedFileReader in(File("seek.bin"));
+	ASSERT_TRUE("test_seek_relative_before_start_fails", in.Open());
+	ASSERT_EQUAL("test_seek_relative_before_start_fails", ToString(Status::Ok), ToString(in.Seek(2, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_relative_before_start_fails", ToString(Status::Failed), ToString(in.Seek(-3, Position::Relative).status));
+	ASSERT_EQUAL("test_seek_relative_before_start_fails", static_cast<std::size_t>(2), in.Tell());
+	RETURN_TEST("test_seek_relative_before_start_fails", 0);
+}
+
+int test_seek_zero_rereads() {
+	BufferedFileReader in(File("seek.bin"));
+	ASSERT_TRUE("test_seek_zero_rereads", in.Open());
+	FIFO first;
+	ASSERT_EQUAL("test_seek_zero_rereads", ToString(Status::Ok), ToString(in.Read(4, first).status));
+	ASSERT_EQUAL("test_seek_zero_rereads", std::string("0123"), Text(first));
+	ASSERT_EQUAL("test_seek_zero_rereads", ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_zero_rereads", static_cast<std::size_t>(0), in.Tell());
+	FIFO again;
+	ASSERT_EQUAL("test_seek_zero_rereads", ToString(Status::Ok), ToString(in.Read(4, again).status));
+	ASSERT_EQUAL("test_seek_zero_rereads", std::string("0123"), Text(again));
+	RETURN_TEST("test_seek_zero_rereads", 0);
+}
+
+int test_seek_end_via_size() {
+	BufferedFileReader in(File("seek.bin"));
+	ASSERT_TRUE("test_seek_end_via_size", in.Open());
+	const auto size = in.Size();
+	ASSERT_TRUE("test_seek_end_via_size", size.has_value());
+	ASSERT_EQUAL("test_seek_end_via_size", static_cast<std::size_t>(10), *size);
+
+	ASSERT_EQUAL("test_seek_end_via_size", ToString(Status::Ok),
+		ToString(in.Seek(static_cast<std::ptrdiff_t>(*size), Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_end_via_size", *size, in.Tell());
+	FIFO dest("KEEP");
+	const auto end = in.Read(1, dest);
+	ASSERT_EQUAL("test_seek_end_via_size", ToString(Status::End), ToString(end.status));
+	ASSERT_EQUAL("test_seek_end_via_size", static_cast<std::size_t>(0), end.count);
+	ASSERT_EQUAL("test_seek_end_via_size", std::string("KEEP"), Text(dest));
+
+	ASSERT_EQUAL("test_seek_end_via_size", ToString(Status::Ok),
+		ToString(in.Seek(static_cast<std::ptrdiff_t>(*size) - 2, Position::Absolute).status));
+	FIFO last;
+	ASSERT_EQUAL("test_seek_end_via_size", ToString(Status::Ok), ToString(in.Read(2, last).status));
+	ASSERT_EQUAL("test_seek_end_via_size", std::string("89"), Text(last));
+	RETURN_TEST("test_seek_end_via_size", 0);
+}
+
+int test_seek_hits_readahead_then_realigns() {
+	BufferedFileReader in(File("seek.bin"), 8, 64);
+	ASSERT_TRUE("test_seek_hits_readahead_then_realigns", in.Open());
+	FIFO first;
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok), ToString(in.Read(2, first).status));
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", std::string("01"), Text(first));
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok),
+		ToString(in.Seek(6, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", static_cast<std::size_t>(6), in.Tell());
+	FIFO hit;
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok), ToString(in.Read(2, hit).status));
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", std::string("67"), Text(hit));
+
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok),
+		ToString(in.Seek(0, Position::Absolute).status));
+	FIFO start;
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok), ToString(in.Read(3, start).status));
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", std::string("012"), Text(start));
+
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok),
+		ToString(in.Seek(8, Position::Absolute).status));
+	FIFO tail;
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", ToString(Status::Ok), ToString(in.Read(2, tail).status));
+	ASSERT_EQUAL("test_seek_hits_readahead_then_realigns", std::string("89"), Text(tail));
+	RETURN_TEST("test_seek_hits_readahead_then_realigns", 0);
+}
+
 // -------------------
 // Policy / volume
 // -------------------
@@ -416,9 +502,6 @@ int test_move_transfers_session() {
 int main() {
 	int result = 0;
 
-	// -------------------
-	// Session / errors
-	// -------------------
 	result += test_ctor_unavailable_bool_false();
 	result += test_open_missing();
 	result += test_open_directory();
@@ -428,9 +511,6 @@ int main() {
 	result += test_close_then_reopen();
 	result += test_rewind_rereads();
 
-	// -------------------
-	// Read / Peek
-	// -------------------
 	result += test_open_five_read_exact();
 	result += test_read_overwrites_dest();
 	result += test_read_past_end_is_short();
@@ -440,29 +520,22 @@ int main() {
 	result += test_read_zero_serves_window();
 	result += test_sequential_splits();
 
-	// -------------------
-	// Fixtures
-	// -------------------
 	result += test_lines_are_octets();
 	result += test_no_nl_and_nul();
 	result += test_pattern_256();
 
-	// -------------------
-	// Seek
-	// -------------------
 	result += test_seek_absolute_and_relative();
 	result += test_seek_negative_absolute_fails();
+	result += test_seek_without_open_fails();
+	result += test_seek_relative_before_start_fails();
+	result += test_seek_zero_rereads();
+	result += test_seek_end_via_size();
+	result += test_seek_hits_readahead_then_realigns();
 
-	// -------------------
-	// Policy / volume
-	// -------------------
 	result += test_readahead_knobs();
 	result += test_max_memory_zero_still_reads();
 	result += test_block_4k_chunked();
 
-	// -------------------
-	// Move
-	// -------------------
 	result += test_move_transfers_session();
 
 	if (result == 0)
