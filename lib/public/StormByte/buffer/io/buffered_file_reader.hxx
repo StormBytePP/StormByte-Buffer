@@ -129,7 +129,7 @@ namespace StormByte {
 					 * @brief Path passed to the constructor.
 					 * @return Stored path (not resolved).
 					 */
-					const std::filesystem::path& Path() const noexcept;
+					virtual const std::filesystem::path& Path() const noexcept;
 
 				protected:
 					/**
