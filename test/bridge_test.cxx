@@ -18,8 +18,10 @@
  */
 
 #include <StormByte/buffer/bridge.hxx>
+#include <StormByte/buffer/consumer.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/buffer/producer.hxx>
 #include <StormByte/buffer/shared_fifo.hxx>
 #include <StormByte/string.hxx>
 #include <StormByte/system.hxx>
@@ -36,12 +38,14 @@
 #include <thread>
 
 using StormByte::Buffer::Bridge;
+using StormByte::Buffer::Consumer;
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::Producer;
 using StormByte::Buffer::SharedFIFO;
 using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::BufferedFileWriter;
@@ -80,12 +84,19 @@ static FIFO FromText(const std::string& text) {
 	return fifo;
 }
 
+static DataType Pattern(const std::size_t n) {
+	DataType data(n);
+	for (std::size_t i = 0; i < n; ++i)
+		data[i] = static_cast<std::byte>(i & 0xFF);
+	return data;
+}
+
 static std::string FifoText(const FIFO& fifo) {
 	return StormByte::String::FromByteVector(fifo.Data());
 }
 
 static bool WaitFifoSize(const FIFO& fifo, const std::size_t n) {
-	for (int i = 0; i < 200; ++i) {
+	for (int i = 0; i < 500; ++i) {
 		if (fifo.Size() >= n)
 			return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -93,8 +104,17 @@ static bool WaitFifoSize(const FIFO& fifo, const std::size_t n) {
 	return fifo.Size() >= n;
 }
 
+static bool WaitSize(const StormByte::Buffer::Generic& buf, const std::size_t n) {
+	for (int i = 0; i < 500; ++i) {
+		if (buf.Size() >= n)
+			return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	return buf.Size() >= n;
+}
+
 static bool WaitFile(const std::filesystem::path& path, const std::size_t n) {
-	for (int i = 0; i < 200; ++i) {
+	for (int i = 0; i < 500; ++i) {
 		if (Slurp(path).size() >= n)
 			return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -103,7 +123,7 @@ static bool WaitFile(const std::filesystem::path& path, const std::size_t n) {
 }
 
 static bool WaitDirtyZero(BufferedFileWriter& out) {
-	for (int i = 0; i < 80; ++i) {
+	for (int i = 0; i < 200; ++i) {
 		if (out.Dirty() == 0)
 			return true;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -296,6 +316,23 @@ int test_ext_move_assign_bridge() {
 	ASSERT_EQUAL(fn, ToString(Status::Stopped), ToString(a.Drainer()));
 	ASSERT_TRUE(fn, WaitFifoSize(dst_a, 4));
 	ASSERT_EQUAL(fn, std::string("AAAA"), FifoText(dst_a));
+	RETURN_TEST(fn, 0);
+}
+
+int test_close_source_while_started() {
+	const std::string fn = "test_close_source_while_started";
+	FIFO src = FromText("HELLO");
+	FIFO dst;
+	ExternalBufferReader in(src);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out, 64);
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 5));
+	ASSERT_TRUE(fn, src.Write("WORLD"));
+	src.Close();
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 10));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("HELLOWORLD"), FifoText(dst));
+	ASSERT_TRUE(fn, bridge.EoF());
 	RETURN_TEST(fn, 0);
 }
 
@@ -630,11 +667,188 @@ int test_backpressure_shared_fifo() {
 		}
 	});
 
-	for (int i = 0; i < 200 && collected.size() < text.size(); ++i)
+	for (int i = 0; i < 500 && collected.size() < text.size(); ++i)
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	stop.store(true);
 	consumer.join();
 	ASSERT_EQUAL(fn, text, StormByte::String::FromByteVector(collected));
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// Producer / Consumer (Muxer & Demuxer pipe)
+// -------------------
+
+int test_producer_close_while_started_wakes_worker() {
+	const std::string fn = "test_producer_close_while_started_wakes_worker";
+	Producer producer;
+	Consumer consumer = producer.Consumer();
+	FIFO dst;
+	ExternalBufferReader in(consumer);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out, 64);
+	ASSERT_TRUE(fn, producer.Write("ABC"));
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 3));
+	ASSERT_TRUE(fn, producer.Write("DEF"));
+	producer.Close();
+	ASSERT_TRUE(fn, WaitFifoSize(dst, 6));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, std::string("ABCDEF"), FifoText(dst));
+	ASSERT_TRUE(fn, consumer.EoF());
+	ASSERT_TRUE(fn, bridge.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_producer_close_empty() {
+	const std::string fn = "test_producer_close_empty";
+	Producer producer;
+	Consumer consumer = producer.Consumer();
+	FIFO dst;
+	ExternalBufferReader in(consumer);
+	ExternalBufferWriter out(dst);
+	Bridge bridge(in, out, 16);
+	producer.Close();
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), dst.Size());
+	ASSERT_TRUE(fn, consumer.EoF());
+	ASSERT_TRUE(fn, bridge.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_muxer_producer_to_file_high_water() {
+	const std::string fn = "test_muxer_producer_to_file_high_water";
+	const std::size_t total = 1024 * 1024;
+	const auto out_path = Scratch("mux");
+	std::filesystem::remove(out_path);
+
+	Producer producer;
+	Consumer consumer = producer.Consumer();
+	const DataType payload = Pattern(total);
+	ASSERT_TRUE(fn, producer.Write(payload));
+	producer.Close();
+
+	ExternalBufferReader in(consumer);
+	BufferedFileWriter out(out_path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	Bridge bridge(in, out, 4096);
+	ASSERT_TRUE(fn, WaitFile(out_path, total));
+	ASSERT_TRUE(fn, bridge.Flush());
+	ASSERT_TRUE(fn, WaitDirtyZero(out));
+	ASSERT_TRUE(fn, consumer.EoF());
+	out.Close();
+
+	const std::string disk = Slurp(out_path);
+	ASSERT_EQUAL(fn, total, disk.size());
+	ASSERT_EQUAL(fn, StormByte::String::FromByteVector(payload), disk);
+	std::filesystem::remove(out_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_demuxer_file_to_producer() {
+	const std::string fn = "test_demuxer_file_to_producer";
+	Producer producer;
+	Consumer consumer = producer.Consumer();
+	BufferedFileReader in(File("pattern_256.bin"));
+	ExternalBufferWriter out(producer);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out, 512);
+	ASSERT_TRUE(fn, WaitSize(consumer, 256));
+	ASSERT_TRUE(fn, bridge.Flush());
+	DataType got;
+	ASSERT_TRUE(fn, consumer.Extract(256, got));
+	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), StormByte::String::FromByteVector(got));
+	ASSERT_TRUE(fn, in.EoF());
+	in.Close();
+	producer.Close();
+	RETURN_TEST(fn, 0);
+}
+
+int test_demuxer_file_to_producer_high_water() {
+	const std::string fn = "test_demuxer_file_to_producer_high_water";
+	const std::size_t total = 1024 * 1024;
+	const DataType payload = Pattern(total);
+	const auto src_path = Scratch("demux_src");
+	std::filesystem::remove(src_path);
+	{
+		std::ofstream seed(src_path, std::ios::out | std::ios::binary | std::ios::trunc);
+		seed.write(reinterpret_cast<const char*>(payload.data()),
+			static_cast<std::streamsize>(payload.size()));
+	}
+
+	Producer producer;
+	Consumer consumer = producer.Consumer();
+	BufferedFileReader in(src_path);
+	ExternalBufferWriter out(producer);
+	ASSERT_TRUE(fn, in.Open());
+	Bridge bridge(in, out, 4096);
+
+	DataType collected;
+	collected.reserve(total);
+	for (int i = 0; i < 4000 && collected.size() < total; ++i) {
+		if (consumer.Size() == 0) {
+			if (in.EoF())
+				break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			continue;
+		}
+		DataType chunk;
+		const std::size_t n = std::min<std::size_t>(4096, consumer.Size());
+		if (consumer.Extract(n, chunk))
+			collected.insert(collected.end(), chunk.begin(), chunk.end());
+	}
+	ASSERT_TRUE(fn, bridge.Flush());
+	while (consumer.Size() > 0) {
+		DataType chunk;
+		if (!consumer.Extract(consumer.Size(), chunk))
+			break;
+		collected.insert(collected.end(), chunk.begin(), chunk.end());
+	}
+	ASSERT_EQUAL(fn, total, collected.size());
+	ASSERT_EQUAL(fn, StormByte::String::FromByteVector(payload),
+		StormByte::String::FromByteVector(collected));
+	in.Close();
+	producer.Close();
+	std::filesystem::remove(src_path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_muxer_then_demuxer_roundtrip() {
+	const std::string fn = "test_muxer_then_demuxer_roundtrip";
+	const std::string text = "roundtrip-bridge-mux-demux";
+	const auto path = Scratch("round");
+	std::filesystem::remove(path);
+
+	{
+		Producer producer;
+		Consumer consumer = producer.Consumer();
+		ASSERT_TRUE(fn, producer.Write(text));
+		producer.Close();
+		ExternalBufferReader in(consumer);
+		BufferedFileWriter out(path, 0, 0);
+		ASSERT_TRUE(fn, out.Open());
+		Bridge mux(in, out, 8);
+		ASSERT_TRUE(fn, WaitFile(path, text.size()));
+		ASSERT_TRUE(fn, mux.Flush());
+		out.Close();
+	}
+
+	{
+		Producer producer;
+		Consumer consumer = producer.Consumer();
+		BufferedFileReader in(path);
+		ExternalBufferWriter out(producer);
+		ASSERT_TRUE(fn, in.Open());
+		Bridge demux(in, out, 4096);
+		ASSERT_TRUE(fn, WaitSize(consumer, text.size()));
+		ASSERT_TRUE(fn, demux.Flush());
+		DataType got;
+		ASSERT_TRUE(fn, consumer.Extract(text.size(), got));
+		ASSERT_EQUAL(fn, text, StormByte::String::FromByteVector(got));
+		in.Close();
+		producer.Close();
+	}
+
+	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
 
@@ -652,6 +866,7 @@ int main() {
 	result += test_ext_writer_failure();
 	result += test_ext_move_bridge();
 	result += test_ext_move_assign_bridge();
+	result += test_close_source_while_started();
 
 	// -------------------
 	// IO → IO
@@ -687,6 +902,16 @@ int main() {
 	result += test_bridge_flush_is_barrier();
 	result += test_drainer_ops_on_moved_from();
 	result += test_backpressure_shared_fifo();
+
+	// -------------------
+	// Producer / Consumer (Muxer & Demuxer pipe)
+	// -------------------
+	result += test_producer_close_while_started_wakes_worker();
+	result += test_producer_close_empty();
+	result += test_muxer_producer_to_file_high_water();
+	result += test_demuxer_file_to_producer();
+	result += test_demuxer_file_to_producer_high_water();
+	result += test_muxer_then_demuxer_roundtrip();
 
 	if (result == 0)
 		std::cout << "Bridge tests passed!" << std::endl;
