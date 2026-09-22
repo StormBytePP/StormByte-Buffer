@@ -24,9 +24,14 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/io/buffered_writer.hxx>
+#include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
+#include <mutex>
+#include <thread>
 
 /**
  * @namespace StormByte
@@ -52,9 +57,7 @@ namespace StormByte {
 				 * @class Bridge
 				 * @brief Private pump for @ref StormByte::Buffer::Bridge.
 				 *
-				 * Holds non-owning pointers to one source and one sink.
-				 * @c Passthrough is blocking and transactional. No local cache.
-				 * External sources are Extracted. @c Drain applies sink backpressure.
+				 * Owns the worker thread. @c Passthrough is the atomic unit.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE Bridge {
 					public:
@@ -62,33 +65,42 @@ namespace StormByte {
 						 * @brief Buffer → buffer.
 						 * @param in Source.
 						 * @param out Sink.
+						 * @param high_water Occupancy cap.
 						 */
-						Bridge(ExternalReader& in, ExternalWriter& out) noexcept;
+						Bridge(ExternalReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
 						/**
 						 * @brief IO → IO.
 						 * @param in Source.
 						 * @param out Sink.
+						 * @param high_water Occupancy cap.
 						 */
-						Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept;
+						Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
 						/**
 						 * @brief Buffer → IO.
 						 * @param in Source.
 						 * @param out Sink.
+						 * @param high_water Occupancy cap.
 						 */
-						Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept;
+						Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
 						/**
 						 * @brief IO → buffer.
 						 * @param in Source.
 						 * @param out Sink.
+						 * @param high_water Occupancy cap.
 						 */
-						Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept;
+						Bridge(const IO::BufferedReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
 						Bridge(const Bridge&) = delete;
 						Bridge(Bridge&&) = delete;
-						~Bridge() = default;
+
+						/**
+						 * @brief Destructor. Stops and joins the worker.
+						 */
+						~Bridge() noexcept;
+
 						Bridge& operator=(const Bridge&) = delete;
 						Bridge& operator=(Bridge&&) = delete;
 
@@ -99,8 +111,8 @@ namespace StormByte {
 						bool EoF() const noexcept;
 
 						/**
-						 * @brief Whether the source can be read.
-						 * @return @c false on error or closed.
+						 * @brief Whether the source can still supply bytes.
+						 * @return @c false on hard error. EoF is not a hard error.
 						 */
 						bool IsReadable() const noexcept;
 
@@ -111,14 +123,39 @@ namespace StormByte {
 						bool IsWritable() const noexcept;
 
 						/**
-						 * @brief External sink: no-op. IO sink: BufferedWriter::Flush.
-						 * @return @c true on success or if there was nothing to flush.
+						 * @brief Sink occupancy cap.
+						 * @return Current high_water.
 						 */
-						bool Flush() noexcept;
+						std::size_t HighWater() const noexcept;
 
 						/**
-						 * @brief Flush then Close an External writer. IO: Flush only.
-						 * @return @c true if Flush succeeded.
+						 * @brief Set the sink occupancy cap. Does not toggle.
+						 * @param high_water New cap.
+						 */
+						void HighWater(std::size_t high_water) noexcept;
+
+						/**
+						 * @brief Worker status.
+						 * @return Started or Paused while the backend lives.
+						 */
+						IO::Drainer::Status Drainer() const noexcept;
+
+						/**
+						 * @brief Toggle or hurry-push.
+						 * @param operation Toggle or Flush.
+						 * @return @c false on a dead pump or illegal op.
+						 */
+						bool Drainer(IO::Drainer::Operation operation) noexcept;
+
+						/**
+						 * @brief Wait for the in-flight transaction, write it, flush the sink.
+						 * @return @c false on error.
+						 */
+						bool BarrierFlush() noexcept;
+
+						/**
+						 * @brief BarrierFlush then Close an External writer.
+						 * @return @c true if the barrier succeeded.
 						 */
 						bool FlushAndClose() noexcept;
 
@@ -127,26 +164,26 @@ namespace StormByte {
 						 */
 						void SetError() noexcept;
 
-						/**
-						 * @brief Move up to @p bytes from source to sink. Blocks.
-						 * @param bytes 0 = available now.
-						 * @return @c true on success.
-						 */
-						bool Passthrough(std::size_t bytes) noexcept;
-
-						/**
-						 * @brief Pump until EoF under a sink occupancy cap.
-						 * @param high_water Maximum Occupied/Dirty. 0 is a no-op false.
-						 * @param chunk_min Smallest atomic Passthrough.
-						 * @param chunk_max Largest Passthrough per iteration.
-						 * @return @c true only when the source is EoF and every write succeeded.
-						 */
-						bool Drain(std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept;
-
 					private:
 						/**
-						 * @brief Bytes available on the source now.
-						 * @return 0 if unknown.
+						 * @brief Start the worker. Called from every ctor.
+						 */
+						void Launch() noexcept;
+
+						/**
+						 * @brief Worker loop.
+						 */
+						void Worker() noexcept;
+
+						/**
+						 * @brief Source is exhausted (EoF, nothing left).
+						 * @return @c true when pumping should idle.
+						 */
+						bool SourceDone() const noexcept;
+
+						/**
+						 * @brief Bytes available on an External source now.
+						 * @return 0 if IO source or empty.
 						 */
 						std::size_t AvailableNow() const noexcept;
 
@@ -157,7 +194,13 @@ namespace StormByte {
 						std::size_t OccupiedNow() const noexcept;
 
 						/**
-						 * @brief Pull @p n bytes into @p dest without committing the sink.
+						 * @brief Flush the IO sink. External is a no-op success.
+						 * @return @c false on IO flush error.
+						 */
+						bool DestFlush() noexcept;
+
+						/**
+						 * @brief Pull @p n into @p dest without committing the sink.
 						 * @param n Byte count.
 						 * @param dest Work FIFO.
 						 * @return @c false on hard read failure.
@@ -165,16 +208,40 @@ namespace StormByte {
 						bool Pull(std::size_t n, FIFO& dest) noexcept;
 
 						/**
-						 * @brief Push @p src to the sink. Source FIFO consumed only on success.
+						 * @brief Push @p src to the sink. Consumed only on success.
 						 * @param src Work FIFO.
 						 * @return @c false on write failure.
 						 */
 						bool Push(FIFO& src) noexcept;
 
+						/**
+						 * @brief One transactional move of up to @p bytes.
+						 * @param bytes Requested count. Must be > 0.
+						 * @return @c false on hard failure.
+						 */
+						bool Passthrough(std::size_t bytes) noexcept;
+
 						ExternalReader* m_ext_in {nullptr};				///< External source.
 						ExternalWriter* m_ext_out {nullptr};			///< External sink.
 						const IO::BufferedReader* m_io_in {nullptr};	///< IO source.
 						IO::BufferedWriter* m_io_out {nullptr};			///< IO sink.
+
+						std::size_t m_chunk_min {1};					///< Smallest pull.
+						std::size_t m_chunk_max {65536};				///< Largest pull.
+
+						mutable std::mutex m_mutex;						///< Status / flags.
+						mutable std::condition_variable m_cv;			///< Worker and barriers.
+
+						std::atomic<std::size_t> m_high_water {0};		///< Occupancy cap.
+						IO::Drainer::Status m_status {IO::Drainer::Status::Paused}; ///< Pump switch.
+
+						bool m_stop {false};							///< Worker teardown.
+						bool m_barrier {false};							///< Bridge::Flush in flight.
+						bool m_hurry {false};							///< Drainer(Flush) in flight.
+						bool m_failed {false};							///< Sticky pump error.
+						bool m_busy {false};							///< Passthrough running.
+
+						std::thread m_worker;							///< Pump thread.
 				};
 			}
 		}

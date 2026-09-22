@@ -22,25 +22,22 @@
 
 using namespace StormByte::Buffer;
 
-Bridge::Bridge(ExternalReader& in, ExternalWriter& out) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
-Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
-Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
-Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept:
-	m_io(std::make_unique<IO::Backend::Bridge>(in, out)) {}
+Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(Bridge&& other) noexcept:
 	m_io(std::move(other.m_io)) {}
 
-Bridge::~Bridge() noexcept {
-	if (m_io)
-		static_cast<void>(m_io->Flush());
-}
+Bridge::~Bridge() noexcept = default;
 
 Bridge& Bridge::operator=(Bridge&& other) noexcept {
 	if (this != &other)
@@ -60,23 +57,32 @@ bool Bridge::IsWritable() const noexcept {
 	return m_io && m_io->IsWritable();
 }
 
+std::size_t Bridge::HighWater() const noexcept {
+	return m_io ? m_io->HighWater() : 0;
+}
+
+void Bridge::HighWater(const std::size_t high_water) noexcept {
+	if (m_io)
+		m_io->HighWater(high_water);
+}
+
+IO::Drainer::Status Bridge::Drainer() const noexcept {
+	return m_io ? m_io->Drainer() : IO::Drainer::Status::Stopped;
+}
+
+bool Bridge::Drainer(const IO::Drainer::Operation operation) noexcept {
+	return m_io && m_io->Drainer(operation);
+}
+
 bool Bridge::Flush() noexcept {
-	return !m_io || m_io->Flush();
+	return m_io && m_io->BarrierFlush();
 }
 
 bool Bridge::FlushAndClose() noexcept {
-	return !m_io || m_io->FlushAndClose();
+	return m_io && m_io->FlushAndClose();
 }
 
 void Bridge::SetError() noexcept {
 	if (m_io)
 		m_io->SetError();
-}
-
-bool Bridge::Passthrough(const std::size_t bytes) noexcept {
-	return m_io && m_io->Passthrough(bytes);
-}
-
-bool Bridge::Drain(const std::size_t high_water, const std::size_t chunk_min, const std::size_t chunk_max) noexcept {
-	return m_io && m_io->Drain(high_water, chunk_min, chunk_max);
 }

@@ -25,20 +25,21 @@ If you landed here from a release link and have not read the tree:
 - `IO::BufferedReader` and `IO::BufferedWriter`: public bases for a binary origin or sink. Leaves implement only the `Origin*` hooks. `Open` is not idempotent; `Close` is. `operator bool` is true when `State` is Idle and the instance can still read or write. `Read`/`Write` are blocking for the requested bytes; configured prefetch or write-behind runs after that. `MaxWait` of `0ms` waits without a cap. `TryAgain` is returned when that cap is hit or when a write would exceed `BackPressure`. Policy setters take effect immediately.
 - `IO::BufferedFileReader` and `IO::BufferedFileWriter`: file leaves (`ifstream` / `ofstream` binary). Writer `Open` is append; overwrite is `Truncate`. No `mkdir -p`. Parent missing is `Missing`, a directory is `Directory`, no write permission is `NotWritable`. `WillWrite` on the file writer also probes free space (`statvfs` / `GetDiskFreeSpaceExW`); that probe is indicative (races, quotas, network FS).
 - `IO::Status`, `IO::State`, `IO::Result` and `IO::ToString` in `StormByte/buffer/io/typedefs.hxx`.
-- `ExternalWriter::Occupied`: bytes stored in the sink right now. `0` is empty, not unknown. `ExternalBufferWriter` forwards to `Generic::Size`. `Write` is unchanged (whole request or fail, no TryAgain). High-water limits are applied by the caller with `Occupied() + want`.
-- `Bridge::Drain(high_water, chunk_min, chunk_max)`: pumps until the source is EoF. `high_water` is backpressure on the sink (`Occupied()` / `Dirty()`), so a large origin is not materialised in RAM. `0` returns false and does nothing. If the sink is already at the cap, Drain waits for a consumer; it never Extracts more than fits under the cap. A single-thread `FIFO` that nobody reads will wait forever; prefer `SharedFIFO` or Producer/Consumer. `MaxWait` stays on the IO leaf.
-- Explicit instantiations of `Generic::DataConvert` and `WriteOnly::Write` for `DataType`, `std::span<std::byte>`, `std::span<const std::byte>` and `DataType` iterators. Declared `extern template` in `generic.hxx` and emitted in `generic.cxx` so those closed cases live in libStormByte-Buffer. Other ranges still instantiate in the caller.
+- `IO::Drainer` (`Status`: Started, Paused, Stopped; `Operation`: Toggle, Flush) and `ToString` overloads. `Bridge::Drainer()` / `Bridge::Drainer(Operation)`.
+- `ExternalWriter::Occupied`: bytes stored in the sink right now. `0` is empty, not unknown. `ExternalBufferWriter` forwards to `Generic::Size`. `Write` is unchanged (whole request or fail, no TryAgain).
+- Explicit instantiations of `Generic::DataConvert` and `WriteOnly::Write` for `DataType`, `std::span<std::byte>`, `std::span<const std::byte>` and `DataType` iterators.
 
 ### Changed
 
-- `Generic::Size` is the occupancy of every buffer. It left `ReadOnly`. `Producer` implements it (the shared `Ring`). `Consumer`, `FIFO`, `SharedFIFO` and `Ring` keep their existing overrides.
-- `Bridge` pumps bytes between `ExternalReader`/`ExternalWriter` and `IO::BufferedReader`/`IO::BufferedWriter` in any pairing. It holds references only; tips must outlive every `Passthrough` or `Drain`. No local cache and no configured chunk: `Passthrough(n)` is the unit (`n == 0` is whatever is available on the source now). Writers are never const. `Passthrough` blocks and is transactional: the sink is checked (`IsWritable` / `WillWrite`) before the source is consumed. External sources are `Extract`ed. `Flush` is a no-op on an External sink and `Flush` on an IO writer. `FlushAndClose` closes only an External writer. `SetError` is External only. Move-from `Passthrough` is a no-op.
-- Producer/Consumer tests cover live occupancy: `ExternalWriter::Occupied` and `Producer::Size` drop when the `Consumer` `Extract`s (required for `Drain` backpressure). `Read`/`Peek` do not drop occupancy. Bridge tests cover `Drain` on every tip pairing and a `SharedFIFO` consumer under `high_water`.
+- **Breaking:** `Bridge::Passthrough` and `Bridge::Drain` are no longer public. The bridge starts an auto-drain worker in the constructor (like `std::thread`). Last constructor argument is `high_water` (sink occupancy cap). `0` starts `Paused`; `Toggle` to run. Setters never start or pause. `Bridge::Flush` waits for the in-flight transaction, writes it and flushes the destination. `Drainer(Flush)` pushes whatever is already held (even a short chunk) and does not flush the destination.
+- `Generic::Size` is the occupancy of every buffer. It left `ReadOnly`. `Producer` implements it (the shared `Ring`).
+- `Bridge` pumps bytes between `ExternalReader`/`ExternalWriter` and `IO::BufferedReader`/`IO::BufferedWriter` in any pairing. It holds references only; tips must outlive the Bridge. No local cache. Writers are never const. External sources are `Extract`ed. `FlushAndClose` closes only an External writer. `SetError` is External only. Moved-from `Drainer()` is `Stopped`.
 
 ### Fixed
 
 ### Removed
 
+- Public `Bridge::Passthrough`.
 - `Sink::Bind` and `Sink::Bind(int, Sink&)`. Wire with `To(key)` / `>>` / `<<`.
 - `Bridge` chunk size, leftover FIFO, `PendingBytes`, `ChunkSize`, copy of External handlers, and const `Passthrough` / `Flush`.
 - `ReadOnly::Size` as a distinct declaration (use `Generic::Size`).

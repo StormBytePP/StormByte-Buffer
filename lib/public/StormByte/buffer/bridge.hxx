@@ -23,6 +23,7 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/io/buffered_writer.hxx>
+#include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 
 #include <cstddef>
@@ -58,28 +59,28 @@ namespace StormByte {
 
 		/**
 		 * @class Bridge
-		 * @brief Move bytes from a source to a sink.
+		 * @brief Move bytes from a source to a sink on an owned worker thread.
 		 *
 		 * Pairings: ExternalReader/Writer, IO::BufferedReader/Writer, or mixed.
-		 * Holds references only. Tips must outlive the Bridge and every
-		 * Passthrough or Drain. Does not Open or Seek. No local cache.
-		 * No configured chunk: @c Passthrough(n) is the unit.
+		 * Holds references only. Tips must outlive the Bridge. Does not Open
+		 * or Seek. No local cache. @c Passthrough is private.
 		 *
-		 * External sources are consumed with Extract (Read only if Extract
-		 * fails). IO sources use Read, which already consumes. Writers are
-		 * never const.
+		 * The worker starts in the constructor, like std::thread.
+		 * @p high_water > 0 → @ref IO::Drainer::Status::Started.
+		 * @p high_water == 0 → @ref IO::Drainer::Status::Paused; @ref Toggle
+		 * to run. Setters never start or pause.
 		 *
-		 * @c Passthrough(n) blocks and is transactional: the whole request
-		 * lands on the sink or neither tip is consumed. @c n == 0 moves
-		 * what is available on the source now. A short read at EoF is
-		 * success and marks EoF; it is not Failed.
+		 * @p high_water is backpressure on the sink (@c Occupied / Dirty).
+		 * The worker never Extracts more than fits under the cap. A
+		 * single-thread FIFO that nobody reads will wait forever.
 		 *
-		 * @c Drain keeps calling Passthrough until the source is EoF.
-		 * @p high_water is backpressure on the sink so a large origin is
-		 * not materialised in RAM. It is not a MaxWait policy.
+		 * @ref Flush waits for the in-flight transaction, writes it, then
+		 * flushes the destination. @ref IO::Drainer::Operation::Flush pushes
+		 * whatever is already held, even a short chunk, and does not flush
+		 * the destination. On a BufferedWriter those bytes may still sit
+		 * in Dirty.
 		 *
-		 * @ref Flush is a no-op on an External sink and @c Flush on an
-		 * IO writer. The destructor Flushes.
+		 * The destructor joins the worker. There is no public Stop.
 		 *
 		 * @see ExternalReader, ExternalWriter, IO::BufferedReader, IO::BufferedWriter
 		 */
@@ -89,47 +90,51 @@ namespace StormByte {
 				 * @brief Buffer → buffer. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
+				 * @param high_water Sink occupancy cap. 0 starts Paused.
 				 */
-				Bridge(ExternalReader& in, ExternalWriter& out) noexcept;
+				Bridge(ExternalReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
 				/**
 				 * @brief IO → IO. Tips must already be armed. Not owned.
 				 * @param in Source.
 				 * @param out Sink.
+				 * @param high_water Sink occupancy cap. 0 starts Paused.
 				 */
-				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept;
+				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
 				/**
 				 * @brief Buffer → IO. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
+				 * @param high_water Sink occupancy cap. 0 starts Paused.
 				 */
-				Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept;
+				Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
 
 				/**
 				 * @brief IO → buffer. Tips not owned.
 				 * @param in Source.
 				 * @param out Sink.
+				 * @param high_water Sink occupancy cap. 0 starts Paused.
 				 */
-				Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept;
+				Bridge(const IO::BufferedReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
 
 				Bridge(const Bridge&) = delete;
 
 				/**
-				 * @brief Move constructor. Moved-from Passthrough is a no-op.
+				 * @brief Move constructor. Moved-from Drainer is Stopped.
 				 * @param other Instance to take from.
 				 */
 				Bridge(Bridge&& other) noexcept;
 
 				/**
-				 * @brief Destructor. Calls @ref Flush.
+				 * @brief Destructor. Joins the worker.
 				 */
 				~Bridge() noexcept;
 
 				Bridge& operator=(const Bridge&) = delete;
 
 				/**
-				 * @brief Move assignment. Moved-from Passthrough is a no-op.
+				 * @brief Move assignment. Moved-from Drainer is Stopped.
 				 * @param other Instance to take from.
 				 * @return *this.
 				 */
@@ -154,8 +159,33 @@ namespace StormByte {
 				bool IsWritable() const noexcept;
 
 				/**
-				 * @brief External sink: no-op. IO sink: @c BufferedWriter::Flush.
-				 * @return @c true on success or if there was nothing to flush.
+				 * @brief Sink occupancy cap.
+				 * @return Current high_water. Does not report status.
+				 */
+				std::size_t HighWater() const noexcept;
+
+				/**
+				 * @brief Set the sink occupancy cap. Does not start or pause.
+				 * @param high_water New cap. 0 means no room until raised.
+				 */
+				void HighWater(std::size_t high_water) noexcept;
+
+				/**
+				 * @brief Worker status.
+				 * @return @c Stopped if moved-from.
+				 */
+				IO::Drainer::Status Drainer() const noexcept;
+
+				/**
+				 * @brief Toggle pause or hurry-push already held bytes.
+				 * @param operation @c Toggle or @c Flush.
+				 * @return @c false if moved-from or the operation cannot run.
+				 */
+				bool Drainer(IO::Drainer::Operation operation) noexcept;
+
+				/**
+				 * @brief Finish the in-flight transaction, write it, flush the sink.
+				 * @return @c false on error.
 				 */
 				bool Flush() noexcept;
 
@@ -169,30 +199,6 @@ namespace StormByte {
 				 * @brief @c SetError on an External writer. No-op on IO.
 				 */
 				void SetError() noexcept;
-
-				/**
-				 * @brief Move up to @p bytes from source to sink. Blocks.
-				 * @param bytes 0 = available now.
-				 * @return @c true on success.
-				 */
-				bool Passthrough(std::size_t bytes) noexcept;
-
-				/**
-				 * @brief Pump until EoF under a sink occupancy cap.
-				 * @param high_water Maximum @c Occupied() / Dirty allowed on the sink.
-				 *        0 returns false and does nothing.
-				 * @param chunk_min Smallest atomic Passthrough. Must be greater than 0.
-				 *        Clamped up if @p chunk_max is smaller.
-				 * @param chunk_max Largest Passthrough per iteration. 0 means @p chunk_min.
-				 * @return @c true only if every byte read was written and the source is EoF.
-				 *
-				 * @details Backpressure: if the sink is already at @p high_water, Drain
-				 * waits for a consumer to free space. It never Extracts more than
-				 * @c high_water - Occupied. A single-thread FIFO that nobody reads
-				 * will wait forever. Prefer SharedFIFO or Producer/Consumer.
-				 * MaxWait belongs to the IO leaf, not to Drain.
-				 */
-				bool Drain(std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept;
 
 			private:
 				std::unique_ptr<IO::Backend::Bridge> m_io;	///< Pump.

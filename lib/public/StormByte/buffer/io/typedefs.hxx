@@ -36,7 +36,7 @@ namespace StormByte {
 	namespace Buffer {
 		/**
 		 * @namespace StormByte::Buffer::IO
-		 * @brief Coordinated byte I/O: results and private backends.
+		 * @brief Buffered binary sources and sinks.
 		 */
 		namespace IO {
 			/**
@@ -48,7 +48,7 @@ namespace StormByte {
 			 * @see Result, State
 			 */
 			enum class STORMBYTE_BUFFER_PUBLIC Status {
-				Ok,		///< The call completed as requested (see @ref Result::count).
+				Ok,			///< The call completed as requested (see @ref Result::count).
 				End,		///< Origin exhausted; @ref Result::count may be short.
 				Error,		///< Origin failed during the call; buffers untouched.
 				Failed,		///< Illegal call or dead session; buffers untouched.
@@ -119,6 +119,61 @@ namespace StormByte {
 				Status status;					///< Outcome of the call.
 				std::size_t count;				///< Bytes transferred this call.
 			};
+
+			/**
+			 * @namespace StormByte::Buffer::IO::Drainer
+			 * @brief Status and operations of a Bridge pump thread.
+			 */
+			namespace Drainer {
+				/**
+				 * @enum Status
+				 * @brief Whether the Bridge worker is pumping.
+				 *
+				 * @c Stopped is moved-from or no backend. There is no operation
+				 * that stops a live Bridge; the destructor joins the thread.
+				 */
+				enum class STORMBYTE_BUFFER_PUBLIC Status {
+					Started,	///< Worker may pull when there is room.
+					Paused,		///< Worker does not pull. Ctor if high_water is 0.
+					Stopped		///< No backend.
+				};
+
+				/**
+				 * @enum Operation
+				 * @brief Verbs for @ref StormByte::Buffer::Bridge::Drainer.
+				 */
+				enum class STORMBYTE_BUFFER_PUBLIC Operation {
+					Toggle,		///< Started ↔ Paused.
+					Flush		///< Push what is already held. No destination flush.
+				};
+
+				/**
+				 * @brief Enumerator name of @p status.
+				 * @param status Drainer status.
+				 * @return Stable name, or empty if unknown.
+				 */
+				[[nodiscard]] constexpr std::string_view ToString(Status status) noexcept {
+					switch (status) {
+						case Status::Started:	return "Started";
+						case Status::Paused:	return "Paused";
+						case Status::Stopped:	return "Stopped";
+					}
+					return {};
+				}
+
+				/**
+				 * @brief Enumerator name of @p operation.
+				 * @param operation Drainer operation.
+				 * @return Stable name, or empty if unknown.
+				 */
+				[[nodiscard]] constexpr std::string_view ToString(Operation operation) noexcept {
+					switch (operation) {
+						case Operation::Toggle:	return "Toggle";
+						case Operation::Flush:	return "Flush";
+					}
+					return {};
+				}
+			}
 		}
 	}
 }

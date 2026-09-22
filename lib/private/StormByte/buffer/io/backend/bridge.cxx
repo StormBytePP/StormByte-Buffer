@@ -20,25 +20,55 @@
 #include <StormByte/buffer/io/backend/bridge.hxx>
 
 #include <algorithm>
-#include <thread>
+#include <chrono>
 
 using namespace StormByte::Buffer;
 
-IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out) noexcept:
+IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
 	m_ext_in(&in),
-	m_ext_out(&out) {}
-
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
-	m_io_in(&in),
-	m_io_out(&out) {}
-
-IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
-	m_ext_in(&in),
-	m_io_out(&out) {}
-
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out) noexcept:
 	m_ext_out(&out),
-	m_io_in(&in) {}
+	m_high_water(high_water),
+	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	Launch();
+}
+
+IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+	m_io_in(&in),
+	m_io_out(&out),
+	m_high_water(high_water),
+	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	Launch();
+}
+
+IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+	m_ext_in(&in),
+	m_io_out(&out),
+	m_high_water(high_water),
+	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	Launch();
+}
+
+IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+	m_ext_out(&out),
+	m_io_in(&in),
+	m_high_water(high_water),
+	m_status(high_water == 0 ? IO::Drainer::Status::Paused : IO::Drainer::Status::Started) {
+	Launch();
+}
+
+IO::Backend::Bridge::~Bridge() noexcept {
+	{
+		std::lock_guard lock(m_mutex);
+		m_stop = true;
+	}
+	m_cv.notify_all();
+	if (m_worker.joinable())
+		m_worker.join();
+}
+
+void IO::Backend::Bridge::Launch() noexcept {
+	m_worker = std::thread([this] { Worker(); });
+}
 
 bool IO::Backend::Bridge::EoF() const noexcept {
 	if (m_ext_in)
@@ -64,14 +94,52 @@ bool IO::Backend::Bridge::IsWritable() const noexcept {
 	return false;
 }
 
-bool IO::Backend::Bridge::Flush() noexcept {
-	if (m_io_out)
-		return m_io_out->Flush().status == IO::Status::Ok;
-	return true;
+std::size_t IO::Backend::Bridge::HighWater() const noexcept {
+	return m_high_water.load();
+}
+
+void IO::Backend::Bridge::HighWater(const std::size_t high_water) noexcept {
+	m_high_water.store(high_water);
+	m_cv.notify_all();
+}
+
+IO::Drainer::Status IO::Backend::Bridge::Drainer() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_status;
+}
+
+bool IO::Backend::Bridge::Drainer(const IO::Drainer::Operation operation) noexcept {
+	std::unique_lock lock(m_mutex);
+	if (operation == IO::Drainer::Operation::Toggle) {
+		if (m_status == IO::Drainer::Status::Started)
+			m_status = IO::Drainer::Status::Paused;
+		else if (m_status == IO::Drainer::Status::Paused)
+			m_status = IO::Drainer::Status::Started;
+		else
+			return false;
+		m_cv.notify_all();
+		return true;
+	}
+
+	if (operation != IO::Drainer::Operation::Flush)
+		return false;
+
+	m_hurry = true;
+	m_cv.notify_all();
+	m_cv.wait(lock, [this] { return m_stop || !m_hurry; });
+	return !m_failed;
+}
+
+bool IO::Backend::Bridge::BarrierFlush() noexcept {
+	std::unique_lock lock(m_mutex);
+	m_barrier = true;
+	m_cv.notify_all();
+	m_cv.wait(lock, [this] { return m_stop || !m_barrier; });
+	return !m_failed;
 }
 
 bool IO::Backend::Bridge::FlushAndClose() noexcept {
-	const bool ok = Flush();
+	const bool ok = BarrierFlush();
 	if (m_ext_out)
 		m_ext_out->Close();
 	return ok;
@@ -82,14 +150,17 @@ void IO::Backend::Bridge::SetError() noexcept {
 		m_ext_out->SetError();
 }
 
+bool IO::Backend::Bridge::SourceDone() const noexcept {
+	if (m_ext_in)
+		return m_ext_in->EoF() && m_ext_in->AvailableBytes() == 0;
+	if (m_io_in)
+		return m_io_in->EoF();
+	return true;
+}
+
 std::size_t IO::Backend::Bridge::AvailableNow() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->AvailableBytes();
-	if (m_io_in) {
-		FIFO peek;
-		static_cast<void>(m_io_in->Peek(0, peek));
-		return peek.AvailableBytes();
-	}
 	return 0;
 }
 
@@ -101,6 +172,12 @@ std::size_t IO::Backend::Bridge::OccupiedNow() const noexcept {
 	return 0;
 }
 
+bool IO::Backend::Bridge::DestFlush() noexcept {
+	if (!m_io_out)
+		return true;
+	return m_io_out->Flush().status == IO::Status::Ok;
+}
+
 bool IO::Backend::Bridge::Pull(const std::size_t n, FIFO& dest) noexcept {
 	dest.Clear();
 	if (n == 0)
@@ -110,7 +187,7 @@ bool IO::Backend::Bridge::Pull(const std::size_t n, FIFO& dest) noexcept {
 		DataType chunk;
 		if (!m_ext_in->Extract(n, chunk)) {
 			if (!m_ext_in->Read(n, chunk))
-				return false;
+				return m_ext_in->EoF();
 		}
 		if (chunk.empty())
 			return true;
@@ -119,7 +196,9 @@ bool IO::Backend::Bridge::Pull(const std::size_t n, FIFO& dest) noexcept {
 
 	if (m_io_in) {
 		const IO::Result pulled = m_io_in->Read(n, dest);
-		return pulled.status == IO::Status::Ok || pulled.status == IO::Status::End;
+		if (pulled.status == IO::Status::Ok || pulled.status == IO::Status::End)
+			return true;
+		return m_io_in->EoF();
 	}
 
 	return false;
@@ -153,95 +232,135 @@ bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
 }
 
 bool IO::Backend::Bridge::Passthrough(const std::size_t bytes) noexcept {
-	if (!m_ext_in && !m_io_in)
-		return false;
-	if (!m_ext_out && !m_io_out)
-		return false;
+	if (bytes == 0)
+		return true;
 	if (!IsWritable())
 		return false;
 
-	std::size_t want = bytes;
-	if (want == 0)
-		want = AvailableNow();
-	if (want == 0)
-		return true;
-
 	if (m_io_out) {
-		while (!m_io_out->WillWrite(want)) {
+		while (!m_io_out->WillWrite(bytes)) {
 			if (m_io_out->Flush().status != IO::Status::Ok)
 				return false;
-			if (!m_io_out->WillWrite(want))
+			if (!m_io_out->WillWrite(bytes))
 				return false;
 		}
 	}
 
 	FIFO work;
-	if (!Pull(want, work))
+	if (!Pull(bytes, work))
 		return false;
 	return Push(work);
 }
 
-bool IO::Backend::Bridge::Drain(const std::size_t high_water, std::size_t chunk_min, std::size_t chunk_max) noexcept {
-	if (high_water == 0)
-		return false;
-	if (chunk_min == 0)
-		chunk_min = 1;
-	if (chunk_max == 0 || chunk_max < chunk_min)
-		chunk_max = chunk_min;
-
-	if (!m_ext_in && !m_io_in)
-		return false;
-	if (!m_ext_out && !m_io_out)
-		return false;
-
+void IO::Backend::Bridge::Worker() noexcept {
 	for (;;) {
-		if (!IsReadable())
-			return false;
-		if (!IsWritable())
-			return false;
+		std::unique_lock lock(m_mutex);
+		m_cv.wait(lock, [this] {
+			return m_stop || m_barrier || m_hurry || m_status == IO::Drainer::Status::Started;
+		});
+		if (m_stop)
+			break;
 
-		if (EoF() && AvailableNow() == 0)
-			return Flush();
+		const bool barrier = m_barrier;
+		const bool hurry = m_hurry;
+		m_busy = true;
+		lock.unlock();
 
-		std::size_t occupied = OccupiedNow();
-		while (occupied >= high_water) {
-			if (!IsWritable() || !IsReadable())
-				return false;
-			if (m_io_out && m_io_out->Flush().status != IO::Status::Ok)
-				return false;
-			std::this_thread::yield();
-			occupied = OccupiedNow();
+		if (SourceDone()) {
+			if (barrier) {
+				if (!DestFlush())
+					m_failed = true;
+			}
+			lock.lock();
+			m_busy = false;
+			if (m_barrier) {
+				m_barrier = false;
+				m_cv.notify_all();
+			}
+			if (m_hurry) {
+				m_hurry = false;
+				m_cv.notify_all();
+			}
+			m_cv.wait(lock, [this] {
+				return m_stop || m_barrier || m_hurry ||
+					(m_status == IO::Drainer::Status::Started && !SourceDone());
+			});
+			continue;
 		}
 
-		const std::size_t room = high_water - occupied;
-		if (room == 0)
-			continue;
-
-		if (room < chunk_min) {
-			std::this_thread::yield();
+		if (!IsWritable()) {
+			m_failed = true;
+			lock.lock();
+			m_busy = false;
+			m_barrier = false;
+			m_hurry = false;
+			m_cv.notify_all();
 			continue;
 		}
 
-		std::size_t want = std::min(chunk_max, room);
-		const std::size_t avail = AvailableNow();
-		if (avail == 0) {
-			if (EoF())
-				return Flush();
+		const std::size_t hw = m_high_water.load();
+		const std::size_t occupied = OccupiedNow();
+		std::size_t room = 0;
+		if (hw > occupied)
+			room = hw - occupied;
+
+		if (!hurry && !barrier && (hw == 0 || room == 0)) {
+			lock.lock();
+			m_busy = false;
+			m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
+				return m_stop || m_barrier || m_hurry ||
+					m_status != IO::Drainer::Status::Started ||
+					(m_high_water.load() > OccupiedNow());
+			});
+			continue;
+		}
+
+		std::size_t want = 0;
+		if (hurry) {
 			if (m_io_in)
-				want = std::min(want, chunk_min);
-			else {
-				std::this_thread::yield();
-				continue;
-			}
+				want = 1;
+			else
+				want = AvailableNow();
 		} else {
-			want = std::min(want, avail);
-			if (want < chunk_min && !EoF() && !m_io_in) {
-				std::this_thread::yield();
-				continue;
+			want = std::min(m_chunk_max, room == 0 ? m_chunk_min : room);
+			if (want < m_chunk_min)
+				want = 0;
+			if (m_io_in) {
+				if (want == 0)
+					want = std::min(m_chunk_min, room == 0 ? m_chunk_min : room);
+			} else {
+				const std::size_t avail = AvailableNow();
+				if (avail == 0) {
+					lock.lock();
+					m_busy = false;
+					m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
+						return m_stop || m_barrier || m_hurry ||
+							m_status != IO::Drainer::Status::Started ||
+							AvailableNow() > 0 || SourceDone();
+					});
+					continue;
+				}
+				want = std::min(want == 0 ? avail : want, avail);
 			}
 		}
 
-		if (!Passthrough(want))
-			return false;
+		if (want > 0 && !Passthrough(want))
+			m_failed = true;
+
+		if (barrier) {
+			if (!DestFlush())
+				m_failed = true;
+		}
+
+		lock.lock();
+		m_busy = false;
+		if (m_barrier) {
+			m_barrier = false;
+			m_cv.notify_all();
+		}
+		if (m_hurry) {
+			m_hurry = false;
+			m_cv.notify_all();
+		}
 	}
 }
