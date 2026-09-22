@@ -11,7 +11,7 @@ StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
 It depends on StormByte Base and optionally StormByte Logger. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
 
-Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge and Pipeline.
+Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks).
 
 If you landed here from a release link and have not read the tree:
 
@@ -22,30 +22,31 @@ If you landed here from a release link and have not read the tree:
 
 ### Added
 
-- `StormByte::Buffer::IO`. Buffered binary sources and sinks, distinct from FIFO / Ring / Hopper. Holds `Status`, `State`, `Result`, `ToString`, `BufferedReader`, `BufferedWriter` and the file leaves.
-- `StormByte::Buffer::IO::Backend`. PIMPL coordinators (`Backend::BufferedReader`, `Backend::BufferedWriter`). Not part of the public include surface.
-- `StormByte::Buffer::IO::Status` and `StormByte::Buffer::IO::Result`. `Ok` / `End` / `Error` / `Failed` / `TryAgain` plus a byte `count`. `TryAgain` is backpressure or a bounded wait. `constexpr ToString` for `Status` and `State`.
-- `StormByte::Buffer::IO::State`: `Idle`, `Missing`, `Directory`, `Permission`, `NotWritable`, `Fault`, `Unavailable`.
-- `StormByte::Buffer::IO::BufferedReader`. Public base for a binary read origin with optional prefetch. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`.
-- Read session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` is idempotent. `Open` is not. `Close` then `Open` is a valid round-trip. `operator bool` is true when `State` is Idle and not `EoF`.
-- `Read(n, FIFO&)` / `Peek(n, FIFO&)`. Destination overwritten on `Ok` / `End` with a non-zero count. Untouched on `Failed`, `Error`, `TryAgain`, or `End` with count 0. `MaxWait` of `0ms` waits without limit. A positive `MaxWait` returns `TryAgain` on timeout. FIFO `n == 0` serves the current cached span from `Tell`.
-- `Read(std::span<std::byte>)` / `Peek(std::span<std::byte>)`. Request size is `dest.size()`. Empty span is `{Ok, 0}` with no consume and no pull. On `Ok` / `End` with `count > 0` the first `count` bytes of the span are written; the tail is left as-is. Same untouched rules as the FIFO overloads. No `Read(n, span)`.
-- `BufferedReader::Seek` / `Tell` / `IsSeekable` / `IsSized` / `Size`. `Position::Absolute` or `Relative` only. End-relative positioning is `Seek(*Size() + off, Absolute)` when sized. Seekable `Seek` always calls `OriginSeek` for the resolved target, including a cache hit. Non-seekable `Seek` is `Failed` and does not call the hook. Seek is not O(1).
-- Seekable cache is a map of owned spans. Overlap and abutment merge. `MaxMemory` evicts farthest from `Tell`. `MaxMemory` 0 stores no cache and still serves `Read` / `Peek` from the origin.
-- `Tell` is the logical cursor: `0` after `Open` / `Rewind`, advanced only by a consuming `Read`, set by a successful `Seek`. `Peek` and an empty span do not move it. A failed `Seek` leaves it unchanged. Seeking past `Size()` is allowed; `Tell` stays there and a later `Read` is `End` with count 0.
-- Policy setters (`ReadAhead`, `MaxMemory`, `MaxWait`) take effect immediately. Lowering a cap may drop cached bytes. The setter waits until prefetch is cancelled and the cache is trimmed.
-- `StormByte::Buffer::IO::BufferedFileReader`. File leaf (`ifstream`, binary). Configurable `ReadAhead` and `MaxMemory`. Seekable and sized. Does not open in the constructor. `Seek` stays on the base.
-- `StormByte::Buffer::IO::BufferedWriter`. Public base for a binary write sink. Leaves implement only `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush` and `OriginTruncate`. Movable, not copyable.
-- Write session: construction is `Unavailable`. Successful `Open` → `Idle`. `Close` always `Flush` then `OriginClose`. Flush failure leaves `Fault`. `operator bool` is true when `State` is Idle. No `Seek`. `Tell` is bytes accepted since `Open` or `Truncate`.
-- `Write(const FIFO&)`, `Write(FIFO&)` and `Write(std::span<const std::byte>)`. Atomic. FIFO read from the current position. Source untouched on `TryAgain` / `Failed` / `Error`.
-- `WriteChunk` and `BackPressure`. Either knob `0` is direct mode. Both `> 0` enable an SPSC `LockFreeRing`. Cap is `BackPressure * WriteChunk` bytes. Overflow is `TryAgain`. `Dirty()` is unread ring bytes. Setters take effect immediately and may `Flush`.
-- `Flush()` returns `IO::Result`, drains the ring, never `TryAgain`, then `OriginFlush`. Direct `Write` also calls `OriginFlush`.
-- `StormByte::Buffer::IO::BufferedFileWriter`. File leaf (`ofstream`, binary append). Creates the file when the parent exists. No `mkdir -p`. Missing parent is `Missing`. Directory is `Directory`. No write permission is `NotWritable`. Overwrite is `Truncate`.
-- `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
-
 ### Changed
 
 ### Fixed
+
+### Removed
+
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
+
+## [1.4.0] - 2026-09-22
+
+### Added
+
+- `StormByte::Buffer::IO`. Buffered binary sources and sinks, separate from FIFO / Ring / Hopper. Public surface: `Status`, `State`, `Result`, `ToString`, `BufferedReader`, `BufferedWriter`, `BufferedFileReader`, `BufferedFileWriter`. `IO::Backend` is the PIMPL and is not a public include.
+- `Status` / `Result` / `State`. `Ok`, `End`, `Error`, `Failed`, `TryAgain` plus a byte `count`. `TryAgain` is backpressure or a bounded `MaxWait`. `State`: `Idle`, `Missing`, `Directory`, `Permission`, `NotWritable`, `Fault`, `Unavailable`. `constexpr ToString` for `Status` and `State`.
+- `BufferedReader`. Public base for a binary origin. Leaves implement `OriginOpen`, `OriginClose`, `OriginPull`, `OriginCanSeek`, `OriginSeek`, `OriginHasSize` and `OriginSize`. Optional `Setup()` runs once from `Open` before `OriginOpen`. Construction is `Unavailable`; a successful `Open` is `Idle`. `Close` is idempotent; `Open` is not. `operator bool` is Idle and not `EoF`.
+- Reader `Read` / `Peek` into a `FIFO` or a writable `std::span<std::byte>`. Destination overwritten only on `Ok` / `End` with a non-zero count. Empty span is `{Ok, 0}`. FIFO `n == 0` serves the cached span at `Tell`. `MaxWait` `0ms` waits without limit.
+- Reader `Seek` / `Tell` / `IsSeekable` / `IsSized` / `Size`. Absolute or relative only. End-relative is `Seek(*Size() + off, Absolute)` when sized. Seekable `Seek` always calls `OriginSeek`, including a cache hit. Non-seekable `Seek` is `Failed` and does not call the hook. Seek is not O(1). Cache is a map of owned spans; overlap merges; `MaxMemory` evicts farthest from `Tell`; `0` stores nothing and still serves from the origin. Prefetch stops on `Seek` and on move (`Rebind`); the next `Read` / `Peek` requests it again.
+- `BufferedFileReader`. `ifstream` leaf, seekable and sized. Path-only constructor probes device throughput at `Setup` and sets `ReadAhead` (window clamped 16 KiB–1 MiB) with `MaxMemory` 1 MiB. Explicit `(path, read_ahead, max_memory)` keeps those knobs. Does not open in the constructor.
+- `BufferedWriter`. Public base for a binary sink. Leaves implement `OriginOpen`, `OriginClose`, `OriginPush`, `OriginFlush` and `OriginTruncate`. Optional `Setup()` and `WillWrite`. No `Seek`. `Tell` is bytes accepted since `Open` or `Truncate`. `Close` flushes then closes; a flush failure is `Fault`.
+- Writer `Write(const FIFO&)`, `Write(FIFO&)` and `Write(std::span<const std::byte>)`. Atomic. `WriteChunk` and `BackPressure` (in chunks): either knob `0` is direct; both `> 0` use an SPSC `LockFreeRing` capped at `BackPressure * WriteChunk` bytes. Overflow is `TryAgain`. `Dirty()` is unread ring bytes. `Flush()` drains the ring and calls `OriginFlush`.
+- `BufferedFileWriter`. `ofstream` leaf, binary append. Creates the file when the parent exists (no `mkdir -p`). Path-only constructor probes the device at `Setup` and sets `WriteChunk` plus `BackPressure` 4. Explicit `(path, write_chunk, backpressure)` keeps those knobs. `Truncate` overwrites.
+- Device throughput probe (private): Linux / Windows / macOS classification (HDD, SATA SSD, NVMe gen, USB, network at 80 % of NIC). Nominal rates, not a benchmark. Device knobs have no setters; `MaxMemory` and `MaxWait` stay settable.
+- `LockFreeRing::FrontSpan`, `Consume` and `Write(std::span<const std::byte>)`.
+- `ExternalWriter::Occupied`.
+- `Bridge` pumps any `ExternalReader` / `IO` reader into any `ExternalWriter` / `IO` writer. `Drain` respects sink backpressure. Worker auto-drains; public `Passthrough` is gone. `high_water == 0` means no extra occupancy cap.
 
 ### Removed
 
@@ -53,10 +54,12 @@ If you landed here from a release link and have not read the tree:
 
 ### Tests
 
-- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek` (exact, empty, short tail intact, before `Open`). `Tell` after open, each consume, peek, empty span, successful and failed `Seek`, `Size()`, past `Size()`, `Rewind`, move, `MaxMemory` 0. Seek: absolute / relative, negative, without `Open`, relative before 0, `Seek(0)` reread, end via `Size`, prefetch then seek (`seek.bin`, `ahead.bin`).
-- `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Dirty / Tell / Flush / BackPressure / Truncate / move.
+- `BufferedFileReaderTests`. Fixtures under `test/files/`. Span `Read` / `Peek`, `Tell`, `Seek` (absolute, relative, end via `Size`, cache hit, `MaxMemory` 0), path-only vs explicit constructors, move with prefetch stopped.
+- `BufferedFileWriterTests`. Temp files via `StormByte::System::TempFileName`. Direct `(path, 0, 0)`, path-only device knobs, Dirty / Flush / BackPressure / Truncate / move.
+- `BufferedMeteredFileTests`. Selective override example (`BytesRead` / `BytesWritten`).
+- Bridge coverage for pipe close-while-started and `high_water` 0.
 
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...HEAD
+[1.4.0]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.3.0...1.4.0
 
 ## [1.3.0] - 2026-09-20
 
