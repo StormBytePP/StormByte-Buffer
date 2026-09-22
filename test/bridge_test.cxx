@@ -514,12 +514,12 @@ int test_io_to_buf_reader_not_open() {
 int test_io_to_buf_nul_and_binary() {
 	const std::string fn = "test_io_to_buf_nul_and_binary";
 	FIFO dst;
-	BufferedFileReader in(File("nul.bin"));
+	BufferedFileReader in(File("with_nuls.bin"));
 	ExternalBufferWriter out(dst);
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 16);
 	ASSERT_TRUE(fn, WaitFifoSize(dst, 5));
-	ASSERT_EQUAL(fn, Slurp(File("nul.bin")), FifoText(dst));
+	ASSERT_EQUAL(fn, Slurp(File("with_nuls.bin")), FifoText(dst));
 	in.Close();
 	RETURN_TEST(fn, 0);
 }

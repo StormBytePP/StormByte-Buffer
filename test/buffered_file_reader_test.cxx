@@ -496,7 +496,7 @@ int test_no_nl_and_nul() {
 	ASSERT_EQUAL("test_no_nl_and_nul", std::string("no newline at end"), Text(t));
 	ASSERT_EQUAL("test_no_nl_and_nul", static_cast<std::size_t>(17), text.Tell());
 
-	BufferedFileReader raw(File("nul.bin"));
+	BufferedFileReader raw(File("with_nuls.bin"));
 	ASSERT_TRUE("test_no_nl_and_nul", raw.Open());
 	FIFO n;
 	ASSERT_EQUAL("test_no_nl_and_nul", ToString(Status::Ok), ToString(raw.Read(5, n).status));
