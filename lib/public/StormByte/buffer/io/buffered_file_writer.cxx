@@ -48,12 +48,13 @@ namespace {
 
 	std::filesystem::path SpacePath(const std::filesystem::path& path) {
 		std::error_code ec;
-		if (std::filesystem::exists(path, ec) && !ec)
-			return path;
 		const auto parent = path.parent_path();
 		if (!parent.empty())
 			return parent;
-		return std::filesystem::current_path(ec);
+		const auto cwd = std::filesystem::current_path(ec);
+		if (!ec)
+			return cwd;
+		return {};
 	}
 
 	bool VolumeHas(const std::filesystem::path& path, const std::size_t n) {
