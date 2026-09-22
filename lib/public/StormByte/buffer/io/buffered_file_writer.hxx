@@ -48,9 +48,10 @@ namespace StormByte {
 			 * @class BufferedFileWriter
 			 * @brief @ref BufferedWriter leaf over a filesystem file.
 			 *
-			 * Binary `ofstream` only. Open is append. Overwrite is @ref Truncate.
-			 * Does not open in the constructor. Does not create parent directories.
-			 * Not sealed.
+			 * Binary file, random-access. Open creates the file when
+			 * missing and leaves existing content. Overwrite is
+			 * @ref Truncate. Does not open in the constructor. Does
+			 * not create parent directories. Not sealed.
 			 *
 			 * The device does not change after construction: @ref WriteChunk
 			 * and @ref BackPressure are chosen once. @ref MaxWait stays
@@ -62,10 +63,11 @@ namespace StormByte {
 			 * write_chunk, back_pressure, max_wait) stores those values.
 			 * A zero chunk or backpressure disables the ring.
 			 *
-			 * A derived class may override any @c Origin* hook, @ref WillWrite
-			 * and @ref Setup. When the transport is still this file, call the
-			 * File implementation and then add behaviour. When it is not,
-			 * do not call these File implementations.
+			 * A derived class may override any @c Origin* hook, @ref Seek,
+			 * @ref Size, @ref WillWrite and @ref Setup. When the transport
+			 * is still this file, call the File implementation and then
+			 * add behaviour. When it is not, do not call these File
+			 * implementations.
 			 *
 			 * The derived destructor must call @ref Close first.
 			 * File @ref Close is idempotent.
@@ -135,6 +137,22 @@ namespace StormByte {
 					 */
 					virtual const std::filesystem::path& Path() const noexcept;
 
+					/**
+					 * @brief Logical file length in bytes.
+					 * @return max(filesystem size, @ref Tell).
+					 *
+					 * @ref Tell includes @ref Dirty. Does not Flush.
+					 */
+					virtual std::size_t Size() const noexcept override;
+
+					/**
+					 * @brief Move the write cursor after flushing dirty bytes.
+					 * @param offset Byte offset.
+					 * @param mode @ref Position::Absolute or @ref Position::Relative.
+					 * @return @ref Status::Ok or @ref Status::Failed.
+					 */
+					virtual Result Seek(std::ptrdiff_t offset, Position mode) override;
+
 				protected:
 					/**
 					 * @brief Apply device chunk and backpressure for the path-only ctor.
@@ -142,27 +160,29 @@ namespace StormByte {
 					 * No-op when the explicit constructor already set those knobs
 					 * (including 0 = ring off).
 					 */
-					void Setup() override;
+					virtual void Setup() override;
 
 					/**
-					 * @brief Open @c m_path as a binary append file. Creates the file
-					 *        when the parent directory exists.
+					 * @brief Open @c m_path for binary random-access write.
 					 * @return @ref Status::Ok or @ref Status::Failed.
+					 *
+					 * Creates the file when missing. Does not truncate an
+					 * existing file.
 					 */
-					Result OriginOpen() override;
+					virtual Result OriginOpen() override;
 
 					/**
 					 * @brief Close the file stream.
 					 * @return @ref Status::Ok.
 					 */
-					Result OriginClose() override;
+					virtual Result OriginClose() override;
 
 					/**
 					 * @brief Write @p data to the file.
 					 * @param data Contiguous octets.
 					 * @return Ok with bytes written, Error or Failed.
 					 */
-					Result OriginPush(std::span<const std::byte> data) override;
+					virtual Result OriginPush(std::span<const std::byte> data) override;
 
 					/**
 					 * @brief Make written bytes visible to later readers of the path.
@@ -172,13 +192,20 @@ namespace StormByte {
 					 * On Windows this includes FlushFileBuffers when the
 					 * volume allows a shared handle.
 					 */
-					Result OriginFlush() override;
+					virtual Result OriginFlush() override;
 
 					/**
 					 * @brief Resize the file to zero bytes.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					Result OriginTruncate() override;
+					virtual Result OriginTruncate() override;
+
+					/**
+					 * @brief Seek the file to @p absolute.
+					 * @param absolute Byte offset from the start.
+					 * @return @ref Status::Ok or @ref Status::Failed.
+					 */
+					virtual Result OriginSeek(std::size_t absolute) override;
 
 					/**
 					 * @brief Ring cap and indicative free space on the volume.
@@ -190,7 +217,7 @@ namespace StormByte {
 					 * can still reject the later Write. A derived writer that
 					 * is not a local volume should override this.
 					 */
-					bool WillWrite(std::size_t n) const override;
+					virtual bool WillWrite(std::size_t n) const override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.

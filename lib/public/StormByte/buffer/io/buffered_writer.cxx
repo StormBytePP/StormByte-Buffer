@@ -61,6 +61,11 @@ void BufferedWriter::SetState(const enum State state) noexcept {
 		m_io->SetState(state);
 }
 
+void BufferedWriter::SetTell(const std::size_t offset) noexcept {
+	if (m_io)
+		m_io->SetTell(offset);
+}
+
 void BufferedWriter::Setup() {}
 
 bool BufferedWriter::Open() {
@@ -122,6 +127,18 @@ std::size_t BufferedWriter::Tell() const noexcept {
 
 std::size_t BufferedWriter::Dirty() const noexcept {
 	return m_io ? m_io->Dirty() : 0;
+}
+
+std::size_t BufferedWriter::Size() const noexcept {
+	return Tell();
+}
+
+Result BufferedWriter::Seek(const std::ptrdiff_t, const Position) {
+	return { Status::Failed, 0 };
+}
+
+Result BufferedWriter::OriginSeek(const std::size_t) {
+	return { Status::Failed, 0 };
 }
 
 std::size_t BufferedWriter::WriteChunk() const noexcept {

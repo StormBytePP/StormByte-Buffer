@@ -61,6 +61,11 @@ void BufferedWriter::SetState(const enum State state) noexcept {
 	m_state = state;
 }
 
+void BufferedWriter::SetTell(const std::size_t offset) noexcept {
+	std::lock_guard lock(m_mutex);
+	m_tell = offset;
+}
+
 bool BufferedWriter::BufferedMode() const noexcept {
 	return m_write_chunk > 0 && m_back_pressure > 0;
 }

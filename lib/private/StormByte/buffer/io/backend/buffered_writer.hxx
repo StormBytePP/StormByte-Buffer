@@ -140,6 +140,12 @@ namespace StormByte {
 						void SetState(enum State state) noexcept;
 
 						/**
+						 * @brief Publish the logical write offset from a leaf Seek.
+						 * @param offset New Tell.
+						 */
+						void SetTell(std::size_t offset) noexcept;
+
+						/**
 						 * @name Session
 						 * @{
 						 */

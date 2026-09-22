@@ -31,6 +31,7 @@
 
 using StormByte::Buffer::DataType;
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileWriter;
 using StormByte::Buffer::IO::State;
 using StormByte::Buffer::IO::Status;
@@ -148,9 +149,11 @@ int test_close_then_reopen_appends() {
 		ASSERT_TRUE("test_close_then_reopen_appends", out.Close());
 		ASSERT_TRUE("test_close_then_reopen_appends", out.Open());
 		ASSERT_EQUAL("test_close_then_reopen_appends", static_cast<std::size_t>(0), out.Tell());
+		ASSERT_EQUAL("test_close_then_reopen_appends", ToString(Status::Ok),
+			ToString(out.Seek(static_cast<std::ptrdiff_t>(out.Size()), Position::Absolute).status));
 		FIFO b = FromText("CD");
 		ASSERT_EQUAL("test_close_then_reopen_appends", ToString(Status::Ok), ToString(out.Write(b).status));
-		ASSERT_EQUAL("test_close_then_reopen_appends", static_cast<std::size_t>(2), out.Tell());
+		ASSERT_EQUAL("test_close_then_reopen_appends", static_cast<std::size_t>(4), out.Tell());
 		ASSERT_TRUE("test_close_then_reopen_appends", out.Close());
 	}
 	ASSERT_EQUAL("test_close_then_reopen_appends", std::string("ABCD"), Slurp(path));
@@ -414,6 +417,147 @@ int test_truncate_drops_dirty() {
 }
 
 // -------------------
+// Seek / Size
+// -------------------
+
+int test_seek_patch_direct() {
+	const auto path = Scratch("patch");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE("test_seek_patch_direct", out.Open());
+	FIFO fill = FromText("XXXXYYYY");
+	ASSERT_EQUAL("test_seek_patch_direct", ToString(Status::Ok), ToString(out.Write(fill).status));
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(8), out.Tell());
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(8), out.Size());
+
+	ASSERT_EQUAL("test_seek_patch_direct", ToString(Status::Ok),
+		ToString(out.Seek(0, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(0), out.Tell());
+	FIFO ab = FromText("AB");
+	ASSERT_EQUAL("test_seek_patch_direct", ToString(Status::Ok), ToString(out.Write(ab).status));
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(2), out.Tell());
+
+	ASSERT_EQUAL("test_seek_patch_direct", ToString(Status::Ok),
+		ToString(out.Seek(4, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(4), out.Tell());
+	FIFO cd = FromText("CD");
+	ASSERT_EQUAL("test_seek_patch_direct", ToString(Status::Ok), ToString(out.Write(cd).status));
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(6), out.Tell());
+	ASSERT_EQUAL("test_seek_patch_direct", static_cast<std::size_t>(8), out.Size());
+
+	ASSERT_TRUE("test_seek_patch_direct", out.Close());
+	ASSERT_EQUAL("test_seek_patch_direct", std::string("ABXXCDYY"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST("test_seek_patch_direct", 0);
+}
+
+int test_seek_relative() {
+	const auto path = Scratch("rel");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE("test_seek_relative", out.Open());
+	FIFO fill = FromText("01234567");
+	ASSERT_EQUAL("test_seek_relative", ToString(Status::Ok), ToString(out.Write(fill).status));
+	ASSERT_EQUAL("test_seek_relative", ToString(Status::Ok),
+		ToString(out.Seek(-4, Position::Relative).status));
+	ASSERT_EQUAL("test_seek_relative", static_cast<std::size_t>(4), out.Tell());
+	FIFO mid = FromText("AB");
+	ASSERT_EQUAL("test_seek_relative", ToString(Status::Ok), ToString(out.Write(mid).status));
+	ASSERT_TRUE("test_seek_relative", out.Close());
+	ASSERT_EQUAL("test_seek_relative", std::string("0123AB67"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST("test_seek_relative", 0);
+}
+
+int test_seek_before_start_fails() {
+	const auto path = Scratch("neg");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE("test_seek_before_start_fails", out.Open());
+	FIFO src = FromText("HI");
+	ASSERT_EQUAL("test_seek_before_start_fails", ToString(Status::Ok), ToString(out.Write(src).status));
+	ASSERT_EQUAL("test_seek_before_start_fails", ToString(Status::Failed),
+		ToString(out.Seek(-1, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_before_start_fails", ToString(Status::Failed),
+		ToString(out.Seek(-3, Position::Relative).status));
+	ASSERT_EQUAL("test_seek_before_start_fails", static_cast<std::size_t>(2), out.Tell());
+	ASSERT_TRUE("test_seek_before_start_fails", out.Close());
+	ASSERT_EQUAL("test_seek_before_start_fails", std::string("HI"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST("test_seek_before_start_fails", 0);
+}
+
+int test_size_counts_dirty() {
+	const auto path = Scratch("szdirty");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 8, 4);
+	ASSERT_TRUE("test_size_counts_dirty", out.Open());
+	FIFO src = FromText("ABC");
+	ASSERT_EQUAL("test_size_counts_dirty", ToString(Status::Ok), ToString(out.Write(src).status));
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(3), out.Tell());
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(3), out.Dirty());
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(3), out.Size());
+	ASSERT_EQUAL("test_size_counts_dirty", std::string(""), Slurp(path));
+	ASSERT_EQUAL("test_size_counts_dirty", ToString(Status::Ok), ToString(out.Flush().status));
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(3), out.Tell());
+	ASSERT_EQUAL("test_size_counts_dirty", static_cast<std::size_t>(3), out.Size());
+	ASSERT_EQUAL("test_size_counts_dirty", std::string("ABC"), Slurp(path));
+	ASSERT_TRUE("test_size_counts_dirty", out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST("test_size_counts_dirty", 0);
+}
+
+int test_seek_flushes_dirty_then_patches() {
+	const auto path = Scratch("sdirty");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 8, 4);
+	ASSERT_TRUE("test_seek_flushes_dirty_then_patches", out.Open());
+	FIFO fill = FromText("XXXX");
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", ToString(Status::Ok), ToString(out.Write(fill).status));
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", static_cast<std::size_t>(4), out.Dirty());
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", static_cast<std::size_t>(4), out.Size());
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", ToString(Status::Ok),
+		ToString(out.Seek(1, Position::Absolute).status));
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", static_cast<std::size_t>(0), out.Dirty());
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", static_cast<std::size_t>(1), out.Tell());
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", std::string("XXXX"), Slurp(path));
+	FIFO mid = FromText("YZ");
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", ToString(Status::Ok), ToString(out.Write(mid).status));
+	ASSERT_TRUE("test_seek_flushes_dirty_then_patches", out.Close());
+	ASSERT_EQUAL("test_seek_flushes_dirty_then_patches", std::string("XYZX"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST("test_seek_flushes_dirty_then_patches", 0);
+}
+
+int test_seek_then_extend() {
+	const auto path = Scratch("ext");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE("test_seek_then_extend", out.Open());
+	FIFO head = FromText("AB");
+	ASSERT_EQUAL("test_seek_then_extend", ToString(Status::Ok), ToString(out.Write(head).status));
+	ASSERT_EQUAL("test_seek_then_extend", ToString(Status::Ok),
+		ToString(out.Seek(2, Position::Absolute).status));
+	FIFO tail = FromText("CDEF");
+	ASSERT_EQUAL("test_seek_then_extend", ToString(Status::Ok), ToString(out.Write(tail).status));
+	ASSERT_EQUAL("test_seek_then_extend", static_cast<std::size_t>(6), out.Tell());
+	ASSERT_EQUAL("test_seek_then_extend", static_cast<std::size_t>(6), out.Size());
+	ASSERT_TRUE("test_seek_then_extend", out.Close());
+	ASSERT_EQUAL("test_seek_then_extend", std::string("ABCDEF"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST("test_seek_then_extend", 0);
+}
+
+int test_seek_without_open_fails() {
+	BufferedFileWriter out(Scratch("closed"), 0, 0);
+	ASSERT_EQUAL("test_seek_without_open_fails", ToString(Status::Failed),
+		ToString(out.Seek(0, Position::Absolute).status));
+	RETURN_TEST("test_seek_without_open_fails", 0);
+}
+
+// -------------------
 // Move
 // -------------------
 
@@ -476,6 +620,17 @@ int main() {
 	result += test_close_flushes_dirty();
 	result += test_truncate_zeros_file_and_tell();
 	result += test_truncate_drops_dirty();
+
+	// -------------------
+	// Seek / Size
+	// -------------------
+	result += test_seek_patch_direct();
+	result += test_seek_relative();
+	result += test_seek_before_start_fails();
+	result += test_size_counts_dirty();
+	result += test_seek_flushes_dirty_then_patches();
+	result += test_seek_then_extend();
+	result += test_seek_without_open_fails();
 
 	// -------------------
 	// Move

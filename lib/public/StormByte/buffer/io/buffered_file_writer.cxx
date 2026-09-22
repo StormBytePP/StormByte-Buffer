@@ -97,6 +97,19 @@ namespace {
 		return ok != 0;
 	}
 #endif
+
+	bool OpenRandomAccess(std::ofstream& file, const std::filesystem::path& path) {
+		file.open(path, std::ios::in | std::ios::out | std::ios::binary);
+		if (file)
+			return true;
+		file.clear();
+		file.open(path, std::ios::out | std::ios::binary);
+		if (!file)
+			return false;
+		file.close();
+		file.open(path, std::ios::in | std::ios::out | std::ios::binary);
+		return static_cast<bool>(file);
+	}
 }
 
 BufferedFileWriter::BufferedFileWriter(std::filesystem::path path):
@@ -136,6 +149,37 @@ BufferedFileWriter& BufferedFileWriter::operator=(BufferedFileWriter&& other) no
 
 const std::filesystem::path& BufferedFileWriter::Path() const noexcept {
 	return m_path;
+}
+
+std::size_t BufferedFileWriter::Size() const noexcept {
+	std::error_code ec;
+	const auto disk = std::filesystem::file_size(m_path, ec);
+	const std::size_t on_disk = ec ? 0 : static_cast<std::size_t>(disk);
+	const std::size_t logical = Tell();
+	return on_disk > logical ? on_disk : logical;
+}
+
+Result BufferedFileWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
+	const auto flushed = Flush();
+	if (flushed.status != Status::Ok)
+		return flushed;
+
+	std::size_t abs = Tell();
+	if (mode == Position::Absolute) {
+		if (offset < 0)
+			return { Status::Failed, 0 };
+		abs = static_cast<std::size_t>(offset);
+	} else {
+		if (offset < 0 && static_cast<std::size_t>(-offset) > abs)
+			return { Status::Failed, 0 };
+		abs = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(abs) + offset);
+	}
+
+	const auto moved = OriginSeek(abs);
+	if (moved.status != Status::Ok)
+		return moved;
+	SetTell(abs);
+	return { Status::Ok, 0 };
 }
 
 void BufferedFileWriter::Setup() {
@@ -188,8 +232,7 @@ Result BufferedFileWriter::OriginOpen() {
 		}
 	}
 
-	m_file.open(m_path, std::ios::out | std::ios::app | std::ios::binary);
-	if (!m_file) {
+	if (!OpenRandomAccess(m_file, m_path)) {
 		SetState(State::NotWritable);
 		return { Status::Failed, 0 };
 	}
@@ -251,10 +294,20 @@ Result BufferedFileWriter::OriginTruncate() {
 		return { Status::Failed, 0 };
 	}
 
-	m_file.open(m_path, std::ios::out | std::ios::app | std::ios::binary);
-	if (!m_file) {
+	if (!OpenRandomAccess(m_file, m_path)) {
 		SetState(State::NotWritable);
 		return { Status::Failed, 0 };
 	}
+	return { Status::Ok, 0 };
+}
+
+Result BufferedFileWriter::OriginSeek(const std::size_t absolute) {
+	std::lock_guard lock(m_file_mutex);
+	if (!m_file.is_open())
+		return { Status::Failed, 0 };
+	m_file.clear();
+	m_file.seekp(static_cast<std::streamoff>(absolute), std::ios::beg);
+	if (!m_file)
+		return { Status::Failed, 0 };
 	return { Status::Ok, 0 };
 }

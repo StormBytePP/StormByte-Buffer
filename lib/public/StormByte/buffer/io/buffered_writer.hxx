@@ -66,10 +66,11 @@ namespace StormByte {
 			 * @class BufferedWriter
 			 * @brief Coordinated binary write sink with optional chunked write-behind.
 			 *
-			 * Public base for byte destinations. Leaves implement only the
-			 * @c Origin* hooks and may override @ref Setup. They do not
-			 * override @c Write, @c Flush, @c Open, @c Close, @c Rewind
-			 * or @c Truncate.
+			 * Public base for byte destinations. Leaves implement the
+			 * @c Origin* hooks and may override @ref Setup, @ref Seek,
+			 * @ref Size and @ref WillWrite. They do not override
+			 * @c Write, @c Flush, @c Open, @c Close, @c Rewind or
+			 * @c Truncate.
 			 *
 			 * @par Binary only
 			 * Octets only. No text mode.
@@ -113,6 +114,13 @@ namespace StormByte {
 			 * calls @ref OriginFlush, and never returns @ref Status::TryAgain.
 			 * @ref Truncate drops the ring without pushing and calls
 			 * @ref OriginTruncate. @ref Tell becomes 0.
+			 *
+			 * @par Seek / Size
+			 * @ref Seek and @ref Size are virtual so a remote File-family
+			 * writer can override them. Default @ref Size is @ref Tell
+			 * (includes @ref Dirty). Default @ref Seek fails. A file
+			 * leaf flushes dirty bytes, seeks the origin and updates
+			 * @ref Tell.
 			 *
 			 * @par MaxWait
 			 * Applies to the next @ref OriginPush (direct @c Write or worker).
@@ -292,6 +300,28 @@ namespace StormByte {
 					virtual std::size_t Dirty() const noexcept;
 
 					/**
+					 * @brief Logical sink length in bytes.
+					 * @return Length. Default is @ref Tell (includes @ref Dirty).
+					 *
+					 * Not optional. A file leaf returns
+					 * max(filesystem size, Tell). A remote leaf overrides
+					 * this.
+					 */
+					virtual std::size_t Size() const noexcept;
+
+					/**
+					 * @brief Move the write cursor.
+					 * @param offset Byte offset.
+					 * @param mode @ref Position::Absolute or @ref Position::Relative.
+					 * @return @ref Status::Ok or @ref Status::Failed.
+					 *
+					 * Default fails. A file or remote leaf overrides this,
+					 * flushes dirty bytes, seeks the origin and updates
+					 * @ref Tell.
+					 */
+					virtual Result Seek(std::ptrdiff_t offset, Position mode);
+
+					/**
 					 * @}
 					 */
 
@@ -366,6 +396,12 @@ namespace StormByte {
 					void SetState(enum State state) noexcept;
 
 					/**
+					 * @brief Publish the logical write offset from a leaf @ref Seek.
+					 * @param offset New @ref Tell.
+					 */
+					void SetTell(std::size_t offset) noexcept;
+
+					/**
 					 * @brief Leaf policy hook. Called from @ref Open before the origin.
 					 *
 					 * Default does nothing. File uses it for the path-only ctor.
@@ -423,6 +459,15 @@ namespace StormByte {
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
 					virtual Result OriginTruncate() = 0;
+
+					/**
+					 * @brief Seek the origin to @p absolute.
+					 * @param absolute Byte offset from the start.
+					 * @return @ref Status::Ok or @ref Status::Failed.
+					 *
+					 * Default fails. File and remote leaves override this.
+					 */
+					virtual Result OriginSeek(std::size_t absolute);
 
 					/**
 					 * @}
