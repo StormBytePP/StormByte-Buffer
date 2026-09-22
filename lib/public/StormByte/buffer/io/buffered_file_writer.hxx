@@ -50,6 +50,17 @@ namespace StormByte {
 			 *
 			 * Binary `ofstream` only. Open is append. Overwrite is @ref Truncate.
 			 * Does not open in the constructor. Does not create parent directories.
+			 * Not sealed.
+			 *
+			 * A derived class may override any @c Origin* hook and
+			 * @ref WillWrite. When the transport is still this file, call
+			 * the File implementation and then add behaviour. When it is
+			 * not, override every hook that touches the stream and do not
+			 * call these File implementations. The write ring stays in
+			 * @ref BufferedWriter.
+			 *
+			 * The derived destructor must call @ref Close first.
+			 * File @ref Close is idempotent.
 			 *
 			 * @see BufferedWriter, State
 			 */
@@ -150,7 +161,8 @@ namespace StormByte {
 					 *         below @p n. Query failure is @c false.
 					 *
 					 * Indicative. Another process, quotas or a network filesystem
-					 * can still reject the later Write.
+					 * can still reject the later Write. A derived writer that
+					 * is not a local volume should override this.
 					 */
 					bool WillWrite(std::size_t n) const override;
 

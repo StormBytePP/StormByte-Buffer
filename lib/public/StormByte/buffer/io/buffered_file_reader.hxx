@@ -50,7 +50,18 @@ namespace StormByte {
 			 * @brief @ref BufferedReader leaf over a filesystem file.
 			 *
 			 * Binary `ifstream` only. Hooks call @ref SetState.
-			 * Does not open in the constructor.
+			 * Does not open in the constructor. Not sealed.
+			 *
+			 * A derived class may override any @c Origin* hook. Keep
+			 * @ref OriginCanSeek if the origin stays seekable. When the
+			 * transport is still this file, call the File implementation
+			 * and then add behaviour. When the transport is not this file,
+			 * override every hook that touches the stream and do not call
+			 * these File implementations. Prefetch and Seek stay in
+			 * @ref BufferedReader.
+			 *
+			 * The derived destructor must call @ref Close first so the
+			 * derived vtable is live. File @ref Close is idempotent.
 			 *
 			 * @see BufferedReader, State
 			 */

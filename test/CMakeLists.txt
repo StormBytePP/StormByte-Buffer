@@ -14,6 +14,10 @@ if(ENABLE_TEST)
 	target_link_libraries(BufferedFileWriterTests StormByte-Buffer)
 	add_test(NAME BufferedFileWriterTests COMMAND BufferedFileWriterTests)
 
+	add_executable(BufferedMeteredFileTests buffered_metered_file_test.cxx)
+	target_link_libraries(BufferedMeteredFileTests StormByte-Buffer)
+	add_test(NAME BufferedMeteredFileTests COMMAND BufferedMeteredFileTests)
+
 	add_executable(FIFOTests fifo_test.cxx)
 	target_link_libraries(FIFOTests StormByte-Buffer)
 	add_test(NAME FIFOTests COMMAND FIFOTests)
