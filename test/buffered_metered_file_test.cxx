@@ -42,7 +42,6 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
-#include <StormByte/system.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <cstddef>
@@ -61,7 +60,6 @@ using StormByte::Buffer::IO::Result;
 using StormByte::Buffer::IO::State;
 using StormByte::Buffer::IO::Status;
 using StormByte::Buffer::IO::ToString;
-using StormByte::System::TempFileName;
 
 /**
  * @class BufferedMeteredFileReader
@@ -84,7 +82,7 @@ class BufferedMeteredFileReader: public BufferedFileReader {
 		 * @param max_memory Initial MaxMemory.
 		 */
 		explicit BufferedMeteredFileReader(std::filesystem::path path,
-			std::size_t read_ahead = 0, std::size_t max_memory = 0):
+			StormByte::Size read_ahead = 0, StormByte::Size max_memory = 0):
 			BufferedFileReader(std::move(path), read_ahead, max_memory) {}
 
 		BufferedMeteredFileReader(const BufferedMeteredFileReader&) = delete;
@@ -101,7 +99,7 @@ class BufferedMeteredFileReader: public BufferedFileReader {
 		 * @brief Origin octets pulled since construction.
 		 * @return Cumulative @ref OriginPull count. Not reset on Close.
 		 */
-		std::size_t BytesRead() const noexcept {
+		StormByte::Size BytesRead() const noexcept {
 			return m_bytes;
 		}
 
@@ -112,7 +110,7 @@ class BufferedMeteredFileReader: public BufferedFileReader {
 		 * @param dest Base-owned FIFO.
 		 * @return Parent result.
 		 */
-		Result OriginPull(const std::size_t n, FIFO& dest) override {
+		Result OriginPull(StormByte::Size n, FIFO& dest) override {
 			const Result pulled = BufferedFileReader::OriginPull(n, dest);
 			if (pulled.status == Status::Ok || pulled.status == Status::End)
 				m_bytes += pulled.count;
@@ -120,7 +118,7 @@ class BufferedMeteredFileReader: public BufferedFileReader {
 		}
 
 	private:
-		std::size_t m_bytes {0};	///< Cumulative origin octets.
+		StormByte::Size m_bytes {0};	///< Cumulative origin octets.
 };
 
 /**
@@ -139,7 +137,7 @@ class BufferedMeteredFileWriter: public BufferedFileWriter {
 		 * @param back_pressure Initial BackPressure.
 		 */
 		explicit BufferedMeteredFileWriter(std::filesystem::path path,
-			std::size_t write_chunk = 0, std::size_t back_pressure = 0):
+			StormByte::Size write_chunk = 0, std::size_t back_pressure = 0):
 			BufferedFileWriter(std::move(path), write_chunk, back_pressure) {}
 
 		BufferedMeteredFileWriter(const BufferedMeteredFileWriter&) = delete;
@@ -156,7 +154,7 @@ class BufferedMeteredFileWriter: public BufferedFileWriter {
 		 * @brief Origin octets pushed since construction.
 		 * @return Cumulative @ref OriginPush count. Not reset on Close.
 		 */
-		std::size_t BytesWritten() const noexcept {
+		StormByte::Size BytesWritten() const noexcept {
 			return m_bytes;
 		}
 
@@ -174,41 +172,39 @@ class BufferedMeteredFileWriter: public BufferedFileWriter {
 		}
 
 	private:
-		std::size_t m_bytes {0};	///< Cumulative origin octets.
+		StormByte::Size m_bytes {0};	///< Cumulative origin octets.
 };
 
-// -------------------
-// Helpers
-// -------------------
+namespace {
+	std::filesystem::path File(const char* name) {
+		return CurrentFileDirectory / "files" / name;
+	}
 
-static std::filesystem::path File(const char* name) {
-	return CurrentFileDirectory / "files" / name;
-}
+	std::filesystem::path Scratch(const char* tag) {
+		return std::filesystem::temp_directory_path() / (std::string("sbm_") + tag + ".bin");
+	}
 
-static std::filesystem::path Scratch(const char* tag) {
-	return std::filesystem::path(TempFileName(std::string("sbm_") + tag));
-}
+	std::string Slurp(const std::filesystem::path& path) {
+		std::ifstream in(path, std::ios::in | std::ios::binary);
+		if (!in)
+			return {};
+		return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	}
 
-static std::string Slurp(const std::filesystem::path& path) {
-	std::ifstream in(path, std::ios::in | std::ios::binary);
-	if (!in)
-		return {};
-	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-}
+	std::string Text(FIFO& fifo) {
+		DataType data;
+		static_cast<void>(fifo.Peek(0, data));
+		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+	}
 
-static std::string Text(FIFO& fifo) {
-	DataType data;
-	static_cast<void>(fifo.Peek(0, data));
-	return std::string(reinterpret_cast<const char*>(data.data()), data.size());
-}
-
-static FIFO FromText(const std::string& text) {
-	FIFO fifo;
-	DataType data(text.size());
-	for (std::size_t i = 0; i < text.size(); ++i)
-		data[i] = static_cast<std::byte>(text[i]);
-	static_cast<void>(fifo.Write(data.size(), std::move(data)));
-	return fifo;
+	FIFO FromText(const std::string& text) {
+		FIFO fifo;
+		DataType data(text.size());
+		for (std::size_t i = 0; i < text.size(); ++i)
+			data[i] = static_cast<std::byte>(text[i]);
+		static_cast<void>(fifo.Write(data.size(), std::move(data)));
+		return fifo;
+	}
 }
 
 // -------------------
@@ -218,12 +214,12 @@ static FIFO FromText(const std::string& text) {
 int test_metered_reader_before_open() {
 	const std::string fn = "test_metered_reader_before_open";
 	BufferedMeteredFileReader in(File("five.bin"), 0, 0);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, in.BytesRead());
 	ASSERT_FALSE(fn, static_cast<bool>(in));
 	FIFO dest("KEEP");
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(in.Read(1, dest).status));
 	ASSERT_EQUAL(fn, std::string("KEEP"), Text(dest));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, in.BytesRead());
 	RETURN_TEST(fn, 0);
 }
 
@@ -234,14 +230,27 @@ int test_metered_reader_counts_origin_pull() {
 	ASSERT_TRUE(fn, in.IsSeekable());
 	ASSERT_TRUE(fn, in.IsSized());
 	ASSERT_EQUAL(fn, File("five.bin"), in.Path());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, in.BytesRead());
 	FIFO dest;
 	const auto read = in.Read(5, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), read.count);
+	ASSERT_EQUAL(fn, StormByte::Size{5}, read.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.Tell());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, in.Tell());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, in.BytesRead());
+	RETURN_TEST(fn, 0);
+}
+
+int test_metered_reader_prefetch_at_least_requested() {
+	const std::string fn = "test_metered_reader_prefetch_at_least_requested";
+	BufferedMeteredFileReader in(File("five.bin"), 8, 64);
+	ASSERT_TRUE(fn, in.Open());
+	FIFO dest;
+	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Read(1, dest).count);
+	ASSERT_EQUAL(fn, std::string("A"), Text(dest));
+	ASSERT_TRUE(fn, in.BytesRead() >= 1);
+	ASSERT_TRUE(fn, in.BytesRead() <= 5);
+	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -250,16 +259,16 @@ int test_metered_reader_seek_and_second_read() {
 	BufferedMeteredFileReader in(File("five.bin"), 0, 0);
 	ASSERT_TRUE(fn, in.Open());
 	FIFO first;
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), in.Read(2, first).count);
+	ASSERT_EQUAL(fn, StormByte::Size{2}, in.Read(2, first).count);
 	ASSERT_EQUAL(fn, std::string("AB"), Text(first));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{2}, in.BytesRead());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Seek(0, Position::Absolute).status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), in.Tell());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, in.Tell());
 	FIFO second;
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), in.Read(3, second).count);
+	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Read(3, second).count);
 	ASSERT_EQUAL(fn, std::string("ABC"), Text(second));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.BytesRead());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), in.Tell());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, in.BytesRead());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, in.Tell());
 	RETURN_TEST(fn, 0);
 }
 
@@ -270,22 +279,9 @@ int test_metered_reader_short_end() {
 	FIFO dest;
 	const auto read = in.Read(8, dest);
 	ASSERT_EQUAL(fn, ToString(Status::End), ToString(read.status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), read.count);
+	ASSERT_EQUAL(fn, StormByte::Size{5}, read.count);
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), in.BytesRead());
-	RETURN_TEST(fn, 0);
-}
-
-int test_metered_reader_prefetch_at_least_requested() {
-	const std::string fn = "test_metered_reader_prefetch_at_least_requested";
-	BufferedMeteredFileReader in(File("five.bin"), 8, 64);
-	ASSERT_TRUE(fn, in.Open());
-	FIFO dest;
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), in.Read(1, dest).count);
-	ASSERT_EQUAL(fn, std::string("A"), Text(dest));
-	ASSERT_TRUE(fn, in.BytesRead() >= 1);
-	ASSERT_TRUE(fn, in.BytesRead() <= 5);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), in.Tell());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, in.BytesRead());
 	RETURN_TEST(fn, 0);
 }
 
@@ -293,14 +289,31 @@ int test_metered_reader_prefetch_at_least_requested() {
 // Writer
 // -------------------
 
+int test_metered_writer_append_accumulates() {
+	const std::string fn = "test_metered_writer_append_accumulates";
+	const auto path = Scratch("app");
+	std::filesystem::remove(path);
+	BufferedMeteredFileWriter out(path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	FIFO a = FromText("AB");
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(a).status));
+	FIFO b = FromText("CD");
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(b).status));
+	ASSERT_EQUAL(fn, StormByte::Size{4}, out.BytesWritten());
+	ASSERT_TRUE(fn, out.Close());
+	ASSERT_EQUAL(fn, std::string("ABCD"), Slurp(path));
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
 int test_metered_writer_before_open() {
 	const std::string fn = "test_metered_writer_before_open";
 	BufferedMeteredFileWriter out(Scratch("pre"), 0, 0);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BytesWritten());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, out.BytesWritten());
 	FIFO src = FromText("KEEP");
 	ASSERT_EQUAL(fn, ToString(Status::Failed), ToString(out.Write(src).status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), src.AvailableBytes());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BytesWritten());
+	ASSERT_EQUAL(fn, StormByte::Size{4}, src.AvailableBytes());
+	ASSERT_EQUAL(fn, StormByte::Size{0}, out.BytesWritten());
 	RETURN_TEST(fn, 0);
 }
 
@@ -313,29 +326,12 @@ int test_metered_writer_direct_counts_and_hits_disk() {
 	FIFO src = FromText("HELLO");
 	const auto written = out.Write(src);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(written.status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), written.count);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.Tell());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.BytesWritten());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, written.count);
+	ASSERT_EQUAL(fn, StormByte::Size{5}, out.Tell());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, out.BytesWritten());
 	ASSERT_TRUE(fn, out.Close());
 	ASSERT_EQUAL(fn, std::string("HELLO"), Slurp(path));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), out.BytesWritten());
-	std::filesystem::remove(path);
-	RETURN_TEST(fn, 0);
-}
-
-int test_metered_writer_append_accumulates() {
-	const std::string fn = "test_metered_writer_append_accumulates";
-	const auto path = Scratch("app");
-	std::filesystem::remove(path);
-	BufferedMeteredFileWriter out(path, 0, 0);
-	ASSERT_TRUE(fn, out.Open());
-	FIFO a = FromText("AB");
-	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(a).status));
-	FIFO b = FromText("CD");
-	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(b).status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), out.BytesWritten());
-	ASSERT_TRUE(fn, out.Close());
-	ASSERT_EQUAL(fn, std::string("ABCD"), Slurp(path));
+	ASSERT_EQUAL(fn, StormByte::Size{5}, out.BytesWritten());
 	std::filesystem::remove(path);
 	RETURN_TEST(fn, 0);
 }
@@ -348,9 +344,9 @@ int test_metered_writer_flush_does_not_double_count() {
 	ASSERT_TRUE(fn, out.Open());
 	FIFO src = FromText("XYZ");
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), out.BytesWritten());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, out.BytesWritten());
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), out.BytesWritten());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, out.BytesWritten());
 	ASSERT_TRUE(fn, out.Close());
 	ASSERT_EQUAL(fn, std::string("XYZ"), Slurp(path));
 	std::filesystem::remove(path);
@@ -365,21 +361,21 @@ int main() {
 	// -------------------
 	result += test_metered_reader_before_open();
 	result += test_metered_reader_counts_origin_pull();
+	result += test_metered_reader_prefetch_at_least_requested();
 	result += test_metered_reader_seek_and_second_read();
 	result += test_metered_reader_short_end();
-	result += test_metered_reader_prefetch_at_least_requested();
 
 	// -------------------
 	// Writer
 	// -------------------
+	result += test_metered_writer_append_accumulates();
 	result += test_metered_writer_before_open();
 	result += test_metered_writer_direct_counts_and_hits_disk();
-	result += test_metered_writer_append_accumulates();
 	result += test_metered_writer_flush_does_not_double_count();
 
 	if (result == 0)
-		std::cout << "BufferedMeteredFile tests passed!" << std::endl;
+		std::cout << "All tests passed!" << std::endl;
 	else
-		std::cout << result << " BufferedMeteredFile tests failed." << std::endl;
+		std::cout << result << " tests failed." << std::endl;
 	return result;
 }

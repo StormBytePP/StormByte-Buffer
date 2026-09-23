@@ -42,8 +42,8 @@
 #pragma once
 
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/size.hxx>
 
-#include <cstddef>
 #include <string_view>
 
 /**
@@ -139,7 +139,7 @@ namespace StormByte {
 			 */
 			struct STORMBYTE_BUFFER_PUBLIC Result {
 				Status status;					///< Outcome of the call.
-				std::size_t count;				///< Bytes transferred this call.
+				StormByte::Size count;			///< Bytes transferred this call.
 			};
 
 			/**

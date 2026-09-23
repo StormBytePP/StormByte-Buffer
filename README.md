@@ -45,7 +45,7 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 
 | Module | Role | API |
 | --- | --- | --- |
-| [Base](https://github.com/StormBytePP/StormByte) | Exceptions, Expected, serialization, UUID, concepts | [/StormByte](https://dev.stormbyte.org/StormByte) |
+| [Base](https://github.com/StormBytePP/StormByte) | Exceptions, Expected, `Size`, serialization, UUID, concepts | [/StormByte](https://dev.stormbyte.org/StormByte) |
 | **Buffer** | This repository | [/StormByte-Buffer](https://dev.stormbyte.org/StormByte-Buffer) |
 | [Config](https://github.com/StormBytePP/StormByte-Config) | Human-readable text and versioned binary documents (groups, lists, raw bytes) | [/StormByte-Config](https://dev.stormbyte.org/StormByte-Config) |
 | [Crypto](https://github.com/StormBytePP/StormByte-Crypto) | Hash, compress, encrypt, sign and key agreement — Crypto++ never leaves the private tree | [/StormByte-Crypto](https://dev.stormbyte.org/StormByte-Crypto) |
@@ -63,6 +63,7 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 - [The rest of the suite](#the-rest-of-the-suite)
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Byte lengths](#byte-lengths)
   - [FIFO](#fifo)
   - [Producer and Consumer](#producer-and-consumer)
   - [Hopper](#hopper)
@@ -90,6 +91,14 @@ cmake --build build
 ## Usage
 
 Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. I/O types live in `StormByte::Buffer::IO`.
+
+### Byte lengths
+
+Byte counts on the public API are `StormByte::Size` from Base, not `std::size_t`. That includes available / occupied bytes, `Read` / `Peek` / `Extract` / `Write` lengths, `Tell`, `Dirty`, file or buffer `Size`, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied` and a Bridge high-water when it is a byte cap.
+
+Integer literals still work (`fifo.Read(5, data)`, `out.Tell() == 0`) because `Size` constructs from an integral and compares / adds with integers. Do not use `Size` for a quantity that is not a length in bytes.
+
+Stay on `std::size_t` (or `std::ptrdiff_t` for a signed offset) for Hopper / Sink item counts, writer `BackPressure` (chunk count, not bytes), HexDump column count, and device rate fields until they become a byte length.
 
 ### FIFO
 

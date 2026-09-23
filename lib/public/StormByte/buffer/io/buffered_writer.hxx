@@ -313,13 +313,13 @@ namespace StormByte {
 					 * @brief Bytes accepted since Open or Truncate.
 					 * @return Logical write offset.
 					 */
-					virtual std::size_t Tell() const noexcept;
+					virtual StormByte::Size Tell() const noexcept;
 
 					/**
 					 * @brief Bytes in the ring not yet pushed.
 					 * @return 0 in direct mode or after a successful Flush.
 					 */
-					virtual std::size_t Dirty() const noexcept;
+					virtual StormByte::Size Dirty() const noexcept;
 
 					/**
 					 * @brief Logical sink length in bytes.
@@ -329,7 +329,7 @@ namespace StormByte {
 					 * max(filesystem size, Tell). A remote leaf overrides
 					 * this.
 					 */
-					virtual std::size_t Size() const noexcept;
+					virtual StormByte::Size Size() const noexcept;
 
 					/**
 					 * @brief Move the write cursor.
@@ -356,7 +356,7 @@ namespace StormByte {
 					 * @brief Configured origin push unit.
 					 * @return Bytes. 0 disables the ring (with BackPressure 0).
 					 */
-					virtual std::size_t WriteChunk() const noexcept;
+					virtual StormByte::Size WriteChunk() const noexcept;
 
 					/**
 					 * @brief Set origin push unit. Takes effect immediately.
@@ -366,7 +366,7 @@ namespace StormByte {
 					 * dirty bytes drains the ring through @ref Flush / the worker
 					 * before the setter returns. Not deferred to the next Write.
 					 */
-					virtual void WriteChunk(std::size_t bytes);
+					virtual void WriteChunk(StormByte::Size bytes);
 
 					/**
 					 * @brief Configured dirty cap in WriteChunk units.
@@ -404,11 +404,11 @@ namespace StormByte {
 				protected:
 					/**
 					 * @brief Construct an unopened coordinator (@ref State::Unavailable).
-					 * @param write_chunk Initial @ref WriteChunk.
-					 * @param back_pressure Initial @ref BackPressure.
+					 * @param write_chunk Initial @ref WriteChunk in bytes.
+					 * @param back_pressure Initial @ref BackPressure in chunk units.
 					 * @param max_wait Initial @ref MaxWait.
 					 */
-					explicit BufferedWriter(std::size_t write_chunk = 0, std::size_t back_pressure = 0,
+					explicit BufferedWriter(StormByte::Size write_chunk = 0, std::size_t back_pressure = 0,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -421,7 +421,7 @@ namespace StormByte {
 					 * @brief Publish the logical write offset from a leaf @ref Seek.
 					 * @param offset New @ref Tell.
 					 */
-					void SetTell(std::size_t offset) noexcept;
+					void SetTell(StormByte::Size offset) noexcept;
 
 					/**
 					 * @brief Leaf policy hook. Called from @ref Open before the origin.
@@ -440,7 +440,7 @@ namespace StormByte {
 					 * still reject the later @c Write. Override to tighten
 					 * (disk space, socket window). Used by @ref Backend::Bridge.
 					 */
-					virtual bool WillWrite(std::size_t n) const;
+					virtual bool WillWrite(StormByte::Size n) const;
 
 					/**
 					 * @name Origin hooks
@@ -489,7 +489,7 @@ namespace StormByte {
 					 *
 					 * Default fails. File and remote leaves override this.
 					 */
-					virtual Result OriginSeek(std::size_t absolute);
+					virtual Result OriginSeek(StormByte::Size absolute);
 
 					/**
 					 * @}

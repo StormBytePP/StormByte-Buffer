@@ -43,13 +43,13 @@
 
 #include <StormByte/buffer/generic.hxx>
 #include <StormByte/buffer/typedefs.hxx>
-#include <StormByte/string.hxx>
+#include <StormByte/string/string.hxx>
 
-#include <vector>
+#include <sstream>
 #include <span>
 #include <string>
-#include <sstream>
 #include <utility>
+#include <vector>
 
 /**
  * @namespace StormByte::Buffer
@@ -208,7 +208,7 @@ namespace StormByte::Buffer {
 			 * @return Unread byte count.
 			 * @see Size(), Read(), Extract(), Seek()
 			 */
-			virtual std::size_t AvailableBytes() const noexcept;
+			virtual StormByte::Size AvailableBytes() const noexcept override;
 
 			/**
 			 * @brief Access the internal storage.
@@ -248,7 +248,7 @@ namespace StormByte::Buffer {
 			 * @return Size of the internal buffer.
 			 * @see Empty(), AvailableBytes()
 			 */
-			virtual std::size_t Size() const noexcept override;
+			virtual StormByte::Size Size() const noexcept override;
 
 			/** @} */
 
@@ -282,7 +282,7 @@ namespace StormByte::Buffer {
 			 * @return @c true on success, @c false if fewer bytes were available.
 			 * @see Read(), Seek()
 			 */
-			virtual bool Drop(const std::size_t& count) noexcept override;
+			virtual bool Drop(const StormByte::Size& count) noexcept override;
 
 			/**
 			 * @brief Move the logical read position for non-destructive reads.
@@ -310,7 +310,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination (filled / resized as needed).
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Extract(const std::size_t& count, DataType& outBuffer) noexcept override;
+			bool Extract(const StormByte::Size& count, DataType& outBuffer) noexcept override;
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly.
@@ -318,7 +318,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Extract(const std::size_t& count, WriteOnly& outBuffer) noexcept override;
+			bool Extract(const StormByte::Size& count, WriteOnly& outBuffer) noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Extract overloads into scope. */
 			using ReadOnly::Extract;
@@ -348,7 +348,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Read(const std::size_t& count, DataType& outBuffer) const noexcept override;
+			bool Read(const StormByte::Size& count, DataType& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly (advances position).
@@ -356,7 +356,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Read(const std::size_t& count, WriteOnly& outBuffer) const noexcept override;
+			bool Read(const StormByte::Size& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @brief Bring @ref ReadOnly convenience Read overloads into scope. */
 			using ReadOnly::Read;
@@ -386,7 +386,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination buffer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Peek(const std::size_t& count, DataType& outBuffer) const noexcept override;
+			bool Peek(const StormByte::Size& count, DataType& outBuffer) const noexcept override;
 
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
@@ -394,7 +394,7 @@ namespace StormByte::Buffer {
 			 * @param outBuffer Destination writer.
 			 * @return @c true on success, @c false on failure.
 			 */
-			bool Peek(const std::size_t& count, WriteOnly& outBuffer) const noexcept override;
+			bool Peek(const StormByte::Size& count, WriteOnly& outBuffer) const noexcept override;
 
 			/** @} */
 
@@ -410,8 +410,8 @@ namespace StormByte::Buffer {
 			 * @return Formatted string: size / position / status, then hex/ASCII lines
 			 *         (no trailing newline).
 			 */
-			virtual std::string HexDump(const std::size_t& columns = 16,
-										const std::size_t& byte_limit = 0) const noexcept;
+			virtual std::string HexDump(const StormByte::Size& columns = 16,
+										const StormByte::Size& byte_limit = 0) const noexcept;
 
 			/** @} */
 
@@ -426,7 +426,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const std::size_t& count, const DataType& data) noexcept override;
+			bool Write(const StormByte::Size& count, const DataType& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref DataType (move).
@@ -434,7 +434,7 @@ namespace StormByte::Buffer {
 			 * @param data Source vector.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const std::size_t& count, DataType&& data) noexcept override;
+			bool Write(const StormByte::Size& count, DataType&& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (copy).
@@ -442,7 +442,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const std::size_t& count, const ReadOnly& data) noexcept override;
+			bool Write(const StormByte::Size& count, const ReadOnly& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly source (move / extract path).
@@ -450,7 +450,7 @@ namespace StormByte::Buffer {
 			 * @param data Source buffer.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
+			bool Write(const StormByte::Size& count, ReadOnly&& data) noexcept override;
 
 			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
 			using WriteOnly::Write;
@@ -463,10 +463,10 @@ namespace StormByte::Buffer {
 			 * @return Number of bytes from the current read position.
 			 * @note Callers that synchronize derived state must hold their own lock.
 			 */
-			std::size_t AvailableBytesInternal() const noexcept;
+			StormByte::Size AvailableBytesInternal() const noexcept;
 
 			DataType m_buffer;							///< Owned contiguous byte storage
-			mutable std::size_t m_position_offset {0};	///< Logical read offset from start of m_buffer
+			mutable StormByte::Size m_position_offset {0};	///< Logical read offset from start of m_buffer
 			bool m_closed {false};						///< Once true, further writes fail
 			bool m_error {false};						///< Permanent error: unreadable and unwritable
 
@@ -487,8 +487,8 @@ namespace StormByte::Buffer {
 			 * @return Formatted lines (no header).
 			 */
 			static std::string FormatHexLines(std::span<const std::byte>& data,
-											std::size_t start_offset,
-											std::size_t columns) noexcept;
+											StormByte::Size start_offset,
+											StormByte::Size columns) noexcept;
 
 			/**
 			 * @brief Build the hexdump header (size / position / status).
@@ -508,7 +508,7 @@ namespace StormByte::Buffer {
 			 * @param flag Operation kind.
 			 * @return @c true on success.
 			 */
-			virtual bool ReadInternal(const std::size_t& count, DataType& outBuffer,
+			virtual bool ReadInternal(const StormByte::Size& count, DataType& outBuffer,
 									const Operation& flag) noexcept;
 
 			/**
@@ -518,7 +518,7 @@ namespace StormByte::Buffer {
 			 * @param flag Operation kind.
 			 * @return @c true on success.
 			 */
-			virtual bool ReadInternal(const std::size_t& count, WriteOnly& outBuffer,
+			virtual bool ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer,
 									const Operation& flag) noexcept;
 
 			/**
@@ -530,7 +530,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Drain until EoF into @ref WriteOnly using @p flag semantics.
-			 * @param outBuffer Destination writer.
+			 * @param outBuffer Destination.
 			 * @param flag Extract or Read.
 			 */
 			virtual void ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noexcept;
@@ -541,7 +541,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, const DataType& src) noexcept;
+			virtual bool WriteInternal(const StormByte::Size& count, const DataType& src) noexcept;
 
 			/**
 			 * @brief Append from @ref DataType (move).
@@ -549,7 +549,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, DataType&& src) noexcept;
+			virtual bool WriteInternal(const StormByte::Size& count, DataType&& src) noexcept;
 
 			/**
 			 * @brief Append from @ref ReadOnly (copy path).
@@ -557,7 +557,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, const ReadOnly& src) noexcept;
+			virtual bool WriteInternal(const StormByte::Size& count, const ReadOnly& src) noexcept;
 
 			/**
 			 * @brief Append from @ref ReadOnly (move / extract path).
@@ -565,7 +565,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, ReadOnly&& src) noexcept;
+			virtual bool WriteInternal(const StormByte::Size& count, ReadOnly&& src) noexcept;
 
 			/** @} */
 	};

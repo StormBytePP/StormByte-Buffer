@@ -57,22 +57,22 @@ bool Producer::IsWritable() const noexcept {
 	return m_buffer->IsWritable();
 }
 
-std::size_t Producer::Size() const noexcept {
+StormByte::Size Producer::Size() const noexcept {
 	return m_buffer->Size();
 }
 
-bool Producer::Write(const std::size_t& count, const DataType& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, const DataType& data) noexcept {
 	return m_buffer->Write(count, data);
 }
 
-bool Producer::Write(const std::size_t& count, DataType&& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, DataType&& data) noexcept {
 	return m_buffer->Write(count, std::move(data));
 }
 
-bool Producer::Write(const std::size_t& count, const ReadOnly& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, const ReadOnly& data) noexcept {
 	return m_buffer->Write(count, data);
 }
 
-bool Producer::Write(const std::size_t& count, ReadOnly&& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, ReadOnly&& data) noexcept {
 	return m_buffer->Write(count, std::move(data));
 }

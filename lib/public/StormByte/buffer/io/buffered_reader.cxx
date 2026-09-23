@@ -50,20 +50,20 @@ namespace {
 	StormByte::Buffer::IO::Result CopyToSpan(StormByte::Buffer::FIFO& src,
 			const StormByte::Buffer::IO::Result got,
 			std::span<std::byte> dest) {
-		if (got.count == 0)
+		if (got.count == StormByte::Size{0})
 			return got;
-		if (got.count > dest.size())
+		if (got.count > StormByte::Size{dest.size()})
 			return { StormByte::Buffer::IO::Status::Failed, 0 };
 
 		StormByte::Buffer::DataType raw;
 		if (!src.Extract(got.count, raw))
 			return { StormByte::Buffer::IO::Status::Failed, 0 };
-		std::copy_n(raw.begin(), got.count, dest.begin());
+		std::copy_n(raw.begin(), static_cast<std::size_t>(got.count), dest.begin());
 		return got;
 	}
 }
 
-BufferedReader::BufferedReader(const std::size_t read_ahead, const std::size_t max_memory,
+BufferedReader::BufferedReader(const StormByte::Size read_ahead, const StormByte::Size max_memory,
 		const std::chrono::milliseconds max_wait):
 	m_io(std::make_unique<Backend::BufferedReader>(*this, read_ahead, max_memory, max_wait)) {}
 
@@ -139,7 +139,7 @@ bool BufferedReader::EoF() const noexcept {
 	return !m_io || m_io->EoF();
 }
 
-Result BufferedReader::Read(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Read(const StormByte::Size n, FIFO& dest) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Read(n, dest);
@@ -149,11 +149,11 @@ Result BufferedReader::Read(const std::span<std::byte> dest) const {
 	if (dest.empty())
 		return { IO::Status::Ok, 0 };
 	FIFO fifo;
-	const Result got = Read(dest.size(), fifo);
+	const Result got = Read(StormByte::Size{dest.size()}, fifo);
 	return CopyToSpan(fifo, got, dest);
 }
 
-Result BufferedReader::Peek(const std::size_t n, FIFO& dest) const {
+Result BufferedReader::Peek(const StormByte::Size n, FIFO& dest) const {
 	if (!m_io)
 		return { IO::Status::Failed, 0 };
 	return m_io->Peek(n, dest);
@@ -163,7 +163,7 @@ Result BufferedReader::Peek(const std::span<std::byte> dest) const {
 	if (dest.empty())
 		return { IO::Status::Ok, 0 };
 	FIFO fifo;
-	const Result got = Peek(dest.size(), fifo);
+	const Result got = Peek(StormByte::Size{dest.size()}, fifo);
 	return CopyToSpan(fifo, got, dest);
 }
 
@@ -173,8 +173,8 @@ Result BufferedReader::Seek(const std::ptrdiff_t offset, const Position mode) co
 	return m_io->Seek(offset, mode);
 }
 
-std::size_t BufferedReader::Tell() const noexcept {
-	return m_io ? m_io->Tell() : 0;
+StormByte::Size BufferedReader::Tell() const noexcept {
+	return m_io ? m_io->Tell() : StormByte::Size{0};
 }
 
 bool BufferedReader::IsSeekable() const noexcept {
@@ -185,26 +185,26 @@ bool BufferedReader::IsSized() const noexcept {
 	return m_io && m_io->IsSized();
 }
 
-std::optional<std::size_t> BufferedReader::Size() const noexcept {
+std::optional<StormByte::Size> BufferedReader::Size() const noexcept {
 	if (!m_io)
 		return std::nullopt;
 	return m_io->Size();
 }
 
-std::size_t BufferedReader::ReadAhead() const noexcept {
-	return m_io ? m_io->ReadAhead() : 0;
+StormByte::Size BufferedReader::ReadAhead() const noexcept {
+	return m_io ? m_io->ReadAhead() : StormByte::Size{0};
 }
 
-void BufferedReader::ReadAhead(const std::size_t bytes) {
+void BufferedReader::ReadAhead(const StormByte::Size bytes) {
 	if (m_io)
 		m_io->ReadAhead(bytes);
 }
 
-std::size_t BufferedReader::MaxMemory() const noexcept {
-	return m_io ? m_io->MaxMemory() : 0;
+StormByte::Size BufferedReader::MaxMemory() const noexcept {
+	return m_io ? m_io->MaxMemory() : StormByte::Size{0};
 }
 
-void BufferedReader::MaxMemory(const std::size_t bytes) {
+void BufferedReader::MaxMemory(const StormByte::Size bytes) {
 	if (m_io)
 		m_io->MaxMemory(bytes);
 }

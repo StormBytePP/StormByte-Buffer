@@ -44,7 +44,7 @@
 
 using namespace StormByte::Buffer::IO;
 
-BufferedWriter::BufferedWriter(const std::size_t write_chunk, const std::size_t back_pressure,
+BufferedWriter::BufferedWriter(const StormByte::Size write_chunk, const std::size_t back_pressure,
 		const std::chrono::milliseconds max_wait):
 	m_io(std::make_unique<Backend::BufferedWriter>(*this, write_chunk, back_pressure, max_wait)) {}
 
@@ -83,7 +83,7 @@ void BufferedWriter::SetState(const enum State state) noexcept {
 		m_io->SetState(state);
 }
 
-void BufferedWriter::SetTell(const std::size_t offset) noexcept {
+void BufferedWriter::SetTell(const StormByte::Size offset) noexcept {
 	if (m_io)
 		m_io->SetTell(offset);
 }
@@ -143,15 +143,15 @@ Result BufferedWriter::Write(const std::span<const std::byte> src) {
 	return m_io->Write(src);
 }
 
-std::size_t BufferedWriter::Tell() const noexcept {
-	return m_io ? m_io->Tell() : 0;
+StormByte::Size BufferedWriter::Tell() const noexcept {
+	return m_io ? m_io->Tell() : StormByte::Size{0};
 }
 
-std::size_t BufferedWriter::Dirty() const noexcept {
-	return m_io ? m_io->Dirty() : 0;
+StormByte::Size BufferedWriter::Dirty() const noexcept {
+	return m_io ? m_io->Dirty() : StormByte::Size{0};
 }
 
-std::size_t BufferedWriter::Size() const noexcept {
+StormByte::Size BufferedWriter::Size() const noexcept {
 	return Tell();
 }
 
@@ -159,15 +159,15 @@ Result BufferedWriter::Seek(const std::ptrdiff_t, const Position) {
 	return { Status::Failed, 0 };
 }
 
-Result BufferedWriter::OriginSeek(const std::size_t) {
+Result BufferedWriter::OriginSeek(const StormByte::Size) {
 	return { Status::Failed, 0 };
 }
 
-std::size_t BufferedWriter::WriteChunk() const noexcept {
-	return m_io ? m_io->WriteChunk() : 0;
+StormByte::Size BufferedWriter::WriteChunk() const noexcept {
+	return m_io ? m_io->WriteChunk() : StormByte::Size{0};
 }
 
-void BufferedWriter::WriteChunk(const std::size_t bytes) {
+void BufferedWriter::WriteChunk(const StormByte::Size bytes) {
 	if (m_io)
 		m_io->WriteChunk(bytes);
 }
@@ -190,6 +190,6 @@ void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 		m_io->MaxWait(wait);
 }
 
-bool BufferedWriter::WillWrite(const std::size_t n) const {
+bool BufferedWriter::WillWrite(const StormByte::Size n) const {
 	return m_io && m_io->WillWrite(n);
 }

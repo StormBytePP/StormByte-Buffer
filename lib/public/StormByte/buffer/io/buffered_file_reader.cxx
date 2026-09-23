@@ -50,12 +50,12 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	constexpr std::size_t DefaultMaxMemory = 1024ull * 1024ull;
-	constexpr std::size_t MinWindow = 16ull * 1024ull;
-	constexpr std::size_t MaxWindow = 1024ull * 1024ull;
+	constexpr StormByte::Size DefaultMaxMemory{1024ull * 1024ull};
+	constexpr StormByte::Size MinWindow{16ull * 1024ull};
+	constexpr StormByte::Size MaxWindow{1024ull * 1024ull};
 
-	std::size_t WindowFromBps(const std::size_t bps) noexcept {
-		const std::size_t raw = bps / 500ull;
+	StormByte::Size WindowFromBps(const std::size_t bps) noexcept {
+		const StormByte::Size raw{bps / 500ull};
 		if (raw < MinWindow)
 			return MinWindow;
 		if (raw > MaxWindow)
@@ -65,12 +65,12 @@ namespace {
 }
 
 BufferedFileReader::BufferedFileReader(std::filesystem::path path):
-	BufferedReader(0, DefaultMaxMemory),
+	BufferedReader(StormByte::Size{0}, DefaultMaxMemory),
 	m_path(std::move(path)),
 	m_probe_on_setup(true) {}
 
-BufferedFileReader::BufferedFileReader(std::filesystem::path path, const std::size_t read_ahead,
-		const std::size_t max_memory):
+BufferedFileReader::BufferedFileReader(std::filesystem::path path, const StormByte::Size read_ahead,
+		const StormByte::Size max_memory):
 	BufferedReader(read_ahead, max_memory),
 	m_path(std::move(path)),
 	m_probe_on_setup(false) {}
@@ -155,7 +155,7 @@ Result BufferedFileReader::OriginOpen() {
 		return { IO::Status::Failed, 0 };
 	}
 
-	m_size = static_cast<std::size_t>(size);
+	m_size = StormByte::Size{static_cast<std::size_t>(size)};
 	SetState(State::Idle);
 	return { IO::Status::Ok, 0 };
 }
@@ -169,25 +169,26 @@ Result BufferedFileReader::OriginClose() {
 	return { IO::Status::Ok, 0 };
 }
 
-Result BufferedFileReader::OriginPull(const std::size_t n, FIFO& dest) {
+Result BufferedFileReader::OriginPull(const StormByte::Size n, FIFO& dest) {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
 		return { IO::Status::Failed, 0 };
-	if (n == 0)
+	if (n == StormByte::Size{0})
 		return { IO::Status::Ok, 0 };
 
 	m_file.clear();
 
-	DataType chunk(n);
-	m_file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(n));
-	const auto got = static_cast<std::size_t>(m_file.gcount());
+	DataType chunk(static_cast<std::size_t>(n));
+	m_file.read(reinterpret_cast<char*>(chunk.data()),
+		static_cast<std::streamsize>(static_cast<std::size_t>(n)));
+	const StormByte::Size got{static_cast<std::size_t>(m_file.gcount())};
 	if (m_file.bad()) {
 		SetState(State::Fault);
 		return { IO::Status::Error, 0 };
 	}
 
-	chunk.resize(got);
-	if (got > 0 && !dest.Write(got, std::move(chunk))) {
+	chunk.resize(static_cast<std::size_t>(got));
+	if (got > StormByte::Size{0} && !dest.Write(got, std::move(chunk))) {
 		SetState(State::Fault);
 		return { IO::Status::Error, 0 };
 	}
@@ -211,7 +212,8 @@ Result BufferedFileReader::OriginSeek(const std::ptrdiff_t offset, const Positio
 		if (offset < 0)
 			return { IO::Status::Failed, 0 };
 		m_file.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-	} else {
+	}
+	else {
 		m_file.seekg(static_cast<std::streamoff>(offset), std::ios::cur);
 	}
 
@@ -224,6 +226,6 @@ bool BufferedFileReader::OriginHasSize() const noexcept {
 	return m_size.has_value();
 }
 
-std::optional<std::size_t> BufferedFileReader::OriginSize() const noexcept {
+std::optional<StormByte::Size> BufferedFileReader::OriginSize() const noexcept {
 	return m_size;
 }

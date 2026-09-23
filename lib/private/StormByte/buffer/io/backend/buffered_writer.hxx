@@ -56,7 +56,7 @@
 #include <thread>
 
 namespace StormByte::Buffer {
-    class LockFreeRing;
+	class LockFreeRing;
 }
 
 /**
@@ -103,7 +103,7 @@ namespace StormByte {
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
-						BufferedWriter(IO::BufferedWriter& owner, std::size_t write_chunk,
+						BufferedWriter(IO::BufferedWriter& owner, StormByte::Size write_chunk,
 							std::size_t back_pressure, std::chrono::milliseconds max_wait);
 
 						/**
@@ -165,7 +165,7 @@ namespace StormByte {
 						 * @brief Publish the logical write offset from a leaf Seek.
 						 * @param offset New Tell.
 						 */
-						void SetTell(std::size_t offset) noexcept;
+						void SetTell(StormByte::Size offset) noexcept;
 
 						/**
 						 * @name Session
@@ -252,25 +252,25 @@ namespace StormByte {
 						 * @brief Bytes accepted since Open or Truncate.
 						 * @return Logical write offset.
 						 */
-						std::size_t Tell() const noexcept;
+						StormByte::Size Tell() const noexcept;
 
 						/**
 						 * @brief Bytes in the ring not yet pushed.
 						 * @return 0 in direct mode or after a successful Flush.
 						 */
-						std::size_t Dirty() const noexcept;
+						StormByte::Size Dirty() const noexcept;
 
 						/**
 						 * @brief Configured origin push unit.
 						 * @return Bytes. 0 disables the ring.
 						 */
-						std::size_t WriteChunk() const noexcept;
+						StormByte::Size WriteChunk() const noexcept;
 
 						/**
 						 * @brief Set origin push unit.
 						 * @param bytes Chunk size. 0 disables the ring.
 						 */
-						void WriteChunk(std::size_t bytes);
+						void WriteChunk(StormByte::Size bytes);
 
 						/**
 						 * @brief Configured dirty cap in WriteChunk units.
@@ -301,7 +301,7 @@ namespace StormByte {
 						 * @param n Prospective Write size.
 						 * @return @c true in direct mode, or if Dirty + n <= cap.
 						 */
-						bool WillWrite(std::size_t n) const noexcept;
+						bool WillWrite(StormByte::Size n) const noexcept;
 
 					private:
 						/**
@@ -314,14 +314,14 @@ namespace StormByte {
 						 * @brief Dirty cap in bytes.
 						 * @return BackPressure * WriteChunk, or 0 if direct.
 						 */
-						std::size_t PendingCap() const noexcept;
+						StormByte::Size PendingCap() const noexcept;
 
 						/**
 						 * @brief Whether @p bytes fit under BackPressure.
 						 * @param bytes Payload size of the prospective Write.
 						 * @return @c true if the Write may proceed.
 						 */
-						bool WouldAccept(std::size_t bytes) const noexcept;
+						bool WouldAccept(StormByte::Size bytes) const noexcept;
 
 						/**
 						 * @brief Start @c m_worker if it is not joinable.
@@ -362,14 +362,14 @@ namespace StormByte {
 						mutable std::mutex m_mutex;					///< Session + knobs.
 						mutable std::condition_variable m_cv;		///< Worker / flush waits.
 
-						std::size_t m_write_chunk {0};				///< Origin push unit.
+						StormByte::Size m_write_chunk {0};			///< Origin push unit.
 						std::size_t m_back_pressure {0};			///< Cap in WriteChunk units.
 						std::chrono::milliseconds m_max_wait {0};	///< OriginPush wait cap.
 
 						enum State m_state { State::Unavailable };	///< Session state.
 						bool m_open {false};						///< Session armed.
 						mutable bool m_failed {false};				///< Permanent failure.
-						mutable std::size_t m_tell {0};				///< Accepted bytes.
+						mutable StormByte::Size m_tell {0};			///< Accepted bytes.
 
 						std::unique_ptr<LockFreeRing> m_ring;		///< SPSC dirty bytes. Null in direct mode.
 

@@ -44,22 +44,22 @@
 
 using namespace StormByte::Buffer;
 
-Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::Size high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
-Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const StormByte::Size high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out) noexcept:
-	Bridge(in, out, 0) {}
+	Bridge(in, out, StormByte::Size{0}) {}
 
-Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const StormByte::Size high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out) noexcept:
-	Bridge(in, out, 0) {}
+	Bridge(in, out, StormByte::Size{0}) {}
 
-Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const StormByte::Size high_water) noexcept:
 	m_io(std::make_unique<IO::Backend::Bridge>(in, out, high_water)) {}
 
 Bridge::Bridge(Bridge&& other) noexcept:
@@ -85,11 +85,11 @@ bool Bridge::IsWritable() const noexcept {
 	return m_io && m_io->IsWritable();
 }
 
-std::size_t Bridge::HighWater() const noexcept {
-	return m_io ? m_io->HighWater() : 0;
+StormByte::Size Bridge::HighWater() const noexcept {
+	return m_io ? m_io->HighWater() : StormByte::Size{0};
 }
 
-void Bridge::HighWater(const std::size_t high_water) noexcept {
+void Bridge::HighWater(const StormByte::Size high_water) noexcept {
 	if (m_io)
 		m_io->HighWater(high_water);
 }

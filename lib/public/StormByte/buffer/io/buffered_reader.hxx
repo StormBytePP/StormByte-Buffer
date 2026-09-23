@@ -47,7 +47,6 @@
 #include <StormByte/buffer/visibility.h>
 
 #include <chrono>
-#include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
@@ -287,7 +286,7 @@ namespace StormByte {
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
-					virtual Result Read(std::size_t n, FIFO& dest) const final;
+					virtual Result Read(StormByte::Size n, FIFO& dest) const final;
 
 					/**
 					 * @brief Read into @p dest, consuming cache / origin.
@@ -306,7 +305,7 @@ namespace StormByte {
 					 * @param dest Caller FIFO. Overwritten on Ok / End with count > 0.
 					 * @return Status and byte count written to @p dest.
 					 */
-					virtual Result Peek(std::size_t n, FIFO& dest) const final;
+					virtual Result Peek(StormByte::Size n, FIFO& dest) const final;
 
 					/**
 					 * @brief Copy into @p dest without consuming cache.
@@ -352,7 +351,7 @@ namespace StormByte {
 					 * @brief Logical read offset in the stream.
 					 * @return Bytes from the origin start (0 after Open / Rewind).
 					 */
-					virtual std::size_t Tell() const noexcept final;
+					virtual StormByte::Size Tell() const noexcept final;
 
 					/**
 					 * @brief Whether this instance can reposition the origin.
@@ -379,7 +378,7 @@ namespace StormByte {
 					 * @brief Origin length in bytes when known.
 					 * @return Length, or empty if @ref IsSized is false.
 					 */
-					virtual std::optional<std::size_t> Size() const noexcept final;
+					virtual std::optional<StormByte::Size> Size() const noexcept final;
 
 					/**
 					 * @}
@@ -394,7 +393,7 @@ namespace StormByte {
 					 * @brief Configured prefetch length in bytes.
 					 * @return Current ReadAhead. 0 disables prefetch.
 					 */
-					virtual std::size_t ReadAhead() const noexcept;
+					virtual StormByte::Size ReadAhead() const noexcept;
 
 					/**
 					 * @brief Set prefetch length. Takes effect immediately.
@@ -404,13 +403,13 @@ namespace StormByte {
 					 * returning. Does not pull from the origin. Still waits
 					 * for the worker.
 					 */
-					virtual void ReadAhead(std::size_t bytes);
+					virtual void ReadAhead(StormByte::Size bytes);
 
 					/**
 					 * @brief Configured cache memory cap in bytes.
 					 * @return Current cap. 0 means no cache and no prefetch.
 					 */
-					virtual std::size_t MaxMemory() const noexcept;
+					virtual StormByte::Size MaxMemory() const noexcept;
 
 					/**
 					 * @brief Set cache memory cap. Takes effect immediately.
@@ -419,7 +418,7 @@ namespace StormByte {
 					 * Cancels prefetch and evicts farthest spans before
 					 * returning. Waits for the worker; not an origin pull.
 					 */
-					virtual void MaxMemory(std::size_t bytes);
+					virtual void MaxMemory(StormByte::Size bytes);
 
 					/**
 					 * @brief Configured read wait limit.
@@ -447,7 +446,7 @@ namespace StormByte {
 					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 * @param max_wait Initial @ref MaxWait. @c 0ms = unlimited.
 					 */
-					explicit BufferedReader(std::size_t read_ahead = 0, std::size_t max_memory = 0,
+					explicit BufferedReader(StormByte::Size read_ahead = 0, StormByte::Size max_memory = 0,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -494,7 +493,7 @@ namespace StormByte {
 					 * On @ref IO::Status::Error call @ref SetState with
 					 * @ref State::Fault or @ref State::Unavailable.
 					 */
-					virtual Result OriginPull(std::size_t n, FIFO& dest) = 0;
+					virtual Result OriginPull(StormByte::Size n, FIFO& dest) = 0;
 
 					/**
 					 * @brief Whether the device can seek.
@@ -508,7 +507,8 @@ namespace StormByte {
 					 * @param mode Absolute or relative to the device cursor.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
 					 *
-					 * May be slow (remote origin, heavy leaf setup). The public
+					 * May be slow (remote origin, or a leaf that
+					 * does CPU work first). The public
 					 * @ref Seek path assumes this can block.
 					 */
 					virtual Result OriginSeek(std::ptrdiff_t offset, Position mode) = 0;
@@ -523,7 +523,7 @@ namespace StormByte {
 					 * @brief Device length in bytes.
 					 * @return Length, or empty when unknown.
 					 */
-					virtual std::optional<std::size_t> OriginSize() const noexcept = 0;
+					virtual std::optional<StormByte::Size> OriginSize() const noexcept = 0;
 
 					/**
 					 * @}

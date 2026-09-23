@@ -48,7 +48,6 @@
 #include <StormByte/buffer/io/typedefs.hxx>
 #include <StormByte/buffer/visibility.h>
 
-#include <cstddef>
 #include <memory>
 
 /**
@@ -123,7 +122,7 @@ namespace StormByte {
 				 * @param out Sink.
 				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
-				Bridge(ExternalReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
+				Bridge(ExternalReader& in, ExternalWriter& out, StormByte::Size high_water) noexcept;
 
 				/**
 				 * @brief IO → IO. Tips must already be armed. Not owned.
@@ -131,7 +130,7 @@ namespace StormByte {
 				 * @param out Sink.
 				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
-				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
+				Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, StormByte::Size high_water) noexcept;
 
 				/**
 				 * @brief IO → IO with no Bridge occupancy cap.
@@ -150,7 +149,7 @@ namespace StormByte {
 				 * @param out Sink.
 				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
-				Bridge(ExternalReader& in, IO::BufferedWriter& out, std::size_t high_water) noexcept;
+				Bridge(ExternalReader& in, IO::BufferedWriter& out, StormByte::Size high_water) noexcept;
 
 				/**
 				 * @brief Buffer → IO with no Bridge occupancy cap.
@@ -169,7 +168,7 @@ namespace StormByte {
 				 * @param out Sink.
 				 * @param high_water Sink occupancy cap. 0 means no Bridge cap.
 				 */
-				Bridge(const IO::BufferedReader& in, ExternalWriter& out, std::size_t high_water) noexcept;
+				Bridge(const IO::BufferedReader& in, ExternalWriter& out, StormByte::Size high_water) noexcept;
 
 				Bridge(const Bridge&) = delete;
 
@@ -215,13 +214,13 @@ namespace StormByte {
 				 * @brief Sink occupancy cap.
 				 * @return Current high_water. 0 means no Bridge cap.
 				 */
-				std::size_t HighWater() const noexcept;
+				StormByte::Size HighWater() const noexcept;
 
 				/**
 				 * @brief Set the sink occupancy cap. Does not start or pause.
 				 * @param high_water New cap. 0 means no Bridge cap.
 				 */
-				void HighWater(std::size_t high_water) noexcept;
+				void HighWater(StormByte::Size high_water) noexcept;
 
 				/**
 				 * @brief Worker status.

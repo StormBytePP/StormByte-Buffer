@@ -59,13 +59,13 @@ template DataType Generic::DataConvert<std::span<std::byte>>(std::span<std::byte
 
 template bool WriteOnly::Write<DataType>(const DataType&) noexcept;
 template bool WriteOnly::Write<DataType>(DataType&&) noexcept;
-template bool WriteOnly::Write<DataType>(const std::size_t&, const DataType&) noexcept;
-template bool WriteOnly::Write<DataType>(const std::size_t&, DataType&&) noexcept;
+template bool WriteOnly::Write<DataType>(const StormByte::Size&, const DataType&) noexcept;
+template bool WriteOnly::Write<DataType>(const StormByte::Size&, DataType&&) noexcept;
 template bool WriteOnly::Write<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
-template bool WriteOnly::Write<std::span<const std::byte>>(const std::size_t&, const std::span<const std::byte>&) noexcept;
+template bool WriteOnly::Write<std::span<const std::byte>>(const StormByte::Size&, const std::span<const std::byte>&) noexcept;
 template bool WriteOnly::Write<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
-template bool WriteOnly::Write<std::span<std::byte>>(const std::size_t&, const std::span<std::byte>&) noexcept;
+template bool WriteOnly::Write<std::span<std::byte>>(const StormByte::Size&, const std::span<std::byte>&) noexcept;
 template bool WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(DataType::const_iterator, DataType::const_iterator) noexcept;
 template bool WriteOnly::Write<DataType::iterator, DataType::iterator>(DataType::iterator, DataType::iterator) noexcept;
-template bool WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(const std::size_t&, DataType::const_iterator, DataType::const_iterator) noexcept;
-template bool WriteOnly::Write<DataType::iterator, DataType::iterator>(const std::size_t&, DataType::iterator, DataType::iterator) noexcept;
+template bool WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(const StormByte::Size&, DataType::const_iterator, DataType::const_iterator) noexcept;
+template bool WriteOnly::Write<DataType::iterator, DataType::iterator>(const StormByte::Size&, DataType::iterator, DataType::iterator) noexcept;

@@ -44,7 +44,6 @@
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/visibility.h>
 
-#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -112,7 +111,7 @@ namespace StormByte {
 					 * @param max_memory Cache cap. 0 stores no cache.
 					 */
 					BufferedFileReader(std::filesystem::path path,
-						std::size_t read_ahead, std::size_t max_memory);
+						StormByte::Size read_ahead, StormByte::Size max_memory);
 
 					/**
 					 * @brief Copy constructor is deleted.
@@ -180,7 +179,7 @@ namespace StormByte {
 					 * @param dest Base-owned FIFO.
 					 * @return Ok, End, Error or Failed.
 					 */
-					Result OriginPull(std::size_t n, FIFO& dest) override;
+					Result OriginPull(StormByte::Size n, FIFO& dest) override;
 
 					/**
 					 * @brief Files are seekable.
@@ -206,12 +205,12 @@ namespace StormByte {
 					 * @brief Cached file size.
 					 * @return Size in bytes, or empty if not open.
 					 */
-					std::optional<std::size_t> OriginSize() const noexcept override;
+					std::optional<StormByte::Size> OriginSize() const noexcept override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.
 					std::ifstream m_file;					///< Binary input stream.
-					std::optional<std::size_t> m_size;		///< Size after OriginOpen.
+					std::optional<StormByte::Size> m_size;	///< Size after OriginOpen.
 					mutable std::mutex m_file_mutex;		///< Serialises ifstream access.
 					bool m_probe_on_setup;					///< True for the path-only constructor.
 			};

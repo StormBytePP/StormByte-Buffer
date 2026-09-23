@@ -121,7 +121,8 @@ namespace StormByte {
 				 * @return Reference to this Consumer.
 				 */
 				inline Consumer& operator=(const Consumer& other) noexcept {
-					if (this != &other) m_buffer = other.m_buffer;
+					if (this != &other)
+						m_buffer = other.m_buffer;
 					return *this;
 				}
 
@@ -131,7 +132,8 @@ namespace StormByte {
 				 * @return Reference to this Consumer.
 				 */
 				inline Consumer& operator=(Consumer&& other) noexcept {
-					if (this != &other) m_buffer = std::move(other.m_buffer);
+					if (this != &other)
+						m_buffer = std::move(other.m_buffer);
 					return *this;
 				}
 
@@ -171,7 +173,7 @@ namespace StormByte {
 				 * @brief Number of bytes available for reading from the current position.
 				 * @return Available byte count.
 				 */
-				std::size_t AvailableBytes() const noexcept override;
+				StormByte::Size AvailableBytes() const noexcept override;
 
 				/**
 				 * @brief Access a snapshot of the underlying data (implementation-defined).
@@ -222,7 +224,7 @@ namespace StormByte {
 				 * @brief Total number of bytes stored in the shared Ring.
 				 * @return Size in bytes.
 				 */
-				std::size_t Size() const noexcept override;
+				StormByte::Size Size() const noexcept override;
 
 				/**
 				 * @brief Writer on the same Ring.
@@ -265,7 +267,7 @@ namespace StormByte {
 				 * @param count Number of bytes to drop.
 				 * @return @c true on success, @c false if fewer bytes were available.
 				 */
-				bool Drop(const std::size_t& count) noexcept override;
+				bool Drop(const StormByte::Size& count) noexcept override;
 
 				/**
 				 * @brief Move the logical read position for non-destructive reads.
@@ -287,7 +289,7 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Extract(const std::size_t& count, DataType& out) noexcept override;
+				bool Extract(const StormByte::Size& count, DataType& out) noexcept override;
 
 				/**
 				 * @brief Extract bytes into a @ref WriteOnly store.
@@ -295,7 +297,7 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Extract(const std::size_t& count, WriteOnly& out) noexcept override;
+				bool Extract(const StormByte::Size& count, WriteOnly& out) noexcept override;
 
 				/**
 				 * @brief Extract until EoF into a @ref DataType.
@@ -322,7 +324,7 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Read(const std::size_t& count, DataType& out) const noexcept override;
+				bool Read(const StormByte::Size& count, DataType& out) const noexcept override;
 
 				/**
 				 * @brief Read bytes into a @ref WriteOnly store. Advances the cursor.
@@ -330,7 +332,7 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Read(const std::size_t& count, WriteOnly& out) const noexcept override;
+				bool Read(const StormByte::Size& count, WriteOnly& out) const noexcept override;
 
 				/**
 				 * @brief Read until EoF into a @ref DataType.
@@ -357,7 +359,7 @@ namespace StormByte {
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Peek(const std::size_t& count, DataType& out) const noexcept override;
+				bool Peek(const StormByte::Size& count, DataType& out) const noexcept override;
 
 				/**
 				 * @brief Peek bytes into a @ref WriteOnly store. Does not advance the cursor.
@@ -365,7 +367,7 @@ namespace StormByte {
 				 * @param out Destination.
 				 * @return @c true on success.
 				 */
-				bool Peek(const std::size_t& count, WriteOnly& out) const noexcept override;
+				bool Peek(const StormByte::Size& count, WriteOnly& out) const noexcept override;
 
 				/** @} */
 

@@ -77,7 +77,7 @@ ExternalReader::PointerType ExternalBufferReader::Move() noexcept {
 	return MakePointer<ExternalBufferReader>(std::move(*this));
 }
 
-std::size_t ExternalBufferReader::AvailableBytes() const noexcept {
+StormByte::Size ExternalBufferReader::AvailableBytes() const noexcept {
 	return Store().AvailableBytes();
 }
 
@@ -93,15 +93,15 @@ bool ExternalBufferReader::IsReadable() const noexcept {
 	return Store().IsReadable();
 }
 
-bool ExternalBufferReader::Read(const std::size_t count, DataType& out) const noexcept {
+bool ExternalBufferReader::Read(const StormByte::Size& count, DataType& out) const noexcept {
 	return Store().Read(count, out);
 }
 
-bool ExternalBufferReader::Extract(const std::size_t count, DataType& out) noexcept {
+bool ExternalBufferReader::Extract(const StormByte::Size& count, DataType& out) noexcept {
 	return Store().Extract(count, out);
 }
 
-bool ExternalBufferReader::Peek(const std::size_t count, DataType& out) const noexcept {
+bool ExternalBufferReader::Peek(const StormByte::Size& count, DataType& out) const noexcept {
 	return Store().Peek(count, out);
 }
 
@@ -161,13 +161,13 @@ bool ExternalWriter::Write(const char* s) noexcept {
 	return Write(std::string_view(s));
 }
 
-bool ExternalWriter::Write(const std::size_t count, const std::string_view sv) noexcept {
-	const std::size_t to_write = (count == 0)
-		? sv.size()
-		: std::min(count, static_cast<std::size_t>(sv.size()));
+bool ExternalWriter::Write(const StormByte::Size& count, const std::string_view sv) noexcept {
+	const StormByte::Size to_write = (count == StormByte::Size{0})
+		? StormByte::Size{sv.size()}
+		: std::min(count, StormByte::Size{sv.size()});
 	DataType tmp;
-	if (to_write > 0)
-		tmp.reserve(to_write);
+	if (to_write > StormByte::Size{0})
+		tmp.reserve(static_cast<std::size_t>(to_write));
 	std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(to_write),
 		std::back_inserter(tmp),
 		[](char c) noexcept { return static_cast<std::byte>(c); });
@@ -178,23 +178,23 @@ bool ExternalBufferWriter::IsWritable() const noexcept {
 	return Store().IsWritable();
 }
 
-std::size_t ExternalBufferWriter::Occupied() const noexcept {
+StormByte::Size ExternalBufferWriter::Occupied() const noexcept {
 	return Store().Size();
 }
 
 bool ExternalBufferWriter::Write(const DataType& data) noexcept {
-	return Store().Write(0, data);
+	return Store().Write(StormByte::Size{0}, data);
 }
 
 bool ExternalBufferWriter::Write(DataType&& data) noexcept {
-	return Store().Write(0, std::move(data));
+	return Store().Write(StormByte::Size{0}, std::move(data));
 }
 
-bool ExternalBufferWriter::Write(const std::size_t count, const DataType& data) noexcept {
+bool ExternalBufferWriter::Write(const StormByte::Size& count, const DataType& data) noexcept {
 	return Store().Write(count, data);
 }
 
-bool ExternalBufferWriter::Write(const std::size_t count, DataType&& data) noexcept {
+bool ExternalBufferWriter::Write(const StormByte::Size& count, DataType&& data) noexcept {
 	return Store().Write(count, std::move(data));
 }
 

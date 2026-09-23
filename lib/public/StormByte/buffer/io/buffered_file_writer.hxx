@@ -117,7 +117,7 @@ namespace StormByte {
 					 * @param max_wait Initial @ref MaxWait.
 					 */
 					BufferedFileWriter(std::filesystem::path path,
-						std::size_t write_chunk, std::size_t back_pressure,
+						StormByte::Size write_chunk, std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -165,7 +165,7 @@ namespace StormByte {
 					 *
 					 * @ref Tell includes @ref Dirty. Does not Flush.
 					 */
-					virtual std::size_t Size() const noexcept override;
+					virtual StormByte::Size Size() const noexcept override;
 
 					/**
 					 * @brief Move the write cursor after flushing dirty bytes.
@@ -227,7 +227,7 @@ namespace StormByte {
 					 * @param absolute Byte offset from the start.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginSeek(std::size_t absolute) override;
+					virtual Result OriginSeek(StormByte::Size absolute) override;
 
 					/**
 					 * @brief Ring cap and indicative free space on the volume.
@@ -239,7 +239,7 @@ namespace StormByte {
 					 * can still reject the later Write. A derived writer that
 					 * is not a local volume should override this.
 					 */
-					virtual bool WillWrite(std::size_t n) const override;
+					virtual bool WillWrite(StormByte::Size n) const override;
 
 				private:
 					std::filesystem::path m_path;			///< Path given at construction.

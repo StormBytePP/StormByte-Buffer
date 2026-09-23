@@ -185,7 +185,7 @@ namespace StormByte {
 				 * @brief Bytes stored in the shared Ring right now.
 				 * @return Size in bytes. 0 if empty.
 				 */
-				std::size_t Size() const noexcept override;
+				StormByte::Size Size() const noexcept override;
 
 				/**
 				 * @}
@@ -202,7 +202,7 @@ namespace StormByte {
 				 * @param data Source vector.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const std::size_t& count, const DataType& data) noexcept override;
+				bool Write(const StormByte::Size& count, const DataType& data) noexcept override;
 
 				/**
 				 * @brief Append an entire @ref DataType (copy).
@@ -210,7 +210,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				inline bool Write(const DataType& data) noexcept {
-					return Write(data.size(), data);
+					return Write(StormByte::Size{data.size()}, data);
 				}
 
 				/**
@@ -219,7 +219,7 @@ namespace StormByte {
 				 * @param data Source vector.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const std::size_t& count, DataType&& data) noexcept override;
+				bool Write(const StormByte::Size& count, DataType&& data) noexcept override;
 
 				/**
 				 * @brief Append an entire @ref DataType (move).
@@ -227,7 +227,7 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				inline bool Write(DataType&& data) noexcept {
-					return Write(data.size(), std::move(data));
+					return Write(StormByte::Size{data.size()}, std::move(data));
 				}
 
 				/**
@@ -236,7 +236,7 @@ namespace StormByte {
 				 * @param data Source buffer.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const std::size_t& count, const ReadOnly& data) noexcept override;
+				bool Write(const StormByte::Size& count, const ReadOnly& data) noexcept override;
 
 				/**
 				 * @brief Append bytes from a @ref ReadOnly (extract).
@@ -244,7 +244,7 @@ namespace StormByte {
 				 * @param data Source buffer.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const std::size_t& count, ReadOnly&& data) noexcept override;
+				bool Write(const StormByte::Size& count, ReadOnly&& data) noexcept override;
 
 				/**
 				 * @brief Bring @ref WriteOnly convenience Write overloads into scope.

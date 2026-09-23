@@ -55,12 +55,12 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	constexpr std::size_t MinWindow = 16ull * 1024ull;
-	constexpr std::size_t MaxWindow = 1024ull * 1024ull;
+	constexpr StormByte::Size MinWindow{16ull * 1024ull};
+	constexpr StormByte::Size MaxWindow{1024ull * 1024ull};
 	constexpr std::size_t DefaultBackPressure = 4;
 
-	std::size_t WindowFromBps(const std::size_t bps) noexcept {
-		const std::size_t raw = bps / 500ull;
+	StormByte::Size WindowFromBps(const std::size_t bps) noexcept {
+		const StormByte::Size raw{bps / 500ull};
 		if (raw < MinWindow)
 			return MinWindow;
 		if (raw > MaxWindow)
@@ -79,8 +79,8 @@ namespace {
 		return {};
 	}
 
-	bool VolumeHas(const std::filesystem::path& path, const std::size_t n) {
-		if (n == 0)
+	bool VolumeHas(const std::filesystem::path& path, const StormByte::Size n) {
+		if (n == StormByte::Size{0})
 			return true;
 		const auto probe = SpacePath(path);
 		if (probe.empty())
@@ -93,14 +93,14 @@ namespace {
 			return false;
 		if (!GetDiskFreeSpaceExW(wide.c_str(), &avail, nullptr, nullptr))
 			return false;
-		return avail.QuadPart >= static_cast<ULONGLONG>(n);
+		return avail.QuadPart >= static_cast<ULONGLONG>(static_cast<std::size_t>(n));
 #else
 		struct statvfs st {};
 		if (statvfs(probe.c_str(), &st) != 0)
 			return false;
 		const std::uint64_t avail = static_cast<std::uint64_t>(st.f_bavail) *
 			static_cast<std::uint64_t>(st.f_frsize);
-		return avail >= static_cast<std::uint64_t>(n);
+		return avail >= static_cast<std::uint64_t>(static_cast<std::size_t>(n));
 #endif
 	}
 
@@ -119,11 +119,11 @@ namespace {
 }
 
 BufferedFileWriter::BufferedFileWriter(std::filesystem::path path):
-	BufferedWriter(0, 0),
+	BufferedWriter(StormByte::Size{0}, 0),
 	m_path(std::move(path)),
 	m_probe_on_setup(true) {}
 
-BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const std::size_t write_chunk,
+BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::Size write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
 	BufferedWriter(write_chunk, back_pressure, max_wait),
 	m_path(std::move(path)),
@@ -157,11 +157,11 @@ const std::filesystem::path& BufferedFileWriter::Path() const noexcept {
 	return m_path;
 }
 
-std::size_t BufferedFileWriter::Size() const noexcept {
+StormByte::Size BufferedFileWriter::Size() const noexcept {
 	std::error_code ec;
 	const auto disk = std::filesystem::file_size(m_path, ec);
-	const std::size_t on_disk = ec ? 0 : static_cast<std::size_t>(disk);
-	const std::size_t logical = Tell();
+	const StormByte::Size on_disk = ec ? StormByte::Size{0} : StormByte::Size{static_cast<std::size_t>(disk)};
+	const StormByte::Size logical = Tell();
 	return on_disk > logical ? on_disk : logical;
 }
 
@@ -170,15 +170,16 @@ Result BufferedFileWriter::Seek(const std::ptrdiff_t offset, const Position mode
 	if (flushed.status != Status::Ok)
 		return flushed;
 
-	std::size_t abs = Tell();
+	StormByte::Size abs = Tell();
 	if (mode == Position::Absolute) {
 		if (offset < 0)
 			return { Status::Failed, 0 };
-		abs = static_cast<std::size_t>(offset);
-	} else {
-		if (offset < 0 && static_cast<std::size_t>(-offset) > abs)
+		abs = StormByte::Size{static_cast<std::size_t>(offset)};
+	}
+	else {
+		if (offset < 0 && StormByte::Size{static_cast<std::size_t>(-offset)} > abs)
 			return { Status::Failed, 0 };
-		abs = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(abs) + offset);
+		abs = StormByte::Size{static_cast<std::size_t>(static_cast<std::ptrdiff_t>(static_cast<std::size_t>(abs)) + offset)};
 	}
 
 	const auto moved = OriginSeek(abs);
@@ -196,7 +197,7 @@ void BufferedFileWriter::Setup() {
 	BackPressure(DefaultBackPressure);
 }
 
-bool BufferedFileWriter::WillWrite(const std::size_t n) const {
+bool BufferedFileWriter::WillWrite(const StormByte::Size n) const {
 	if (!BufferedWriter::WillWrite(n))
 		return false;
 	return VolumeHas(m_path, n);
@@ -269,7 +270,7 @@ Result BufferedFileWriter::OriginPush(const std::span<const std::byte> data) {
 		return { Status::Error, 0 };
 	}
 
-	return { Status::Ok, data.size() };
+	return { Status::Ok, StormByte::Size{data.size()} };
 }
 
 Result BufferedFileWriter::OriginFlush() {
@@ -304,12 +305,12 @@ Result BufferedFileWriter::OriginTruncate() {
 	return { Status::Ok, 0 };
 }
 
-Result BufferedFileWriter::OriginSeek(const std::size_t absolute) {
+Result BufferedFileWriter::OriginSeek(const StormByte::Size absolute) {
 	std::lock_guard lock(m_file_mutex);
 	if (!m_file.is_open())
 		return { Status::Failed, 0 };
 	m_file.clear();
-	m_file.seekp(static_cast<std::streamoff>(absolute), std::ios::beg);
+	m_file.seekp(static_cast<std::streamoff>(static_cast<std::size_t>(absolute)), std::ios::beg);
 	if (!m_file)
 		return { Status::Failed, 0 };
 	return { Status::Ok, 0 };

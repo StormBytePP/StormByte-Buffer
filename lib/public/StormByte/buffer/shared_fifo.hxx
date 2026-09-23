@@ -230,7 +230,7 @@ namespace StormByte::Buffer {
 			 * @brief Bytes available from the current read position (thread-safe).
 			 * @return Unread byte count.
 			 */
-			virtual std::size_t AvailableBytes() const noexcept override;
+			virtual StormByte::Size AvailableBytes() const noexcept override;
 
 			/**
 			 * @brief Access the internal storage.
@@ -279,7 +279,7 @@ namespace StormByte::Buffer {
 			 * @return Size in bytes.
 			 * @see Empty(), AvailableBytes()
 			 */
-			virtual std::size_t Size() const noexcept override;
+			virtual StormByte::Size Size() const noexcept override;
 
 			/** @} */
 
@@ -316,7 +316,7 @@ namespace StormByte::Buffer {
 			 * @details Notifies waiting readers after dropping.
 			 * @see FIFO::Drop()
 			 */
-			virtual bool Drop(const std::size_t& count) noexcept override;
+			virtual bool Drop(const StormByte::Size& count) noexcept override;
 
 			/**
 			 * @brief Move the logical read position (thread-safe).
@@ -348,8 +348,8 @@ namespace StormByte::Buffer {
 			 * @return Formatted dump (size / position / status + hex/ASCII; no trailing newline).
 			 * @details Acquires the mutex for a consistent snapshot.
 			 */
-			virtual std::string HexDump(const std::size_t& columns = 0,
-										const std::size_t& byte_limit = 0) const noexcept override;
+			virtual std::string HexDump(const StormByte::Size& columns = 0,
+										const StormByte::Size& byte_limit = 0) const noexcept override;
 
 			/** @} */
 
@@ -374,7 +374,7 @@ namespace StormByte::Buffer {
 			 * @param flag Operation kind.
 			 * @return @c true on success, @c false on error or insufficient data after close.
 			 */
-			virtual bool ReadInternal(const std::size_t& count, DataType& outBuffer,
+			virtual bool ReadInternal(const StormByte::Size& count, DataType& outBuffer,
 									const Operation& flag) noexcept override;
 
 			/**
@@ -384,7 +384,7 @@ namespace StormByte::Buffer {
 			 * @param flag Operation kind.
 			 * @return @c true on success, @c false on error or insufficient data after close.
 			 */
-			virtual bool ReadInternal(const std::size_t& count, WriteOnly& outBuffer,
+			virtual bool ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer,
 									const Operation& flag) noexcept override;
 
 			/**
@@ -395,7 +395,7 @@ namespace StormByte::Buffer {
 			 *       fewer than @p n bytes are available.
 			 * @see Close(), SetError(), IsReadable()
 			 */
-			void Wait(const std::size_t& n, std::unique_lock<std::mutex>& lock) const;
+			void Wait(const StormByte::Size& n, std::unique_lock<std::mutex>& lock) const;
 
 			/**
 			 * @brief Append from @ref DataType (copy), under lock + notify.
@@ -403,7 +403,7 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, const DataType& src) noexcept override;
+			virtual bool WriteInternal(const StormByte::Size& count, const DataType& src) noexcept override;
 
 			/**
 			 * @brief Append from @ref DataType (move), under lock + notify.
@@ -411,6 +411,6 @@ namespace StormByte::Buffer {
 			 * @param src Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			virtual bool WriteInternal(const std::size_t& count, DataType&& src) noexcept override;
+			virtual bool WriteInternal(const StormByte::Size& count, DataType&& src) noexcept override;
 	};
 }

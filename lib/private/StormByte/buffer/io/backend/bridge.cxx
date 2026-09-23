@@ -46,34 +46,34 @@
 
 using namespace StormByte::Buffer;
 
-IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+IO::Backend::Bridge::Bridge(ExternalReader& in, ExternalWriter& out, const StormByte::Size high_water) noexcept:
 	m_ext_in(&in),
 	m_ext_out(&out),
-	m_high_water(high_water),
+	m_high_water(static_cast<std::size_t>(high_water)),
 	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, IO::BufferedWriter& out, const StormByte::Size high_water) noexcept:
 	m_io_in(&in),
 	m_io_out(&out),
-	m_high_water(high_water),
+	m_high_water(static_cast<std::size_t>(high_water)),
 	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const std::size_t high_water) noexcept:
+IO::Backend::Bridge::Bridge(ExternalReader& in, IO::BufferedWriter& out, const StormByte::Size high_water) noexcept:
 	m_ext_in(&in),
 	m_io_out(&out),
-	m_high_water(high_water),
+	m_high_water(static_cast<std::size_t>(high_water)),
 	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
 
-IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const std::size_t high_water) noexcept:
+IO::Backend::Bridge::Bridge(const IO::BufferedReader& in, ExternalWriter& out, const StormByte::Size high_water) noexcept:
 	m_ext_out(&out),
 	m_io_in(&in),
-	m_high_water(high_water),
+	m_high_water(static_cast<std::size_t>(high_water)),
 	m_status(IO::Drainer::Status::Started) {
 	Launch();
 }
@@ -116,12 +116,12 @@ bool IO::Backend::Bridge::IsWritable() const noexcept {
 	return false;
 }
 
-std::size_t IO::Backend::Bridge::HighWater() const noexcept {
-	return m_high_water.load();
+StormByte::Size IO::Backend::Bridge::HighWater() const noexcept {
+	return StormByte::Size{m_high_water.load()};
 }
 
-void IO::Backend::Bridge::HighWater(const std::size_t high_water) noexcept {
-	m_high_water.store(high_water);
+void IO::Backend::Bridge::HighWater(const StormByte::Size high_water) noexcept {
+	m_high_water.store(static_cast<std::size_t>(high_water));
 	m_cv.notify_all();
 }
 
@@ -174,24 +174,24 @@ void IO::Backend::Bridge::SetError() noexcept {
 
 bool IO::Backend::Bridge::SourceDone() const noexcept {
 	if (m_ext_in)
-		return m_ext_in->EoF() && m_ext_in->AvailableBytes() == 0;
+		return m_ext_in->EoF() && m_ext_in->AvailableBytes() == StormByte::Size{0};
 	if (m_io_in)
 		return m_io_in->EoF();
 	return true;
 }
 
-std::size_t IO::Backend::Bridge::AvailableNow() const noexcept {
+StormByte::Size IO::Backend::Bridge::AvailableNow() const noexcept {
 	if (m_ext_in)
 		return m_ext_in->AvailableBytes();
-	return 0;
+	return StormByte::Size{0};
 }
 
-std::size_t IO::Backend::Bridge::OccupiedNow() const noexcept {
+StormByte::Size IO::Backend::Bridge::OccupiedNow() const noexcept {
 	if (m_ext_out)
 		return m_ext_out->Occupied();
 	if (m_io_out)
 		return m_io_out->Dirty();
-	return 0;
+	return StormByte::Size{0};
 }
 
 bool IO::Backend::Bridge::DestFlush() noexcept {
@@ -200,9 +200,9 @@ bool IO::Backend::Bridge::DestFlush() noexcept {
 	return m_io_out->Flush().status == IO::Status::Ok;
 }
 
-bool IO::Backend::Bridge::Pull(const std::size_t n, FIFO& dest) noexcept {
+bool IO::Backend::Bridge::Pull(const StormByte::Size n, FIFO& dest) noexcept {
 	dest.Clear();
-	if (n == 0)
+	if (n == StormByte::Size{0})
 		return true;
 
 	if (m_ext_in) {
@@ -227,12 +227,12 @@ bool IO::Backend::Bridge::Pull(const std::size_t n, FIFO& dest) noexcept {
 }
 
 bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
-	if (src.AvailableBytes() == 0)
+	if (src.AvailableBytes() == StormByte::Size{0})
 		return true;
 
 	if (m_ext_out) {
 		DataType chunk;
-		if (!src.Extract(0, chunk))
+		if (!src.Extract(StormByte::Size{0}, chunk))
 			return false;
 		if (chunk.empty())
 			return true;
@@ -253,8 +253,8 @@ bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
 	return false;
 }
 
-bool IO::Backend::Bridge::Passthrough(const std::size_t bytes) noexcept {
-	if (bytes == 0)
+bool IO::Backend::Bridge::Passthrough(const StormByte::Size bytes) noexcept {
+	if (bytes == StormByte::Size{0})
 		return true;
 	if (!IsWritable())
 		return false;
@@ -320,56 +320,58 @@ void IO::Backend::Bridge::Worker() noexcept {
 			continue;
 		}
 
-		const std::size_t hw = m_high_water.load();
-		const std::size_t occupied = OccupiedNow();
-		std::size_t room = 0;
-		if (hw == 0)
+		const StormByte::Size hw{m_high_water.load()};
+		const StormByte::Size occupied = OccupiedNow();
+		StormByte::Size room{0};
+		if (hw == StormByte::Size{0})
 			room = m_chunk_max;
 		else if (hw > occupied)
 			room = hw - occupied;
 
-		if (!hurry && !barrier && hw != 0 && room == 0) {
+		if (!hurry && !barrier && hw != StormByte::Size{0} && room == StormByte::Size{0}) {
 			lock.lock();
 			m_busy = false;
 			m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
 				return m_stop || m_barrier || m_hurry ||
 					m_status != IO::Drainer::Status::Started ||
 					m_high_water.load() == 0 ||
-					(m_high_water.load() > OccupiedNow());
+					(StormByte::Size{m_high_water.load()} > OccupiedNow());
 			});
 			continue;
 		}
 
-		std::size_t want = 0;
+		StormByte::Size want{0};
 		if (hurry) {
 			if (m_io_in)
-				want = 1;
+				want = StormByte::Size{1};
 			else
 				want = AvailableNow();
-		} else {
-			want = std::min(m_chunk_max, room == 0 ? m_chunk_min : room);
+		}
+		else {
+			want = std::min(m_chunk_max, room == StormByte::Size{0} ? m_chunk_min : room);
 			if (want < m_chunk_min)
-				want = 0;
+				want = StormByte::Size{0};
 			if (m_io_in) {
-				if (want == 0)
-					want = std::min(m_chunk_min, room == 0 ? m_chunk_min : room);
-			} else {
-				const std::size_t avail = AvailableNow();
-				if (avail == 0) {
+				if (want == StormByte::Size{0})
+					want = std::min(m_chunk_min, room == StormByte::Size{0} ? m_chunk_min : room);
+			}
+			else {
+				const StormByte::Size avail = AvailableNow();
+				if (avail == StormByte::Size{0}) {
 					lock.lock();
 					m_busy = false;
 					m_cv.wait_for(lock, std::chrono::milliseconds(10), [this] {
 						return m_stop || m_barrier || m_hurry ||
 							m_status != IO::Drainer::Status::Started ||
-							AvailableNow() > 0 || SourceDone();
+							AvailableNow() > StormByte::Size{0} || SourceDone();
 					});
 					continue;
 				}
-				want = std::min(want == 0 ? avail : want, avail);
+				want = std::min(want == StormByte::Size{0} ? avail : want, avail);
 			}
 		}
 
-		if (want > 0 && !Passthrough(want))
+		if (want > StormByte::Size{0} && !Passthrough(want))
 			m_failed = true;
 
 		if (barrier) {

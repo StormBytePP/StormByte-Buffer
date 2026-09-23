@@ -40,311 +40,220 @@
  */
 
 #include <StormByte/buffer/ring.hxx>
-#include <StormByte/string.hxx>
 #include <StormByte/test_handlers.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <iostream>
-#include <numeric>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-#include <algorithm>
 
-using StormByte::Buffer::Ring;
-using StormByte::Buffer::Position;
 using StormByte::Buffer::DataType;
+using StormByte::Buffer::Position;
 using StormByte::Buffer::ReadOnly;
 using StormByte::Buffer::ReadWrite;
+using StormByte::Buffer::Ring;
 using StormByte::Buffer::WriteOnly;
 
-static std::string ToString(const DataType& v) {
-	return StormByte::String::FromByteVector(v);
+namespace {
+	std::string BytesToText(const DataType& data) {
+		if (data.empty())
+			return {};
+		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+	}
 }
 
-// ---------------------------------------------------------------------------
-// BASIC
-// ---------------------------------------------------------------------------
+// -------------------
+// Basic
+// -------------------
 
 int test_ring_basic_write_read() {
+	const std::string fn = "test_ring_basic_write_read";
 	Ring ring;
 	const std::string msg = "Hello, Ring!";
-	ASSERT_TRUE("write ok", ring.Write(msg));
+	ASSERT_TRUE(fn, ring.Write(msg));
 	ring.Close();
-
-	ASSERT_EQUAL("size", ring.Size(), msg.size());
-	ASSERT_FALSE("not empty", ring.Empty());
-	ASSERT_EQUAL("available", ring.AvailableBytes(), msg.size());
-
+	ASSERT_EQUAL(fn, ring.Size(), msg.size());
+	ASSERT_FALSE(fn, ring.Empty());
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), msg.size());
 	DataType data;
-	ASSERT_TRUE("read ok", ring.Read(msg.size(), data));
-	ASSERT_EQUAL("content", ToString(data), msg);
-	ASSERT_EQUAL("available after full read", ring.AvailableBytes(), 0u);
-
-	RETURN_TEST("test_ring_basic_write_read", 0);
-}
-
-int test_ring_multiple_writes() {
-	Ring ring;
-	ASSERT_TRUE("w1", ring.Write("First"));
-	ASSERT_TRUE("w2", ring.Write("Second"));
-	ASSERT_TRUE("w3", ring.Write("Third"));
-	ring.Close();
-
-	DataType all;
-	ASSERT_TRUE("read all", ring.Read(0, all));
-	ASSERT_EQUAL("concatenated", ToString(all), std::string("FirstSecondThird"));
-	RETURN_TEST("test_ring_multiple_writes", 0);
-}
-
-int test_ring_extract_destructive() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("ABCDEFGH"));
-	ASSERT_EQUAL("initial size", ring.Size(), 8u);
-
-	DataType first, rest;
-	ASSERT_TRUE("extract 3", ring.Extract(3, first));
-	ASSERT_EQUAL("ABC", ToString(first), std::string("ABC"));
-	ASSERT_EQUAL("size after extract", ring.Size(), 5u);
-	ASSERT_EQUAL("available after extract", ring.AvailableBytes(), 5u);
-
-	ASSERT_TRUE("extract rest", ring.Extract(0, rest));
-	ASSERT_EQUAL("DEFGH", ToString(rest), std::string("DEFGH"));
-	ASSERT_TRUE("empty", ring.Empty());
-	ASSERT_EQUAL("size zero", ring.Size(), 0u);
-
-	RETURN_TEST("test_ring_extract_destructive", 0);
-}
-
-int test_ring_peek_does_not_consume() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("ABCDEFGH"));
-	ring.Close();
-
-	DataType p1, p2, r1, r2;
-	ASSERT_TRUE("peek1", ring.Peek(4, p1));
-	ASSERT_EQUAL("peek1 content", ToString(p1), std::string("ABCD"));
-
-	ASSERT_TRUE("peek2", ring.Peek(4, p2));
-	ASSERT_EQUAL("peek2 same", ToString(p2), std::string("ABCD"));
-	ASSERT_EQUAL("available unchanged", ring.AvailableBytes(), 8u);
-
-	ASSERT_TRUE("read", ring.Read(4, r1));
-	ASSERT_EQUAL("read matches peek", ToString(r1), std::string("ABCD"));
-	ASSERT_EQUAL("available after read", ring.AvailableBytes(), 4u);
-
-	ASSERT_TRUE("second read", ring.Read(4, r2));
-	ASSERT_EQUAL("EFGH", ToString(r2), std::string("EFGH"));
-	ASSERT_EQUAL("available zero", ring.AvailableBytes(), 0u);
-
-	RETURN_TEST("test_ring_peek_does_not_consume", 0);
-}
-
-int test_ring_seek_operations() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("0123456789"));
-	ring.Close();
-
-	DataType from5, fromStart, from7;
-	ASSERT_TRUE("read 5", ring.Read(5, from5));
-	ASSERT_EQUAL("01234", ToString(from5), std::string("01234"));
-
-	ring.Seek(-5, Position::Relative);
-	ASSERT_TRUE("read all", ring.Read(0, fromStart));
-	ASSERT_EQUAL("full", ToString(fromStart), std::string("0123456789"));
-
-	ring.Seek(7, Position::Absolute);
-	ASSERT_TRUE("read 3", ring.Read(3, from7));
-	ASSERT_EQUAL("789", ToString(from7), std::string("789"));
-
-	RETURN_TEST("test_ring_seek_operations", 0);
-}
-
-int test_ring_clean_after_seek() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("ABCDEFGH"));
-	ring.Seek(3, Position::Absolute);
-	ASSERT_EQUAL("available", ring.AvailableBytes(), 5u);
-
-	ring.Clean();
-	ASSERT_EQUAL("size after clean", ring.Size(), 5u);
-	ASSERT_EQUAL("available after clean", ring.AvailableBytes(), 5u);
-
-	DataType data;
-	ASSERT_TRUE("read remaining", ring.Read(0, data));
-	ASSERT_EQUAL("DEFGH", ToString(data), std::string("DEFGH"));
-
-	RETURN_TEST("test_ring_clean_after_seek", 0);
-}
-
-int test_ring_drop() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("0123456789"));
-	ASSERT_TRUE("drop 4", ring.Drop(4));
-	ASSERT_EQUAL("size", ring.Size(), 6u);
-
-	DataType data;
-	ASSERT_TRUE("read rest", ring.Read(0, data));
-	ASSERT_EQUAL("456789", ToString(data), std::string("456789"));
-
-	RETURN_TEST("test_ring_drop", 0);
+	ASSERT_TRUE(fn, ring.Read(msg.size(), data));
+	ASSERT_EQUAL(fn, BytesToText(data), msg);
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_clear() {
+	const std::string fn = "test_ring_clear";
 	Ring ring;
-	ASSERT_TRUE("write", ring.Write("Some data to clear"));
-	ASSERT_FALSE("not empty", ring.Empty());
-
+	ASSERT_TRUE(fn, ring.Write("Some data to clear"));
+	ASSERT_FALSE(fn, ring.Empty());
 	ring.Clear();
-	ASSERT_TRUE("empty", ring.Empty());
-	ASSERT_EQUAL("size 0", ring.Size(), 0u);
-	ASSERT_EQUAL("available 0", ring.AvailableBytes(), 0u);
+	ASSERT_TRUE(fn, ring.Empty());
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{0});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_TRUE(fn, ring.Write("New data"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{8});
+	RETURN_TEST(fn, 0);
+}
 
-	ASSERT_TRUE("write after clear", ring.Write("New data"));
-	ASSERT_EQUAL("new size", ring.Size(), 8u);
-
-	RETURN_TEST("test_ring_clear", 0);
+int test_ring_clean_after_seek() {
+	const std::string fn = "test_ring_clean_after_seek";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
+	ring.Seek(3, Position::Absolute);
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ring.Clean();
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	DataType data;
+	ASSERT_TRUE(fn, ring.Read(0, data));
+	ASSERT_EQUAL(fn, BytesToText(data), std::string("DEFGH"));
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_close_mechanism() {
+	const std::string fn = "test_ring_close_mechanism";
 	Ring ring;
-	ASSERT_TRUE("write", ring.Write("Data"));
+	ASSERT_TRUE(fn, ring.Write("Data"));
 	ring.Close();
-
-	ASSERT_FALSE("write after close fails", ring.Write("More"));
-	ASSERT_EQUAL("size unchanged", ring.Size(), 4u);
-
+	ASSERT_FALSE(fn, ring.Write("More"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{4});
 	DataType d;
 	(void)ring.Extract(0, d);
-	ASSERT_TRUE("EoF after close + drain", ring.EoF());
-
-	RETURN_TEST("test_ring_close_mechanism", 0);
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
 }
 
-int test_ring_move_semantics() {
-	Ring r1;
-	ASSERT_TRUE("write", r1.Write("Data"));
-	ASSERT_TRUE("write more", r1.Write("More"));
-
-	Ring r2 = std::move(r1);
-	ASSERT_EQUAL("moved size", r2.Size(), 8u);
-
+int test_ring_drop() {
+	const std::string fn = "test_ring_drop";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("0123456789"));
+	ASSERT_TRUE(fn, ring.Drop(4));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
 	DataType data;
-	ASSERT_TRUE("read from moved", r2.Read(0, data));
-	ASSERT_EQUAL("content", ToString(data), std::string("DataMore"));
-
-	RETURN_TEST("test_ring_move_semantics", 0);
+	ASSERT_TRUE(fn, ring.Read(0, data));
+	ASSERT_EQUAL(fn, BytesToText(data), std::string("456789"));
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_empty_read_failure() {
+	const std::string fn = "test_ring_empty_read_failure";
 	Ring ring;
-	ring.Close(); // empty + closed → immediate false
-
+	ring.Close();
 	DataType data;
-	ASSERT_FALSE("Read(0) on empty closed returns false", ring.Read(0, data));
-	ASSERT_FALSE("Extract(0) on empty closed returns false", ring.Extract(0, data));
-	ASSERT_TRUE("EoF", ring.EoF());
-
-	RETURN_TEST("test_ring_empty_read_failure", 0);
+	ASSERT_FALSE(fn, ring.Read(0, data));
+	ASSERT_FALSE(fn, ring.Extract(0, data));
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
 }
 
-// ---------------------------------------------------------------------------
-// DESTRUCTIVE / POSITION
-// ---------------------------------------------------------------------------
+int test_ring_extract_destructive() {
+	const std::string fn = "test_ring_extract_destructive";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{8});
+	DataType first, rest;
+	ASSERT_TRUE(fn, ring.Extract(3, first));
+	ASSERT_EQUAL(fn, BytesToText(first), std::string("ABC"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ASSERT_TRUE(fn, ring.Extract(0, rest));
+	ASSERT_EQUAL(fn, BytesToText(rest), std::string("DEFGH"));
+	ASSERT_TRUE(fn, ring.Empty());
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{0});
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_move_semantics() {
+	const std::string fn = "test_ring_move_semantics";
+	Ring r1;
+	ASSERT_TRUE(fn, r1.Write("Data"));
+	ASSERT_TRUE(fn, r1.Write("More"));
+	Ring r2 = std::move(r1);
+	ASSERT_EQUAL(fn, r2.Size(), StormByte::Size{8});
+	DataType data;
+	ASSERT_TRUE(fn, r2.Read(0, data));
+	ASSERT_EQUAL(fn, BytesToText(data), std::string("DataMore"));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_multiple_writes() {
+	const std::string fn = "test_ring_multiple_writes";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("First"));
+	ASSERT_TRUE(fn, ring.Write("Second"));
+	ASSERT_TRUE(fn, ring.Write("Third"));
+	ring.Close();
+	DataType all;
+	ASSERT_TRUE(fn, ring.Read(0, all));
+	ASSERT_EQUAL(fn, BytesToText(all), std::string("FirstSecondThird"));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_peek_does_not_consume() {
+	const std::string fn = "test_ring_peek_does_not_consume";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
+	ring.Close();
+	DataType p1, p2, r1, r2;
+	ASSERT_TRUE(fn, ring.Peek(4, p1));
+	ASSERT_EQUAL(fn, BytesToText(p1), std::string("ABCD"));
+	ASSERT_TRUE(fn, ring.Peek(4, p2));
+	ASSERT_EQUAL(fn, BytesToText(p2), std::string("ABCD"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{8});
+	ASSERT_TRUE(fn, ring.Read(4, r1));
+	ASSERT_EQUAL(fn, BytesToText(r1), std::string("ABCD"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{4});
+	ASSERT_TRUE(fn, ring.Read(4, r2));
+	ASSERT_EQUAL(fn, BytesToText(r2), std::string("EFGH"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_seek_operations() {
+	const std::string fn = "test_ring_seek_operations";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("0123456789"));
+	ring.Close();
+	DataType from5, fromStart, from7;
+	ASSERT_TRUE(fn, ring.Read(5, from5));
+	ASSERT_EQUAL(fn, BytesToText(from5), std::string("01234"));
+	ring.Seek(-5, Position::Relative);
+	ASSERT_TRUE(fn, ring.Read(0, fromStart));
+	ASSERT_EQUAL(fn, BytesToText(fromStart), std::string("0123456789"));
+	ring.Seek(7, Position::Absolute);
+	ASSERT_TRUE(fn, ring.Read(3, from7));
+	ASSERT_EQUAL(fn, BytesToText(from7), std::string("789"));
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// Position
+// -------------------
 
 int test_ring_extract_then_seek() {
+	const std::string fn = "test_ring_extract_then_seek";
 	Ring ring;
-	ASSERT_TRUE("write", ring.Write("ABCDEFGHIJ"));
+	ASSERT_TRUE(fn, ring.Write("ABCDEFGHIJ"));
 	DataType part;
-	ASSERT_TRUE("extract 4", ring.Extract(4, part));
-	ASSERT_EQUAL("ABCD", ToString(part), std::string("ABCD"));
-	ASSERT_EQUAL("size", ring.Size(), 6u);
-
+	ASSERT_TRUE(fn, ring.Extract(4, part));
+	ASSERT_EQUAL(fn, BytesToText(part), std::string("ABCD"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
 	ring.Seek(2, Position::Absolute);
 	DataType mid;
-	ASSERT_TRUE("read mid", ring.Read(3, mid));
-	ASSERT_EQUAL("GHI", ToString(mid), std::string("GHI"));
-
-	RETURN_TEST("test_ring_extract_then_seek", 0);
-}
-
-int test_ring_partial_extract_leaves_valid_position() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("0123456789"));
-	ring.Seek(3, Position::Absolute);
-
-	DataType mid;
-	ASSERT_TRUE("extract 4 from middle", ring.Extract(4, mid));
-	ASSERT_EQUAL("3456", ToString(mid), std::string("3456"));
-	ASSERT_EQUAL("size after middle extract", ring.Size(), 6u);
-	ASSERT_EQUAL("available after middle extract", ring.AvailableBytes(), 3u);
-
-	DataType rest;
-	ASSERT_TRUE("extract rest (suffix only)", ring.Extract(0, rest));
-	ASSERT_EQUAL("rest content length", rest.size(), 3u);
-	ASSERT_EQUAL("rest content", ToString(rest), std::string("789"));
-	ASSERT_EQUAL("size after suffix extract", ring.Size(), 3u);
-	ASSERT_EQUAL("available now 0", ring.AvailableBytes(), 0u);
-
-	ring.Clean();
-	ASSERT_TRUE("empty after Clean", ring.Empty());
-
-	RETURN_TEST("test_ring_partial_extract_leaves_valid_position", 0);
-}
-
-int test_ring_extract_zero_returns_all() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("TestData"));
-	ring.Close();
-
-	DataType data;
-	ASSERT_TRUE("Extract(0)", ring.Extract(0, data));
-	ASSERT_EQUAL("all 8 bytes", data.size(), 8u);
-	ASSERT_TRUE("empty afterwards", ring.Empty());
-
-	RETURN_TEST("test_ring_extract_zero_returns_all", 0);
-}
-
-/** Open empty: Read(0) must wait; Close unblocks with false. */
-int test_ring_read_zero_on_open_empty_waits_until_close() {
-	Ring ring;
-	std::atomic<bool> finished{false};
-	bool read_ok = true;
-
-	std::thread consumer([&] {
-		DataType data;
-		read_ok = ring.Read(0, data); // blocks until Close
-		finished = true;
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(30));
-	ASSERT_FALSE("still blocked on open empty", finished.load());
-
-	ring.Close();
-	consumer.join();
-
-	ASSERT_TRUE("unblocked", finished.load());
-	ASSERT_FALSE("Read(0) fails after empty close", read_ok);
-	ASSERT_TRUE("EoF", ring.EoF());
-
-	RETURN_TEST("test_ring_read_zero_on_open_empty_waits_until_close", 0);
-}
-
-/** Open empty closed path is already covered; keep explicit closed-empty check. */
-int test_ring_read_zero_on_closed_empty_fails() {
-	Ring ring;
-	ring.Close();
-	DataType data;
-	ASSERT_FALSE("Read(0) empty closed fails", ring.Read(0, data));
-	ASSERT_FALSE("Extract(0) empty closed fails", ring.Extract(0, data));
-	RETURN_TEST("test_ring_read_zero_on_closed_empty_fails", 0);
+	ASSERT_TRUE(fn, ring.Read(3, mid));
+	ASSERT_EQUAL(fn, BytesToText(mid), std::string("GHI"));
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_extract_until_eof_waits_for_producer() {
+	const std::string fn = "test_ring_extract_until_eof_waits_for_producer";
 	Ring ring;
-	std::string result;
-
 	std::thread producer([&] {
 		std::this_thread::sleep_for(std::chrono::milliseconds(30));
 		(void)ring.Write("Hello");
@@ -352,99 +261,417 @@ int test_ring_extract_until_eof_waits_for_producer() {
 		(void)ring.Write("World");
 		ring.Close();
 	});
-
 	DataType all;
-	ring.ExtractUntilEoF(all); // must not return early
-	result = ToString(all);
+	ring.ExtractUntilEoF(all);
 	producer.join();
-
-	ASSERT_EQUAL("full payload", result, std::string("HelloWorld"));
-	ASSERT_TRUE("EoF", ring.EoF());
-	RETURN_TEST("test_ring_extract_until_eof_waits_for_producer", 0);
+	ASSERT_EQUAL(fn, BytesToText(all), std::string("HelloWorld"));
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
 }
 
-// ---------------------------------------------------------------------------
-// THREADING
-// ---------------------------------------------------------------------------
-
-int test_ring_single_writer_single_reader() {
+int test_ring_extract_zero_returns_all() {
+	const std::string fn = "test_ring_extract_zero_returns_all";
 	Ring ring;
-	const int messages = 100;
-	std::atomic<bool> writer_done{false};
-	std::string collected;
+	ASSERT_TRUE(fn, ring.Write("TestData"));
+	ring.Close();
+	DataType data;
+	ASSERT_TRUE(fn, ring.Extract(0, data));
+	ASSERT_EQUAL(fn, data.size(), static_cast<std::size_t>(8));
+	ASSERT_TRUE(fn, ring.Empty());
+	RETURN_TEST(fn, 0);
+}
 
-	std::thread writer([&] {
-		for (int i = 0; i < messages; ++i)
-			(void)ring.Write(std::to_string(i) + ",");
-		ring.Close();
-		writer_done = true;
+int test_ring_partial_extract_leaves_valid_position() {
+	const std::string fn = "test_ring_partial_extract_leaves_valid_position";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("0123456789"));
+	ring.Seek(3, Position::Absolute);
+	DataType mid;
+	ASSERT_TRUE(fn, ring.Extract(4, mid));
+	ASSERT_EQUAL(fn, BytesToText(mid), std::string("3456"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{6});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{3});
+	DataType rest;
+	ASSERT_TRUE(fn, ring.Extract(0, rest));
+	ASSERT_EQUAL(fn, rest.size(), static_cast<std::size_t>(3));
+	ASSERT_EQUAL(fn, BytesToText(rest), std::string("789"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{3});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ring.Clean();
+	ASSERT_TRUE(fn, ring.Empty());
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_read_zero_on_closed_empty_fails() {
+	const std::string fn = "test_ring_read_zero_on_closed_empty_fails";
+	Ring ring;
+	ring.Close();
+	DataType data;
+	ASSERT_FALSE(fn, ring.Read(0, data));
+	ASSERT_FALSE(fn, ring.Extract(0, data));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_read_zero_on_open_empty_waits_until_close() {
+	const std::string fn = "test_ring_read_zero_on_open_empty_waits_until_close";
+	Ring ring;
+	std::atomic<bool> finished{false};
+	bool read_ok = true;
+	std::thread consumer([&] {
+		DataType data;
+		read_ok = ring.Read(0, data);
+		finished = true;
 	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	ASSERT_FALSE(fn, finished.load());
+	ring.Close();
+	consumer.join();
+	ASSERT_TRUE(fn, finished.load());
+	ASSERT_FALSE(fn, read_ok);
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
+}
 
+// -------------------
+// Stress
+// -------------------
+
+int test_ring_alternating_small_large() {
+	const std::string fn = "test_ring_alternating_small_large";
+	Ring ring;
+	std::atomic<std::size_t> total{0};
+	std::thread writer([&] {
+		for (int i = 0; i < 20; ++i) {
+			if (i % 2 == 0)
+				(void)ring.Write("X");
+			else
+				(void)ring.Write(std::string(1000, 'Y'));
+			std::this_thread::sleep_for(std::chrono::microseconds(50));
+		}
+		ring.Close();
+	});
 	std::thread reader([&] {
 		DataType all;
 		ring.ExtractUntilEoF(all);
-		collected = ToString(all);
+		total = all.size();
 	});
-
 	writer.join();
 	reader.join();
+	ASSERT_EQUAL(fn, total.load(), static_cast<std::size_t>(10 * 1 + 10 * 1000));
+	RETURN_TEST(fn, 0);
+}
 
-	ASSERT_TRUE("writer done", writer_done.load());
-	ASSERT_TRUE("got data", !collected.empty());
-	ASSERT_TRUE("EoF", ring.EoF());
-	RETURN_TEST("test_ring_single_writer_single_reader", 0);
+int test_ring_available_bytes_consistency() {
+	const std::string fn = "test_ring_available_bytes_consistency";
+	Ring ring;
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_TRUE(fn, ring.Write("TEST DATA"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{9});
+	DataType r1;
+	ASSERT_TRUE(fn, ring.Read(4, r1));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{5});
+	ring.Seek(0, Position::Absolute);
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{9});
+	DataType e1;
+	ASSERT_TRUE(fn, ring.Extract(3, e1));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{6});
+	ASSERT_TRUE(fn, ring.Write("MORE"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{10});
+	ring.Seek(0, Position::Absolute);
+	DataType all;
+	ASSERT_TRUE(fn, ring.Read(0, all));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_burst_then_drain() {
+	const std::string fn = "test_ring_burst_then_drain";
+	Ring ring;
+	std::atomic<std::size_t> total{0};
+	std::thread writer([&] {
+		for (int i = 0; i < 1000; ++i)
+			(void)ring.Write("0123456789");
+		ring.Close();
+	});
+	std::thread reader([&] {
+		DataType all;
+		ring.ExtractUntilEoF(all);
+		total = all.size();
+	});
+	writer.join();
+	reader.join();
+	ASSERT_EQUAL(fn, total.load(), static_cast<std::size_t>(10000));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_clear_while_producing() {
+	const std::string fn = "test_ring_clear_while_producing";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("InitialData"));
+	ASSERT_TRUE(fn, ring.Size() > 0);
+	ring.Clear();
+	ASSERT_TRUE(fn, ring.Empty());
+	ASSERT_TRUE(fn, ring.Write("AfterClear"));
+	ring.Close();
+	DataType data;
+	ASSERT_TRUE(fn, ring.Extract(0, data));
+	ASSERT_EQUAL(fn, BytesToText(data), std::string("AfterClear"));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_interleaved_read_extract() {
+	const std::string fn = "test_ring_interleaved_read_extract";
+	Ring ring;
+	ASSERT_TRUE(fn, ring.Write("ABCDEFGH"));
+	ring.Close();
+	DataType r1, e1;
+	ASSERT_TRUE(fn, ring.Read(5, r1));
+	ASSERT_EQUAL(fn, BytesToText(r1), std::string("ABCDE"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{3});
+	ASSERT_TRUE(fn, ring.Extract(3, e1));
+	ASSERT_EQUAL(fn, BytesToText(e1), std::string("FGH"));
+	ASSERT_EQUAL(fn, ring.Size(), StormByte::Size{5});
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{0});
+	ASSERT_FALSE(fn, ring.Empty());
+	ring.Clean();
+	ASSERT_TRUE(fn, ring.Empty());
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_partial_read_on_closed() {
+	const std::string fn = "test_ring_partial_read_on_closed";
+	Ring ring;
+	const std::string msg(30, 'Z');
+	ASSERT_TRUE(fn, ring.Write(msg));
+	ring.Close();
+	DataType data;
+	ASSERT_FALSE(fn, ring.Read(50, data));
+	DataType rem;
+	ASSERT_TRUE(fn, ring.Read(0, rem));
+	ASSERT_EQUAL(fn, rem.size(), static_cast<std::size_t>(30));
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_polymorphic_interface_abi() {
+	const std::string fn = "test_ring_polymorphic_interface_abi";
+	std::unique_ptr<ReadWrite> ring = std::make_unique<Ring>();
+	ReadOnly& reader = *ring;
+	WriteOnly& writer = *ring;
+	DataType data {std::byte{'A'}, std::byte{'B'}};
+	ASSERT_TRUE(fn, writer.Write(0, std::move(data)));
+	ASSERT_TRUE(fn, writer.IsWritable());
+	ASSERT_EQUAL(fn, reader.AvailableBytes(), StormByte::Size{2});
+	ASSERT_FALSE(fn, reader.Empty());
+	ASSERT_TRUE(fn, reader.IsReadable());
+	DataType peek;
+	ASSERT_TRUE(fn, reader.Peek(1, peek));
+	DataType read;
+	ASSERT_TRUE(fn, reader.Read(1, read));
+	reader.Seek(0, Position::Absolute);
+	ASSERT_TRUE(fn, reader.Drop(1));
+	reader.Clean();
+	reader.Clear();
+	writer.Close();
+	ASSERT_TRUE(fn, reader.EoF());
+	DataType until_eof;
+	reader.ReadUntilEoF(until_eof);
+	reader.ExtractUntilEoF(until_eof);
+	ring.reset();
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_stress_rapid_small_writes() {
+	const std::string fn = "test_ring_stress_rapid_small_writes";
+	Ring ring;
+	std::atomic<std::size_t> written{0}, read{0};
+	std::thread writer([&] {
+		for (int i = 0; i < 1000; ++i) {
+			(void)ring.Write("X");
+			written.fetch_add(1);
+		}
+		ring.Close();
+	});
+	std::thread reader([&] {
+		DataType all;
+		ring.ExtractUntilEoF(all);
+		read = all.size();
+	});
+	writer.join();
+	reader.join();
+	ASSERT_EQUAL(fn, written.load(), static_cast<std::size_t>(1000));
+	ASSERT_EQUAL(fn, read.load(), written.load());
+	ASSERT_TRUE(fn, ring.Empty());
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_very_large_transfer() {
+	const std::string fn = "test_ring_very_large_transfer";
+	Ring ring;
+	const std::size_t large = 1u << 20;
+	std::atomic<std::size_t> received{0};
+	std::thread writer([&] {
+		const std::size_t chunk = 8192;
+		for (std::size_t i = 0; i < large; i += chunk) {
+			std::string block(chunk, static_cast<char>('A' + (i / chunk) % 26));
+			(void)ring.Write(block);
+		}
+		ring.Close();
+	});
+	std::thread reader([&] {
+		DataType all;
+		ring.ExtractUntilEoF(all);
+		received = all.size();
+	});
+	writer.join();
+	reader.join();
+	ASSERT_EQUAL(fn, received.load(), large);
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
+// Threading
+// -------------------
+
+int test_ring_blocking_read_waits_for_data() {
+	const std::string fn = "test_ring_blocking_read_waits_for_data";
+	Ring ring;
+	std::atomic<bool> started{false}, finished{false};
+	std::string result;
+	std::thread consumer([&] {
+		started = true;
+		DataType data;
+		if (ring.Read(10, data))
+			result = BytesToText(data);
+		finished = true;
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	ASSERT_TRUE(fn, started.load());
+	ASSERT_FALSE(fn, finished.load());
+	(void)ring.Write("AB");
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	ASSERT_FALSE(fn, finished.load());
+	(void)ring.Write("CDEFGHIJ");
+	ring.Close();
+	consumer.join();
+	ASSERT_TRUE(fn, finished.load());
+	ASSERT_EQUAL(fn, result, std::string("ABCDEFGHIJ"));
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_close_unblocks_waiter() {
+	const std::string fn = "test_ring_close_unblocks_waiter";
+	Ring ring;
+	std::atomic<bool> completed{false};
+	std::string result;
+	std::thread consumer([&] {
+		DataType data;
+		if (ring.Read(100, data))
+			result = BytesToText(data);
+		else if (ring.AvailableBytes() > 0) {
+			DataType rem;
+			if (ring.Read(0, rem))
+				result = BytesToText(rem);
+		}
+		completed = true;
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(15));
+	(void)ring.Write("Short");
+	ring.Close();
+	consumer.join();
+	ASSERT_TRUE(fn, completed.load());
+	ASSERT_EQUAL(fn, result, std::string("Short"));
+	ASSERT_TRUE(fn, result.size() < 100);
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_multiple_writers_single_reader() {
+	const std::string fn = "test_ring_multiple_writers_single_reader";
 	Ring ring;
 	const int chunks_per = 50;
 	std::atomic<int> finished{0};
 	std::string collected;
-
 	auto writer_fn = [&](char id) {
 		for (int i = 0; i < chunks_per; ++i)
 			(void)ring.Write(std::string(1, id));
 		finished.fetch_add(1);
 	};
-
 	std::thread w1(writer_fn, 'A');
 	std::thread w2(writer_fn, 'B');
 	std::thread w3(writer_fn, 'C');
-
 	std::thread closer([&] {
 		while (finished.load() < 3)
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		ring.Close();
 	});
-
 	std::thread reader([&] {
 		DataType all;
 		ring.ExtractUntilEoF(all);
-		collected = ToString(all);
+		collected = BytesToText(all);
 	});
-
-	w1.join(); w2.join(); w3.join();
+	w1.join();
+	w2.join();
+	w3.join();
 	closer.join();
 	reader.join();
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'A')),
+		static_cast<std::size_t>(chunks_per));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'B')),
+		static_cast<std::size_t>(chunks_per));
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(std::count(collected.begin(), collected.end(), 'C')),
+		static_cast<std::size_t>(chunks_per));
+	ASSERT_EQUAL(fn, collected.size(), static_cast<std::size_t>(chunks_per * 3));
+	RETURN_TEST(fn, 0);
+}
 
-	ASSERT_EQUAL("A count", std::count(collected.begin(), collected.end(), 'A'), static_cast<size_t>(chunks_per));
-	ASSERT_EQUAL("B count", std::count(collected.begin(), collected.end(), 'B'), static_cast<size_t>(chunks_per));
-	ASSERT_EQUAL("C count", std::count(collected.begin(), collected.end(), 'C'), static_cast<size_t>(chunks_per));
-	ASSERT_EQUAL("total", collected.size(), static_cast<size_t>(chunks_per * 3));
-	RETURN_TEST("test_ring_multiple_writers_single_reader", 0);
+int test_ring_peek_blocking() {
+	const std::string fn = "test_ring_peek_blocking";
+	Ring ring;
+	std::thread writer([&] {
+		std::this_thread::sleep_for(std::chrono::milliseconds(25));
+		(void)ring.Write("0123456789");
+		ring.Close();
+	});
+	DataType data;
+	ASSERT_TRUE(fn, ring.Peek(10, data));
+	ASSERT_EQUAL(fn, BytesToText(data), std::string("0123456789"));
+	ASSERT_EQUAL(fn, ring.AvailableBytes(), StormByte::Size{10});
+	writer.join();
+	RETURN_TEST(fn, 0);
+}
+
+int test_ring_set_error_unblocks_and_fails() {
+	const std::string fn = "test_ring_set_error_unblocks_and_fails";
+	Ring ring;
+	std::atomic<bool> completed{false};
+	bool read_ok = true;
+	std::thread consumer([&] {
+		DataType data;
+		read_ok = ring.Read(50, data);
+		completed = true;
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(15));
+	ring.SetError();
+	consumer.join();
+	ASSERT_TRUE(fn, completed.load());
+	ASSERT_FALSE(fn, read_ok);
+	ASSERT_TRUE(fn, ring.HasError());
+	ASSERT_FALSE(fn, ring.IsReadable());
+	ASSERT_FALSE(fn, ring.IsWritable());
+	RETURN_TEST(fn, 0);
 }
 
 int test_ring_single_writer_multiple_readers() {
+	const std::string fn = "test_ring_single_writer_multiple_readers";
 	Ring ring;
 	const int total = 200;
-	std::atomic<size_t> c1{0}, c2{0}, c3{0};
-
+	std::atomic<std::size_t> c1{0}, c2{0}, c3{0};
 	std::thread writer([&] {
-		for (int i = 0; i < total; ++i) (void)ring.Write("X");
+		for (int i = 0; i < total; ++i)
+			(void)ring.Write("X");
 		ring.Close();
 	});
-
-	auto reader_fn = [&](std::atomic<size_t>& counter) {
+	auto reader_fn = [&](std::atomic<std::size_t>& counter) {
 		while (!ring.EoF()) {
 			DataType part;
 			if (ring.Extract(5, part) && !part.empty())
@@ -454,380 +681,102 @@ int test_ring_single_writer_multiple_readers() {
 			else
 				std::this_thread::yield();
 		}
-
 		DataType rem;
 		if (ring.Extract(0, rem) && !rem.empty())
 			counter += rem.size();
 	};
-
 	std::thread r1(reader_fn, std::ref(c1));
 	std::thread r2(reader_fn, std::ref(c2));
 	std::thread r3(reader_fn, std::ref(c3));
-
-	writer.join(); r1.join(); r2.join(); r3.join();
-
-	size_t sum = c1 + c2 + c3;
-	ASSERT_EQUAL("all data consumed", sum, static_cast<size_t>(total));
-	ASSERT_TRUE("at least one reader got data", (c1 > 0) || (c2 > 0) || (c3 > 0));
-	RETURN_TEST("test_ring_single_writer_multiple_readers", 0);
-}
-
-int test_ring_blocking_read_waits_for_data() {
-	Ring ring;
-	std::atomic<bool> started{false}, finished{false};
-	std::string result;
-
-	std::thread consumer([&] {
-		started = true;
-		DataType data;
-		bool ok = ring.Read(10, data);
-		if (ok) result = ToString(data);
-		finished = true;
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	ASSERT_TRUE("consumer started", started.load());
-	ASSERT_FALSE("still blocked", finished.load());
-
-	(void)ring.Write("AB");
-	std::this_thread::sleep_for(std::chrono::milliseconds(20));
-	ASSERT_FALSE("still blocked after partial", finished.load());
-
-	(void)ring.Write("CDEFGHIJ");
-	ring.Close();
-	consumer.join();
-
-	ASSERT_TRUE("unblocked", finished.load());
-	ASSERT_EQUAL("got all 10", result, std::string("ABCDEFGHIJ"));
-	RETURN_TEST("test_ring_blocking_read_waits_for_data", 0);
-}
-
-int test_ring_close_unblocks_waiter() {
-	Ring ring;
-	std::atomic<bool> completed{false};
-	std::string result;
-
-	std::thread consumer([&] {
-		DataType data;
-		bool ok = ring.Read(100, data);
-		if (ok) result = ToString(data);
-		else if (ring.AvailableBytes() > 0) {
-			DataType rem;
-			if (ring.Read(0, rem)) result = ToString(rem);
-		}
-
-		completed = true;
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(15));
-	(void)ring.Write("Short");
-	ring.Close();
-	consumer.join();
-
-	ASSERT_TRUE("completed", completed.load());
-	ASSERT_EQUAL("got short data", result, std::string("Short"));
-	ASSERT_TRUE("less than requested", result.size() < 100);
-	RETURN_TEST("test_ring_close_unblocks_waiter", 0);
-}
-
-int test_ring_set_error_unblocks_and_fails() {
-	Ring ring;
-	std::atomic<bool> completed{false};
-	bool read_ok = true;
-
-	std::thread consumer([&] {
-		DataType data;
-		read_ok = ring.Read(50, data);
-		completed = true;
-	});
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(15));
-	ring.SetError();
-	consumer.join();
-
-	ASSERT_TRUE("unblocked", completed.load());
-	ASSERT_FALSE("read failed after error", read_ok);
-	ASSERT_TRUE("HasError", ring.HasError());
-	ASSERT_FALSE("IsReadable", ring.IsReadable());
-	ASSERT_FALSE("IsWritable", ring.IsWritable());
-	RETURN_TEST("test_ring_set_error_unblocks_and_fails", 0);
-}
-
-int test_ring_peek_blocking() {
-	Ring ring;
-	std::thread writer([&] {
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
-		(void)ring.Write("0123456789");
-		ring.Close();
-	});
-
-	DataType data;
-	ASSERT_TRUE("peek blocks then succeeds", ring.Peek(10, data));
-	ASSERT_EQUAL("content", ToString(data), std::string("0123456789"));
-	ASSERT_EQUAL("still available", ring.AvailableBytes(), 10u);
 	writer.join();
-	RETURN_TEST("test_ring_peek_blocking", 0);
+	r1.join();
+	r2.join();
+	r3.join();
+	ASSERT_EQUAL(fn, c1.load() + c2.load() + c3.load(), static_cast<std::size_t>(total));
+	ASSERT_TRUE(fn, (c1.load() > 0) || (c2.load() > 0) || (c3.load() > 0));
+	RETURN_TEST(fn, 0);
 }
 
-// ---------------------------------------------------------------------------
-// STRESS
-// ---------------------------------------------------------------------------
-
-int test_ring_stress_rapid_small_writes() {
+int test_ring_single_writer_single_reader() {
+	const std::string fn = "test_ring_single_writer_single_reader";
 	Ring ring;
-	std::atomic<size_t> written{0}, read{0};
-
+	const int messages = 100;
+	std::atomic<bool> writer_done{false};
+	std::string collected;
 	std::thread writer([&] {
-		for (int i = 0; i < 1000; ++i) {
-			(void)ring.Write("X");
-			written.fetch_add(1);
-		}
-
+		for (int i = 0; i < messages; ++i)
+			(void)ring.Write(std::to_string(i) + ",");
 		ring.Close();
+		writer_done = true;
 	});
-
 	std::thread reader([&] {
 		DataType all;
 		ring.ExtractUntilEoF(all);
-		read = all.size();
+		collected = BytesToText(all);
 	});
-
-	writer.join(); reader.join();
-	ASSERT_EQUAL("written", written.load(), 1000u);
-	ASSERT_EQUAL("read == written", read.load(), written.load());
-	ASSERT_TRUE("empty", ring.Empty());
-	RETURN_TEST("test_ring_stress_rapid_small_writes", 0);
-}
-
-int test_ring_very_large_transfer() {
-	Ring ring;
-	const size_t large = 1u << 20;
-	std::atomic<size_t> received{0};
-
-	std::thread writer([&] {
-		const size_t chunk = 8192;
-		for (size_t i = 0; i < large; i += chunk) {
-			std::string block(chunk, static_cast<char>('A' + (i / chunk) % 26));
-			(void)ring.Write(block);
-		}
-
-		ring.Close();
-	});
-
-	std::thread reader([&] {
-		DataType all;
-		ring.ExtractUntilEoF(all);
-		received = all.size();
-	});
-
-	writer.join(); reader.join();
-	ASSERT_EQUAL("received 1 MiB", received.load(), large);
-	RETURN_TEST("test_ring_very_large_transfer", 0);
-}
-
-int test_ring_alternating_small_large() {
-	Ring ring;
-	std::atomic<size_t> total{0};
-
-	std::thread writer([&] {
-		for (int i = 0; i < 20; ++i) {
-			if (i % 2 == 0) (void)ring.Write("X");
-			else            (void)ring.Write(std::string(1000, 'Y'));
-			std::this_thread::sleep_for(std::chrono::microseconds(50));
-		}
-
-		ring.Close();
-	});
-
-	std::thread reader([&] {
-		DataType all;
-		ring.ExtractUntilEoF(all);
-		total = all.size();
-	});
-
-	writer.join(); reader.join();
-	const size_t expected = 10 * 1 + 10 * 1000;
-	ASSERT_EQUAL("total bytes", total.load(), expected);
-	RETURN_TEST("test_ring_alternating_small_large", 0);
-}
-
-int test_ring_clear_while_producing() {
-	Ring ring;
-	ASSERT_TRUE("initial", ring.Write("InitialData"));
-	ASSERT_TRUE("has data", ring.Size() > 0);
-
-	ring.Clear();
-	ASSERT_TRUE("cleared", ring.Empty());
-
-	ASSERT_TRUE("after clear", ring.Write("AfterClear"));
-	ring.Close();
-
-	DataType data;
-	ASSERT_TRUE("extract", ring.Extract(0, data));
-	ASSERT_EQUAL("content", ToString(data), std::string("AfterClear"));
-	RETURN_TEST("test_ring_clear_while_producing", 0);
-}
-
-int test_ring_interleaved_read_extract() {
-	Ring ring;
-	ASSERT_TRUE("write", ring.Write("ABCDEFGH"));
-	ring.Close();
-
-	DataType r1, e1;
-	ASSERT_TRUE("read 5", ring.Read(5, r1));
-	ASSERT_EQUAL("ABCDE", ToString(r1), std::string("ABCDE"));
-	ASSERT_EQUAL("available after read", ring.AvailableBytes(), 3u);
-
-	ASSERT_TRUE("extract 3", ring.Extract(3, e1));
-	ASSERT_EQUAL("FGH", ToString(e1), std::string("FGH"));
-	ASSERT_EQUAL("size after extract", ring.Size(), 5u);
-	ASSERT_EQUAL("available 0", ring.AvailableBytes(), 0u);
-	ASSERT_FALSE("not empty yet (prefix remains)", ring.Empty());
-
-	ring.Clean();
-	ASSERT_TRUE("empty after Clean", ring.Empty());
-
-	RETURN_TEST("test_ring_interleaved_read_extract", 0);
-}
-
-int test_ring_partial_read_on_closed() {
-	Ring ring;
-	const std::string msg(30, 'Z');
-	ASSERT_TRUE("write", ring.Write(msg));
-	ring.Close();
-
-	DataType data;
-	ASSERT_FALSE("Read(50) fails", ring.Read(50, data));
-
-	DataType rem;
-	ASSERT_TRUE("Read(0) succeeds", ring.Read(0, rem));
-	ASSERT_EQUAL("got 30", rem.size(), 30u);
-	ASSERT_TRUE("EoF", ring.EoF());
-
-	RETURN_TEST("test_ring_partial_read_on_closed", 0);
-}
-
-int test_ring_available_bytes_consistency() {
-	Ring ring;
-	ASSERT_EQUAL("empty", ring.AvailableBytes(), 0u);
-
-	ASSERT_TRUE("write 9", ring.Write("TEST DATA"));
-	ASSERT_EQUAL("9", ring.AvailableBytes(), 9u);
-
-	DataType r1;
-	ASSERT_TRUE("read 4", ring.Read(4, r1));
-	ASSERT_EQUAL("5 left", ring.AvailableBytes(), 5u);
-
-	ring.Seek(0, Position::Absolute);
-	ASSERT_EQUAL("after seek 0", ring.AvailableBytes(), 9u);
-
-	DataType e1;
-	ASSERT_TRUE("extract 3", ring.Extract(3, e1));
-	ASSERT_EQUAL("6 left", ring.AvailableBytes(), 6u);
-
-	ASSERT_TRUE("more", ring.Write("MORE"));
-	ASSERT_EQUAL("10", ring.AvailableBytes(), 10u);
-
-	ring.Seek(0, Position::Absolute);
-	DataType all;
-	ASSERT_TRUE("read all", ring.Read(0, all));
-	ASSERT_EQUAL("0 after full read", ring.AvailableBytes(), 0u);
-
-	RETURN_TEST("test_ring_available_bytes_consistency", 0);
-}
-
-int test_ring_burst_then_drain() {
-	Ring ring;
-	std::atomic<size_t> total{0};
-
-	std::thread writer([&] {
-		for (int i = 0; i < 1000; ++i)
-			(void)ring.Write("0123456789");
-		ring.Close();
-	});
-
-	std::thread reader([&] {
-		DataType all;
-		ring.ExtractUntilEoF(all);
-		total = all.size();
-	});
-
-	writer.join(); reader.join();
-	ASSERT_EQUAL("10 000 bytes", total.load(), 10000u);
-	RETURN_TEST("test_ring_burst_then_drain", 0);
-}
-
-int test_ring_polymorphic_interface_abi() {
-	std::unique_ptr<ReadWrite> ring = std::make_unique<Ring>();
-	ReadOnly& reader = *ring;
-	WriteOnly& writer = *ring;
-	DataType data {std::byte{'A'}, std::byte{'B'}};
-	ASSERT_TRUE("write", writer.Write(0, std::move(data)));
-	ASSERT_TRUE("writable", writer.IsWritable());
-	ASSERT_EQUAL("available", reader.AvailableBytes(), static_cast<std::size_t>(2));
-	ASSERT_FALSE("empty", reader.Empty());
-	ASSERT_TRUE("readable", reader.IsReadable());
-	DataType peek;
-	ASSERT_TRUE("peek", reader.Peek(1, peek));
-	DataType read;
-	ASSERT_TRUE("read", reader.Read(1, read));
-	reader.Seek(0, Position::Absolute);
-	ASSERT_TRUE("drop", reader.Drop(1));
-	reader.Clean();
-	reader.Clear();
-	writer.Close();
-	ASSERT_TRUE("eof after close", reader.EoF());
-	DataType until_eof;
-	reader.ReadUntilEoF(until_eof);
-	reader.ExtractUntilEoF(until_eof);
-	ring.reset();
-	RETURN_TEST("test_ring_polymorphic_interface_abi", 0);
+	writer.join();
+	reader.join();
+	ASSERT_TRUE(fn, writer_done.load());
+	ASSERT_FALSE(fn, collected.empty());
+	ASSERT_TRUE(fn, ring.EoF());
+	RETURN_TEST(fn, 0);
 }
 
 int main() {
 	int result = 0;
 
+	// -------------------
+	// Basic
+	// -------------------
 	result += test_ring_basic_write_read();
-	result += test_ring_multiple_writes();
+	result += test_ring_clear();
+	result += test_ring_clean_after_seek();
+	result += test_ring_close_mechanism();
+	result += test_ring_drop();
+	result += test_ring_empty_read_failure();
 	result += test_ring_extract_destructive();
+	result += test_ring_move_semantics();
+	result += test_ring_multiple_writes();
 	result += test_ring_peek_does_not_consume();
 	result += test_ring_seek_operations();
-	result += test_ring_clean_after_seek();
-	result += test_ring_drop();
-	result += test_ring_clear();
-	result += test_ring_close_mechanism();
-	result += test_ring_move_semantics();
-	result += test_ring_empty_read_failure();
 
+	// -------------------
+	// Position
+	// -------------------
 	result += test_ring_extract_then_seek();
-	result += test_ring_partial_extract_leaves_valid_position();
-	result += test_ring_extract_zero_returns_all();
-	result += test_ring_read_zero_on_open_empty_waits_until_close();
-	result += test_ring_read_zero_on_closed_empty_fails();
 	result += test_ring_extract_until_eof_waits_for_producer();
+	result += test_ring_extract_zero_returns_all();
+	result += test_ring_partial_extract_leaves_valid_position();
+	result += test_ring_read_zero_on_closed_empty_fails();
+	result += test_ring_read_zero_on_open_empty_waits_until_close();
 
-	result += test_ring_single_writer_single_reader();
-	result += test_ring_multiple_writers_single_reader();
-	result += test_ring_single_writer_multiple_readers();
-	result += test_ring_blocking_read_waits_for_data();
-	result += test_ring_close_unblocks_waiter();
-	result += test_ring_set_error_unblocks_and_fails();
-	result += test_ring_peek_blocking();
-
-	result += test_ring_stress_rapid_small_writes();
-	result += test_ring_very_large_transfer();
+	// -------------------
+	// Stress
+	// -------------------
 	result += test_ring_alternating_small_large();
+	result += test_ring_available_bytes_consistency();
+	result += test_ring_burst_then_drain();
 	result += test_ring_clear_while_producing();
 	result += test_ring_interleaved_read_extract();
 	result += test_ring_partial_read_on_closed();
-	result += test_ring_available_bytes_consistency();
-	result += test_ring_burst_then_drain();
 	result += test_ring_polymorphic_interface_abi();
+	result += test_ring_stress_rapid_small_writes();
+	result += test_ring_very_large_transfer();
+
+	// -------------------
+	// Threading
+	// -------------------
+	result += test_ring_blocking_read_waits_for_data();
+	result += test_ring_close_unblocks_waiter();
+	result += test_ring_multiple_writers_single_reader();
+	result += test_ring_peek_blocking();
+	result += test_ring_set_error_unblocks_and_fails();
+	result += test_ring_single_writer_multiple_readers();
+	result += test_ring_single_writer_single_reader();
 
 	if (result == 0)
-		std::cout << "All Ring tests passed!\n";
+		std::cout << "All tests passed!" << std::endl;
 	else
-		std::cout << result << " Ring test(s) failed.\n";
-
+		std::cout << result << " tests failed." << std::endl;
 	return result;
 }
