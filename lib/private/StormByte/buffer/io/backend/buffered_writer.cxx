@@ -150,7 +150,7 @@ bool BufferedWriter::Close() {
 }
 
 void BufferedWriter::Shutdown() {
-	m_stop.store(true);
+	m_stop.store(true, std::memory_order_release);
 	m_cv.notify_all();
 	StopWorker();
 	std::lock_guard lock(m_mutex);
@@ -175,32 +175,33 @@ bool BufferedWriter::IsOpen() const noexcept {
 }
 
 Result BufferedWriter::Flush() {
-	{
-		std::lock_guard lock(m_mutex);
-		if (!m_open || m_failed || !m_owner)
-			return { Status::Failed, 0 };
-		if (m_ring && m_ring->AvailableBytes() > 0) {
-			m_flush.store(true);
-			m_drain_run = true;
-			m_cv.notify_all();
-		}
-	}
+	std::unique_lock lock(m_mutex);
+	if (!m_open || m_failed || !m_owner)
+		return { Status::Failed, 0 };
 
-	if (m_ring) {
-		std::unique_lock lock(m_mutex);
+	const bool need_drain = m_ring && m_ring->AvailableBytes() > 0;
+	if (need_drain) {
+		m_flush.store(true, std::memory_order_release);
+		m_drain_run = true;
+		m_cv.notify_all();
 		m_cv.wait(lock, [this] {
-			return m_stop.load() || m_failed
-				|| !m_ring || m_ring->AvailableBytes() == 0;
+			return m_stop.load(std::memory_order_acquire)
+				|| m_failed
+				|| !m_ring
+				|| m_ring->AvailableBytes() == 0;
 		});
-		m_flush.store(false);
+		m_flush.store(false, std::memory_order_release);
 		m_drain_run = false;
 		if (m_failed)
 			return { Status::Error, 0 };
+		if (m_stop.load(std::memory_order_acquire))
+			return { Status::Failed, 0 };
 	}
+	lock.unlock();
 
 	const Result visible = m_owner->OriginFlush();
 	if (visible.status != Status::Ok) {
-		std::lock_guard lock(m_mutex);
+		std::lock_guard fault(m_mutex);
 		m_failed = true;
 		if (m_state == State::Idle)
 			m_state = State::Fault;
@@ -374,12 +375,12 @@ void BufferedWriter::MaxWait(const std::chrono::milliseconds wait) {
 void BufferedWriter::StartWorker() {
 	if (m_worker.joinable())
 		return;
-	m_stop.store(false);
+	m_stop.store(false, std::memory_order_release);
 	m_worker = std::thread(&BufferedWriter::Worker, this);
 }
 
 void BufferedWriter::StopWorker() {
-	m_stop.store(true);
+	m_stop.store(true, std::memory_order_release);
 	m_cv.notify_all();
 	if (m_worker.joinable())
 		m_worker.join();
@@ -389,7 +390,8 @@ void BufferedWriter::RequestDrain() const {
 	std::lock_guard lock(m_mutex);
 	if (!BufferedMode() || !m_ring)
 		return;
-	if (m_ring->AvailableBytes() < m_write_chunk && !m_flush.load())
+	if (m_ring->AvailableBytes() < m_write_chunk
+			&& !m_flush.load(std::memory_order_acquire))
 		return;
 	m_drain_run = true;
 	m_cv.notify_all();
@@ -399,9 +401,11 @@ void BufferedWriter::Worker() {
 	for (;;) {
 		std::unique_lock lock(m_mutex);
 		m_cv.wait(lock, [this] {
-			return m_stop.load() || m_drain_run || m_flush.load();
+			return m_stop.load(std::memory_order_acquire)
+				|| m_drain_run
+				|| m_flush.load(std::memory_order_acquire);
 		});
-		if (m_stop.load()) {
+		if (m_stop.load(std::memory_order_acquire)) {
 			m_cv.notify_all();
 			return;
 		}
@@ -409,8 +413,8 @@ void BufferedWriter::Worker() {
 		const std::size_t chunk = m_write_chunk;
 		lock.unlock();
 
-		while (!m_stop.load() && m_ring && m_owner) {
-			const bool flush = m_flush.load();
+		while (!m_stop.load(std::memory_order_acquire) && m_ring && m_owner) {
+			const bool flush = m_flush.load(std::memory_order_acquire);
 			const std::size_t dirty = m_ring->AvailableBytes();
 			if (dirty == 0)
 				break;
@@ -438,7 +442,9 @@ void BufferedWriter::Worker() {
 		lock.lock();
 		m_drain_run = false;
 		m_cv.notify_all();
-		if (!m_stop.load() && m_flush.load() && m_ring
+		if (!m_stop.load(std::memory_order_acquire)
+				&& m_flush.load(std::memory_order_acquire)
+				&& m_ring
 				&& m_ring->AvailableBytes() > 0) {
 			m_drain_run = true;
 			continue;
@@ -458,7 +464,7 @@ Result BufferedWriter::PushAll(const std::span<const std::byte> data) const {
 
 	std::size_t off = 0;
 	while (off < data.size()) {
-		if (m_stop.load())
+		if (m_stop.load(std::memory_order_acquire))
 			return { Status::Failed, 0 };
 		if (m_max_wait.count() != 0 && std::chrono::steady_clock::now() >= deadline)
 			return { Status::Error, off };
