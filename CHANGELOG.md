@@ -9,24 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on StormByte Base and optionally StormByte Logger. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network or System.
+It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network, String or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks).
+
+From 2.0.0, original Buffer sources are dual-licensed: GNU Lesser General Public License v3.0 or later, or a commercial license from the copyright holder. That change does not cover other StormByte modules or third-party material under `thirdparty/` (including bundled StormByte-Logger and the rest of the StormByte suite it vendors).
 
 If you landed here from a release link and have not read the tree:
 
 - What this module is, how to build it, and short examples: [README.md](https://github.com/StormBytePP/StormByte-Buffer/blob/master/README.md)
-- License: GNU Lesser General Public License version 3 or later, [LICENSE](https://github.com/StormBytePP/StormByte-Buffer/blob/master/LICENSE)
+- License: dual license LGPL-3.0-or-later or commercial, [LICENSE](https://github.com/StormBytePP/StormByte-Buffer/blob/master/LICENSE)
 
 ## [Unreleased]
 
-### Added
-
 ### Changed
 
-### Fixed
-
-### Removed
+- **License:** original Buffer sources are dual-licensed LGPL-3.0-or-later or commercial. Third-party trees under `thirdparty/` keep their own licenses. Neither license grants patent rights.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
 
