@@ -82,22 +82,6 @@ namespace {
 #endif
 	}
 
-#ifdef WINDOWS
-	bool CommitVisible(const std::filesystem::path& path) {
-		const auto wide = path.wstring();
-		if (wide.empty())
-			return false;
-		const HANDLE handle = CreateFileW(wide.c_str(), GENERIC_WRITE,
-			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-			nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (handle == INVALID_HANDLE_VALUE)
-			return false;
-		const BOOL ok = FlushFileBuffers(handle);
-		CloseHandle(handle);
-		return ok != 0;
-	}
-#endif
-
 	bool OpenRandomAccess(std::ofstream& file, const std::filesystem::path& path) {
 		file.open(path, std::ios::in | std::ios::out | std::ios::binary);
 		if (file)
@@ -275,9 +259,6 @@ Result BufferedFileWriter::OriginFlush() {
 		SetState(State::Fault);
 		return { Status::Error, 0 };
 	}
-#ifdef WINDOWS
-	static_cast<void>(CommitVisible(m_path));
-#endif
 	return { Status::Ok, 0 };
 }
 
