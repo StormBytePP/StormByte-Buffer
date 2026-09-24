@@ -39,8 +39,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later OR LicenseRef-StormByte-Commercial
  */
 
-#include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/system/file.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <chrono>
@@ -61,7 +61,10 @@ using StormByte::Buffer::IO::ToString;
 
 namespace {
 	std::filesystem::path Scratch(const char* tag) {
-		return std::filesystem::temp_directory_path() / (std::string("sbw_") + tag + ".bin");
+		StormByte::String::String path;
+		if (!StormByte::System::File::Temporary(path, tag))
+			return {};
+		return std::filesystem::path(std::string(path));
 	}
 
 	std::string Slurp(const std::filesystem::path& path) {

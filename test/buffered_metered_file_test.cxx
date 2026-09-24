@@ -42,6 +42,7 @@
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
+#include <StormByte/system/file.hxx>
 #include <StormByte/test_handlers.h>
 
 #include <cstddef>
@@ -181,7 +182,10 @@ namespace {
 	}
 
 	std::filesystem::path Scratch(const char* tag) {
-		return std::filesystem::temp_directory_path() / (std::string("sbm_") + tag + ".bin");
+		StormByte::String::String path;
+		if (!StormByte::System::File::Temporary(path, tag))
+			return {};
+		return std::filesystem::path(std::string(path));
 	}
 
 	std::string Slurp(const std::filesystem::path& path) {

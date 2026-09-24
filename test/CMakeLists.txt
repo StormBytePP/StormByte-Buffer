@@ -1,7 +1,7 @@
 option(ENABLE_TEST "Enable Unit Tests" OFF)
 if(ENABLE_TEST)
 	enable_testing()
-	
+
 	add_executable(BridgeTests bridge_test.cxx)
 	target_link_libraries(BridgeTests StormByte-Buffer)
 	add_test(NAME BridgeTests COMMAND BridgeTests)
