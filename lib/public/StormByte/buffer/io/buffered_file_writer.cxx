@@ -40,7 +40,6 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
-#include <StormByte/buffer/io/device_throughput.hxx>
 
 #include <cstdint>
 #include <ios>
@@ -55,18 +54,7 @@
 using namespace StormByte::Buffer::IO;
 
 namespace {
-	constexpr StormByte::Size MinWindow{16ull * 1024ull};
-	constexpr StormByte::Size MaxWindow{1024ull * 1024ull};
 	constexpr std::size_t DefaultBackPressure = 4;
-
-	StormByte::Size WindowFromBps(const std::size_t bps) noexcept {
-		const StormByte::Size raw{bps / 500ull};
-		if (raw < MinWindow)
-			return MinWindow;
-		if (raw > MaxWindow)
-			return MaxWindow;
-		return raw;
-	}
 
 	std::filesystem::path SpacePath(const std::filesystem::path& path) {
 		std::error_code ec;
@@ -189,11 +177,18 @@ Result BufferedFileWriter::Seek(const std::ptrdiff_t offset, const Position mode
 	return { Status::Ok, 0 };
 }
 
+std::unique_ptr<StormByte::System::Device> BufferedFileWriter::CreateDevice() const {
+	return std::make_unique<StormByte::System::Device>(m_path);
+}
+
 void BufferedFileWriter::Setup() {
 	if (!m_probe_on_setup)
 		return;
-	const auto rate = ProbeDeviceThroughput(m_path);
-	WriteChunk(WindowFromBps(rate.write_bps));
+	const auto device = CreateDevice();
+	if (!device || !*device)
+		WriteChunk(StormByte::Size{0});
+	else
+		WriteChunk(device->Window().write);
 	BackPressure(DefaultBackPressure);
 }
 

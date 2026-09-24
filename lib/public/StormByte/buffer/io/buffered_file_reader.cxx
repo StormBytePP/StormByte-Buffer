@@ -40,7 +40,6 @@
  */
 
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
-#include <StormByte/buffer/io/device_throughput.hxx>
 #include <StormByte/buffer/fifo.hxx>
 
 #include <ios>
@@ -51,17 +50,6 @@ using namespace StormByte::Buffer::IO;
 
 namespace {
 	constexpr StormByte::Size DefaultMaxMemory{1024ull * 1024ull};
-	constexpr StormByte::Size MinWindow{16ull * 1024ull};
-	constexpr StormByte::Size MaxWindow{1024ull * 1024ull};
-
-	StormByte::Size WindowFromBps(const std::size_t bps) noexcept {
-		const StormByte::Size raw{bps / 500ull};
-		if (raw < MinWindow)
-			return MinWindow;
-		if (raw > MaxWindow)
-			return MaxWindow;
-		return raw;
-	}
 }
 
 BufferedFileReader::BufferedFileReader(std::filesystem::path path):
@@ -111,11 +99,19 @@ const std::filesystem::path& BufferedFileReader::Path() const noexcept {
 	return m_path;
 }
 
+std::unique_ptr<StormByte::System::Device> BufferedFileReader::CreateDevice() const {
+	return std::make_unique<StormByte::System::Device>(m_path);
+}
+
 void BufferedFileReader::Setup() {
 	if (!m_probe_on_setup)
 		return;
-	const auto rate = ProbeDeviceThroughput(m_path);
-	ReadAhead(WindowFromBps(rate.read_bps));
+	const auto device = CreateDevice();
+	if (!device || !*device) {
+		ReadAhead(StormByte::Size{0});
+		return;
+	}
+	ReadAhead(device->Window().read);
 }
 
 Result BufferedFileReader::OriginOpen() {

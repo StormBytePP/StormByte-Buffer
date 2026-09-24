@@ -43,9 +43,11 @@
 
 #include <StormByte/buffer/io/buffered_reader.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/system/device.hxx>
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -76,20 +78,23 @@ namespace StormByte {
 			 *
 			 * @par Constructors
 			 * @c BufferedFileReader(path) defers @ref ReadAhead to
-			 * @ref Setup (device probe). Initial @ref MaxMemory is 1 MiB.
+			 * @ref Setup (`CreateDevice` + @ref StormByte::System::Device::Window).
+			 * Initial @ref MaxMemory is 1 MiB.
 			 * @c BufferedFileReader(path, read_ahead, max_memory) stores
 			 * those values. @c read_ahead 0 disables prefetch.
 			 *
-			 * A derived class may override any @c Origin* hook and
-			 * @ref Setup. When the transport is still this file, call the
-			 * File implementation and then add behaviour. When it is not,
-			 * do not call these File implementations. Prefetch and Seek
-			 * stay in @ref BufferedReader.
+			 * A derived class may override any @c Origin* hook,
+			 * @ref Setup and @ref CreateDevice. Override @ref CreateDevice
+			 * to supply a @ref StormByte::System::Device derivative; File
+			 * only reads measurement and Window. When the transport is still
+			 * this file, call the File implementation and then add behaviour.
+			 * When it is not, do not call these File implementations.
+			 * Prefetch and Seek stay in @ref BufferedReader.
 			 *
 			 * The derived destructor must call @ref Close first.
 			 * File @ref Close is idempotent.
 			 *
-			 * @see BufferedReader, State
+			 * @see BufferedReader, State, StormByte::System::Device
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedFileReader: public BufferedReader {
 				public:
@@ -154,10 +159,20 @@ namespace StormByte {
 
 				protected:
 					/**
+					 * @brief Device used for path-only @ref Setup knobs.
+					 * @return Owned @ref StormByte::System::Device (or a derivative).
+					 *
+					 * Default is a @ref StormByte::System::Device on @c m_path.
+					 * A derived reader returns its own type; File does not slice.
+					 */
+					virtual std::unique_ptr<StormByte::System::Device> CreateDevice() const;
+
+					/**
 					 * @brief Apply device @ref ReadAhead when constructed from path only.
 					 *
 					 * No-op when the three-argument constructor already set
 					 * an explicit prefetch length (including 0 = off).
+					 * A failed Device probe leaves @ref ReadAhead at zero.
 					 */
 					void Setup() override;
 

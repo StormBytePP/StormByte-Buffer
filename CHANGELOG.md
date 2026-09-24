@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 StormByte Buffer is the byte-buffer module of the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network, String or System.
+It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer. This repository is not Base, Config, Crypto, Database, Logger, Multimedia, Network, String or System.
 
 Public headers under `StormByte/buffer/` cover FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, Bridge, Pipeline and `StormByte::Buffer::IO` (buffered binary sources and sinks).
 
-From 2.0.0, original Buffer sources are dual-licensed: GNU Lesser General Public License v3.0 or later, or a commercial license from the copyright holder. That change does not cover other StormByte modules or third-party material under `thirdparty/` (including bundled StormByte-Logger and the rest of the StormByte suite it vendors).
+From 2.0.0, original Buffer sources are dual-licensed: GNU Lesser General Public License v3.0 or later, or a commercial license from the copyright holder. That change does not cover other StormByte modules or third-party material under `thirdparty/` (including bundled StormByte-Logger, StormByte-System, StormByte-String and the rest of the StormByte suite they vendor).
 
 If you landed here from a release link and have not read the tree:
 
@@ -27,10 +27,15 @@ If you landed here from a release link and have not read the tree:
 - **License:** original Buffer sources are dual-licensed LGPL-3.0-or-later or commercial. Third-party trees under `thirdparty/` keep their own licenses. Neither license grants patent rights.
 - **Breaking:** public byte-length APIs use `StormByte::Size` instead of `std::size_t`. That covers occupancy, available bytes, `Read` / `Peek` / `Extract` / `Write` counts, `Tell`, `Dirty`, `Size` when it is a file or buffer length, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied`, Bridge high-water when it is a byte cap, and the matching test helpers. Implicit construction and mixed comparison / arithmetic with integer literals are part of the `Size` contract in Base.
 - Quantities that are not a byte length stay `std::size_t` (or `std::ptrdiff_t` for signed offsets): Hopper / Sink item counts, `BackPressure` as a chunk count, HexDump column count, and device rate fields until they become a byte length.
+- **Dependency:** Buffer now requires [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer (`Device`, `File::Temporary`). The library PUBLIC-links System (and String). Path-only `BufferedFileReader` / `BufferedFileWriter` take `ReadAhead` / `WriteChunk` from `CreateDevice()` + `Device::Window`. A derived File overrides `CreateDevice` and returns `unique_ptr<Device>` (no slicing). Failed probe leaves the chunk/prefetch at zero. Path-only writer `BackPressure` stays 4. Private Buffer device-throughput probe is gone.
+
+### Removed
+
+- Private Buffer device classification / `WindowFromBps` / `device_throughput` sources. Classification lives in System `Device`.
 
 ### Tests
 
-- Buffer tests rewritten to the current suite format (section banners, alphabetical names in body and `main`, local `BytesToText` instead of removed String helpers, no `StormByte::System::TempFileName`).
+- Buffer tests rewritten to the current suite format (section banners, alphabetical names in body and `main`, local `BytesToText` instead of removed String helpers). Scratch files use `StormByte::System::File::Temporary` instead of Base `TempFileName`.
 
 [Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
 

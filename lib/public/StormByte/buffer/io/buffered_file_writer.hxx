@@ -43,13 +43,12 @@
 
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/visibility.h>
+#include <StormByte/system/device.hxx>
 
-#include <chrono>
-#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
-#include <span>
 
 /**
  * @namespace StormByte
@@ -80,21 +79,24 @@ namespace StormByte {
 			 * dynamic.
 			 *
 			 * @par Constructors
-			 * @c BufferedFileWriter(path) defers chunk and backpressure to
-			 * @ref Setup (device probe). @c BufferedFileWriter(path,
+			 * @c BufferedFileWriter(path) defers chunk to @ref Setup
+			 * (`CreateDevice` + @ref StormByte::System::Device::Window).
+			 * Path-only @ref BackPressure is 4. @c BufferedFileWriter(path,
 			 * write_chunk, back_pressure, max_wait) stores those values.
 			 * A zero chunk or backpressure disables the ring.
 			 *
 			 * A derived class may override any @c Origin* hook, @ref Seek,
-			 * @ref Size, @ref WillWrite and @ref Setup. When the transport
-			 * is still this file, call the File implementation and then
-			 * add behaviour. When it is not, do not call these File
-			 * implementations.
+			 * @ref Size, @ref WillWrite, @ref Setup and @ref CreateDevice.
+			 * Override @ref CreateDevice to supply a
+			 * @ref StormByte::System::Device derivative; File only reads
+			 * measurement and Window. When the transport is still this file,
+			 * call the File implementation and then add behaviour. When it
+			 * is not, do not call these File implementations.
 			 *
 			 * The derived destructor must call @ref Close first.
 			 * File @ref Close is idempotent.
 			 *
-			 * @see BufferedWriter, State
+			 * @see BufferedWriter, State, StormByte::System::Device
 			 */
 			class STORMBYTE_BUFFER_PUBLIC BufferedFileWriter: public BufferedWriter {
 				public:
@@ -160,12 +162,10 @@ namespace StormByte {
 					virtual const std::filesystem::path& Path() const noexcept;
 
 					/**
-					 * @brief Logical file length in bytes.
-					 * @return max(filesystem size, @ref Tell).
-					 *
-					 * @ref Tell includes @ref Dirty. Does not Flush.
+					 * @brief On-disk size or the write cursor, whichever is larger.
+					 * @return Byte length.
 					 */
-					virtual StormByte::Size Size() const noexcept override;
+					virtual StormByte::Size Size() const noexcept;
 
 					/**
 					 * @brief Move the write cursor after flushing dirty bytes.
@@ -177,10 +177,20 @@ namespace StormByte {
 
 				protected:
 					/**
+					 * @brief Device used for path-only @ref Setup knobs.
+					 * @return Owned @ref StormByte::System::Device (or a derivative).
+					 *
+					 * Default is a @ref StormByte::System::Device on @c m_path.
+					 * A derived writer returns its own type; File does not slice.
+					 */
+					virtual std::unique_ptr<StormByte::System::Device> CreateDevice() const;
+
+					/**
 					 * @brief Apply device chunk and backpressure for the path-only ctor.
 					 *
 					 * No-op when the explicit constructor already set those knobs
-					 * (including 0 = ring off).
+					 * (including 0 = ring off). A failed Device probe leaves
+					 * @ref WriteChunk at zero. Path-only @ref BackPressure stays 4.
 					 */
 					virtual void Setup() override;
 
@@ -209,10 +219,6 @@ namespace StormByte {
 					/**
 					 * @brief Make written bytes visible to later readers of the path.
 					 * @return @ref Status::Ok, Error or Failed.
-					 *
-					 * After Ok the filesystem size is the written length.
-					 * On Windows this includes FlushFileBuffers when the
-					 * volume allows a shared handle.
 					 */
 					virtual Result OriginFlush() override;
 
@@ -223,21 +229,16 @@ namespace StormByte {
 					virtual Result OriginTruncate() override;
 
 					/**
-					 * @brief Seek the file to @p absolute.
-					 * @param absolute Byte offset from the start.
+					 * @brief Seek the file stream to an absolute byte offset.
+					 * @param absolute Byte offset from the start of the file.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 */
-					virtual Result OriginSeek(StormByte::Size absolute) override;
+					virtual Result OriginSeek(StormByte::Size absolute);
 
 					/**
-					 * @brief Ring cap and indicative free space on the volume.
-					 * @param n Prospective Write size.
-					 * @return @c false if the base rejects @p n or free space is
-					 *         below @p n. Query failure is @c false.
-					 *
-					 * Indicative. Another process, quotas or a network filesystem
-					 * can still reject the later Write. A derived writer that
-					 * is not a local volume should override this.
+					 * @brief Whether the volume looks able to accept @p n more bytes.
+					 * @param n Candidate write.
+					 * @return false when the base writer refuses or free space is short.
 					 */
 					virtual bool WillWrite(StormByte::Size n) const override;
 

@@ -21,9 +21,6 @@ if(MSVC)
 		$<$<CONFIG:Debug>:/Od>
 	)
 	target_compile_definitions(StormByte-Buffer PUBLIC UNICODE NOMINMAX)
-	target_link_libraries(StormByte-Buffer PRIVATE iphlpapi ws2_32)
-elseif(APPLE)
-	target_link_libraries(StormByte-Buffer PRIVATE "-framework IOKit" "-framework CoreFoundation")
 else()
 	target_compile_options(StormByte-Buffer PRIVATE
 		$<$<CONFIG:Debug>:-pipe -g -ggdb -Wall -Wextra -Wnon-virtual-dtor -pedantic -pedantic-errors -O0>
