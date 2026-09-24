@@ -69,7 +69,7 @@ namespace StormByte {
 		 * from @ref Producer::Consumer().
 		 *
 		 * All operations are thread-safe and delegate to the shared Ring.
-		 * Blocking semantics match @ref Ring: Read / Extract / Peek block until
+		 * Blocking semantics match @ref Ring. Read / Extract / Peek block until
 		 * data is available or the buffer is closed / in error.
 		 *
 		 * @par Lifecycle signalling
@@ -214,7 +214,7 @@ namespace StormByte {
 
 				/**
 				 * @brief Whether the shared Ring is in a permanent error state.
-				 * @return @c true after @ref SetError() on any handle to the same Ring.
+				 * @return @c true after @ref Producer::SetError on any handle to the same Ring.
 				 */
 				inline bool HasError() const noexcept {
 					return m_buffer->HasError();

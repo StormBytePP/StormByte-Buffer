@@ -101,7 +101,7 @@ namespace StormByte {
 			 * Construction is @ref State::Unavailable. A successful
 			 * @ref Open moves to @ref State::Idle. @ref Close is
 			 * idempotent, always @ref Flush then @ref OriginClose, and
-			 * returns to @ref Unavailable on success or @ref Fault if
+			 * returns to @ref State::Unavailable on success or @ref State::Fault if
 			 * Flush failed. @ref Open is not idempotent. @c Close then
 			 * @c Open is a valid round-trip. Destructor of a leaf must
 			 * call @ref Close while the leaf vtable is live.
@@ -150,7 +150,7 @@ namespace StormByte {
 			 * Setting @c MaxWait does not abort an in-flight push.
 			 *
 			 * @par WillWrite
-			 * Protected probe used by @ref Backend::Bridge. Default asks
+			 * Protected probe used by @c Backend::Bridge. Default asks
 			 * the ring cap. Leaves may tighten it (disk space, socket).
 			 * The answer is indicative: another process, quotas or a
 			 * network filesystem can still make the later @c Write fail.
@@ -438,7 +438,7 @@ namespace StormByte {
 					 *
 					 * Indicative. Another writer, quotas or the filesystem can
 					 * still reject the later @c Write. Override to tighten
-					 * (disk space, socket window). Used by @ref Backend::Bridge.
+					 * (disk space, socket window). Used by @c Backend::Bridge.
 					 */
 					virtual bool WillWrite(StormByte::Size n) const;
 

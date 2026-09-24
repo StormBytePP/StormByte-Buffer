@@ -214,10 +214,10 @@ namespace StormByte {
 		 * @class ExternalBufferReader
 		 * @brief @ref ExternalReader over a @ref ReadOnly store or an owned @ref Consumer.
 		 *
-		 * @ref ReadOnly& does not own the store; that object must outlive this
+		 * @ref ReadOnly does not own the store; that object must outlive this
 		 * adapter. @ref Consumer is taken by value and shares the @ref Ring.
 		 * A @ref Consumer argument selects the handle constructor (Identity),
-		 * not the @ref ReadOnly& constructor.
+		 * not the @ref ReadOnly constructor.
 		 *
 		 * @see ExternalReader, ReadOnly, Consumer
 		 */
@@ -519,10 +519,10 @@ namespace StormByte {
 		 * @class ExternalBufferWriter
 		 * @brief @ref ExternalWriter over a @ref WriteOnly store or an owned @ref Producer.
 		 *
-		 * @ref WriteOnly& does not own the store; that object must outlive this
+		 * @ref WriteOnly does not own the store; that object must outlive this
 		 * adapter. @ref Producer is taken by value and shares the @ref Ring.
 		 * A @ref Producer argument selects the handle constructor (Identity),
-		 * not the @ref WriteOnly& constructor.
+		 * not the @ref WriteOnly constructor.
 		 *
 		 * @ref Occupied is @ref Generic::Size of the active store.
 		 *

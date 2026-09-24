@@ -58,7 +58,7 @@
 namespace StormByte::Buffer {
 	/**
 	 * @brief Forward declaration of the private SPSC ring used between stages.
-	 * @note @ref LockFreeRing is not installed as a public header.
+	 * @note @c LockFreeRing is not installed as a public header.
 	 */
 	class LockFreeRing;
 
@@ -74,12 +74,12 @@ namespace StormByte::Buffer {
 	 *
 	 * @par Buffer strategy
 	 * - **Intermediate stages** use the private high-performance
-	 *   @ref LockFreeRing (SPSC lock-free circular buffer).
+	 *   @c LockFreeRing (SPSC lock-free circular buffer).
 	 * - **Final stage** writes into a public @ref Producer (backed by @ref Ring),
 	 *   so the @ref Consumer returned to the caller keeps the full public API
 	 *   and can be shared safely.
 	 *
-	 * @par Execution modes (@ref ExecutionMode bitmask)
+	 * @par Execution modes
 	 * Flags are orthogonal and combinable with @c operator|:
 	 * - @c Sync (0): stages sequential on the caller’s thread; @ref Process blocks.
 	 * - @c Async: work runs in background; @ref Process returns immediately.
@@ -109,7 +109,7 @@ namespace StormByte::Buffer {
 	 * - Pass the application or parent-module logger to @ref Process; do not
 	 *   pre-scope @c Buffer/Pipeline or the path will be duplicated.
 	 *
-	 * @see ExternalReader, ExternalWriter, Producer, Consumer, LockFreeRing, ExecutionMode
+	 * @see ExternalReader, ExternalWriter, Producer, Consumer, ExecutionMode
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Pipeline final {
 		public:
@@ -117,7 +117,7 @@ namespace StormByte::Buffer {
 			 * @brief Signature of a pipeline stage.
 			 *
 			 * Stages receive abstract reader/writer interfaces so the Pipeline
-			 * can inject @ref LockFreeRing for intermediates and @ref Ring for
+			 * can inject @c LockFreeRing for intermediates and @ref Ring for
 			 * the final output without changing stage code.
 			 *
 			 * @param in Abstract reader for the stage input.
@@ -203,7 +203,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Propagate error state to all internal buffers.
-			 * @details Calls @c SetError() on every intermediate @ref LockFreeRing
+			 * @details Calls @c SetError() on every intermediate @c LockFreeRing
 			 *          and on the final @ref Producer. Waiting stages wake and
 			 *          observe the error condition.
 			 */

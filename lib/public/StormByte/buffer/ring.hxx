@@ -71,7 +71,7 @@ namespace StormByte::Buffer {
 	 *
 	 * @par Thread safety
 	 * Fully thread-safe for concurrent producers and consumers (many-to-many).
-	 * Prefer @ref LockFreeRing inside @ref Pipeline intermediates for SPSC
+	 * Prefer @c LockFreeRing inside @ref Pipeline intermediates for SPSC
 	 * lock-free performance when applicable.
 	 *
 	 * @par Lifecycle
@@ -79,7 +79,7 @@ namespace StormByte::Buffer {
 	 * @ref SetError() makes the buffer permanently unreadable and unwritable
 	 * and wakes waiters.
 	 *
-	 * @see Producer, Consumer, LockFreeRing, ReadWrite, SharedFIFO
+	 * @see Producer, Consumer, ReadWrite, SharedFIFO
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Ring: public ReadWrite {
 		public:

@@ -926,11 +926,7 @@ namespace StormByte {
 				 */
 		};
 
-		/**
-		 * @name Explicit instantiations
-		 * @brief Closed set emitted by libStormByte-Buffer. Other ranges still instantiate in the caller.
-		 * @{
-		 */
+		/// @cond
 		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<DataType>(const DataType&) noexcept;
 		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<DataType>(DataType&&) noexcept;
 		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
@@ -949,8 +945,6 @@ namespace StormByte {
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::iterator, DataType::iterator>(DataType::iterator, DataType::iterator) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(const StormByte::Size&, DataType::const_iterator, DataType::const_iterator) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::iterator, DataType::iterator>(const StormByte::Size&, DataType::iterator, DataType::iterator) noexcept;
-		/**
-		 * @}
-		 */
+		/// @endcond
 	}
 }

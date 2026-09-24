@@ -89,7 +89,7 @@ namespace StormByte {
 		 * The worker starts in the constructor, like std::thread.
 		 * Status is @ref IO::Drainer::Status::Started for any @p high_water,
 		 * including 0, and for constructors that omit @p high_water.
-		 * Setters never start or pause. Use @ref Toggle to pause.
+		 * Setters never start or pause. Use @ref IO::Drainer::Operation::Toggle to pause.
 		 *
 		 * @p high_water > 0 is an occupancy cap on the sink
 		 * (@c Occupied / Dirty). The worker does not pull more than fits

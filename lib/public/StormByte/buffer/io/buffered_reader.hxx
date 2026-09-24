@@ -95,7 +95,7 @@ namespace StormByte {
 			 * Construction leaves @ref State::Unavailable. A successful
 			 * @ref Open moves to @ref State::Idle (armed, ready to read
 			 * until a pull proves otherwise). @ref Close returns to
-			 * @ref Unavailable and is idempotent. @ref Open is not idempotent:
+			 * @ref State::Unavailable and is idempotent. @ref Open is not idempotent:
 			 * a second @c Open while Idle fails and leaves the state Idle.
 			 * @c Close then @c Open is a valid round-trip.
 			 *

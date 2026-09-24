@@ -94,7 +94,7 @@ namespace StormByte::Buffer {
 	 * - @c Async — run work on background thread(s); @ref Pipeline::Process
 	 *   returns immediately with the final @ref Consumer.
 	 * - @c Parallel — one thread **per stage** (pipeline parallelism via SPSC
-	 *   intermediate rings). Without @c Async, @ref Process still waits for all
+	 *   intermediate rings). Without @c Async, @ref Pipeline::Process still waits for all
 	 *   stages to finish before returning.
 	 *
 	 * Typical combinations:

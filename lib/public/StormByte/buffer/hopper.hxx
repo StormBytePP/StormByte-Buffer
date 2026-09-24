@@ -153,7 +153,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Live writers attached to this hopper.
-			 * @return Writer count. Last @ref CloseWriter sets Eof.
+			 * @return Writer count. Last @c CloseWriter sets Eof.
 			 */
 			unsigned Writers() const noexcept;
 
