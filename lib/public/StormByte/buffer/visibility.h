@@ -45,12 +45,18 @@
 
 #ifdef WINDOWS
 	#ifdef StormByte_Buffer_EXPORTS
-		#define STORMBYTE_BUFFER_PUBLIC	__declspec(dllexport)
+		#define STORMBYTE_BUFFER_PUBLIC			__declspec(dllexport)
+		#define STORMBYTE_BUFFER_INSTANTIATE	__declspec(dllexport)
+	#elifdef STORMBYTE_BUFFER_SHARED
+		#define STORMBYTE_BUFFER_PUBLIC			__declspec(dllimport)
+		#define STORMBYTE_BUFFER_INSTANTIATE
 	#else
-		#define STORMBYTE_BUFFER_PUBLIC	__declspec(dllimport)
+		#define STORMBYTE_BUFFER_PUBLIC
+		#define STORMBYTE_BUFFER_INSTANTIATE
 	#endif
 	#define STORMBYTE_BUFFER_PRIVATE
 #else
-	#define STORMBYTE_BUFFER_PUBLIC		__attribute__ ((visibility ("default")))
-	#define STORMBYTE_BUFFER_PRIVATE	__attribute__ ((visibility ("hidden")))
+	#define STORMBYTE_BUFFER_PUBLIC				__attribute__((visibility("default")))
+	#define STORMBYTE_BUFFER_PRIVATE			__attribute__((visibility("hidden")))
+	#define STORMBYTE_BUFFER_INSTANTIATE
 #endif
