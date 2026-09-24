@@ -50,7 +50,7 @@
 #include <string>
 
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalReader;
@@ -60,10 +60,11 @@ using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
 
 namespace {
-	std::string BytesToText(const DataType& data) {
+	std::string BytesToText(const Data& data) {
 		if (data.empty())
 			return {};
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 
 	class DefaultExternalReader final : public ExternalReader {
@@ -84,22 +85,22 @@ namespace {
 				return true;
 			}
 
-			bool Read(const StormByte::Size&, DataType&) const noexcept override {
+			bool Read(const StormByte::Size&, Data&) const noexcept override {
 				return false;
 			}
 
-			bool Extract(const StormByte::Size&, DataType&) noexcept override {
+			bool Extract(const StormByte::Size&, Data&) noexcept override {
 				return false;
 			}
 
-			bool Peek(const StormByte::Size&, DataType&) const noexcept override {
+			bool Peek(const StormByte::Size&, Data&) const noexcept override {
 				return false;
 			}
 
-			void ReadUntilEoF(DataType&) const noexcept override {
+			void ReadUntilEoF(Data&) const noexcept override {
 			}
 
-			void ExtractUntilEoF(DataType&) noexcept override {
+			void ExtractUntilEoF(Data&) noexcept override {
 			}
 
 			PointerType Clone() const noexcept override {
@@ -123,19 +124,19 @@ namespace {
 				return m_target.Size();
 			}
 
-			bool Write(const DataType& data) noexcept override {
+			bool Write(const Data& data) noexcept override {
 				return m_target.Write(0, data);
 			}
 
-			bool Write(DataType&& data) noexcept override {
+			bool Write(Data&& data) noexcept override {
 				return m_target.Write(0, std::move(data));
 			}
 
-			bool Write(const StormByte::Size& count, const DataType& data) noexcept override {
+			bool Write(const StormByte::Size& count, const Data& data) noexcept override {
 				return m_target.Write(count, data);
 			}
 
-			bool Write(const StormByte::Size& count, DataType&& data) noexcept override {
+			bool Write(const StormByte::Size& count, Data&& data) noexcept override {
 				return m_target.Write(count, std::move(data));
 			}
 
@@ -243,7 +244,7 @@ int test_owned_writer_clone_shares_ring() {
 	auto clone = adapter->Clone();
 	ASSERT_TRUE(fn, static_cast<bool>(clone));
 	ASSERT_TRUE(fn, clone->Write("CLON"));
-	DataType got;
+	Data got;
 	ASSERT_TRUE(fn, reader->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("CLON"), BytesToText(got));
 	clone->Close();
@@ -263,7 +264,7 @@ int test_reader_owns_consumer_after_source_dies() {
 	}
 	ASSERT_TRUE(fn, writer->Write("KEEP"));
 	ASSERT_EQUAL(fn, StormByte::Size{4}, adapter->AvailableBytes());
-	DataType got;
+	Data got;
 	ASSERT_TRUE(fn, adapter->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("KEEP"), BytesToText(got));
 	writer->Close();
@@ -283,7 +284,7 @@ int test_writer_owns_producer_after_source_dies() {
 	ASSERT_TRUE(fn, adapter->IsWritable());
 	ASSERT_TRUE(fn, adapter->Write("LIVE"));
 	ASSERT_EQUAL(fn, StormByte::Size{4}, adapter->Occupied());
-	DataType got;
+	Data got;
 	ASSERT_TRUE(fn, reader->Extract(4, got));
 	ASSERT_EQUAL(fn, std::string("LIVE"), BytesToText(got));
 	adapter->Close();
@@ -298,7 +299,7 @@ int test_writer_owns_temporary_producer() {
 	auto reader = origin.Consumer();
 	ExternalBufferWriter adapter(origin);
 	ASSERT_TRUE(fn, adapter.Write("TIP"));
-	DataType got;
+	Data got;
 	ASSERT_TRUE(fn, reader.Extract(3, got));
 	ASSERT_EQUAL(fn, std::string("TIP"), BytesToText(got));
 	adapter.Close();
@@ -321,18 +322,18 @@ int test_external_buffer_reader_polymorphic_abi() {
 	ASSERT_FALSE(fn, reader.Empty());
 	ASSERT_FALSE(fn, reader.EoF());
 	ASSERT_TRUE(fn, reader.IsReadable());
-	DataType peek;
+	Data peek;
 	ASSERT_TRUE(fn, reader.Peek(1, peek));
-	DataType read;
+	Data read;
 	ASSERT_TRUE(fn, reader.Read(1, read));
 	reader.Seek(0, Position::Absolute);
-	DataType extracted;
+	Data extracted;
 	ASSERT_TRUE(fn, reader.Extract(1, extracted));
 	reader.Clean();
 	source.Close();
-	DataType remaining;
+	Data remaining;
 	reader.ReadUntilEoF(remaining);
-	DataType none;
+	Data none;
 	reader.ExtractUntilEoF(none);
 	auto clone = reader.Clone();
 	ASSERT_TRUE(fn, static_cast<bool>(clone));
@@ -360,12 +361,12 @@ int test_external_buffer_writer_polymorphic_abi() {
 	ExternalBufferWriter adapter(target);
 	ExternalWriter& writer = adapter;
 	ASSERT_EQUAL(fn, StormByte::Size{0}, writer.Occupied());
-	DataType copy {std::byte{'A'}};
-	DataType moved {std::byte{'B'}};
+	Data copy {std::byte{'A'}};
+	Data moved {std::byte{'B'}};
 	ASSERT_TRUE(fn, writer.Write(copy));
 	ASSERT_TRUE(fn, writer.Write(std::move(moved)));
 	ASSERT_TRUE(fn, writer.Write(1, copy));
-	DataType counted_move {std::byte{'C'}};
+	Data counted_move {std::byte{'C'}};
 	ASSERT_TRUE(fn, writer.Write(1, std::move(counted_move)));
 	ASSERT_TRUE(fn, writer.IsWritable());
 	ASSERT_EQUAL(fn, target.Size(), writer.Occupied());

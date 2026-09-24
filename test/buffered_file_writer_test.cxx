@@ -51,7 +51,7 @@
 #include <string>
 #include <thread>
 
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileWriter;
@@ -76,7 +76,7 @@ namespace {
 
 	FIFO FromText(const std::string& text) {
 		FIFO fifo;
-		DataType data(text.size());
+		Data data(StormByte::Size{text.size()});
 		for (std::size_t i = 0; i < text.size(); ++i)
 			data[i] = static_cast<std::byte>(text[i]);
 		static_cast<void>(fifo.Write(data.size(), std::move(data)));
@@ -85,11 +85,11 @@ namespace {
 
 	bool WaitDirtyZero(BufferedFileWriter& out) {
 		for (int i = 0; i < 80; ++i) {
-			if (out.Dirty() == 0)
+			if (out.Dirty() == StormByte::Size{0})
 				return true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return out.Dirty() == 0;
+		return out.Dirty() == StormByte::Size{0};
 	}
 }
 
@@ -216,8 +216,8 @@ int test_path_only_setup_sets_device_knobs() {
 	ASSERT_EQUAL(fn, StormByte::Size{0}, out.WriteChunk());
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), out.BackPressure());
 	ASSERT_TRUE(fn, out.Open());
-	ASSERT_TRUE(fn, out.WriteChunk() >= 16ull * 1024ull);
-	ASSERT_TRUE(fn, out.WriteChunk() <= 1024ull * 1024ull);
+	ASSERT_TRUE(fn, out.WriteChunk() >= StormByte::Size{16ull * 1024ull});
+	ASSERT_TRUE(fn, out.WriteChunk() <= StormByte::Size{1024ull * 1024ull});
 	ASSERT_EQUAL(fn, static_cast<std::size_t>(4), out.BackPressure());
 	ASSERT_TRUE(fn, out.Close());
 	std::filesystem::remove(path);

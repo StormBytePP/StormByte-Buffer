@@ -41,6 +41,7 @@
 
 #pragma once
 
+#include <StormByte/buffer/data.hxx>
 #include <StormByte/buffer/exception.hxx>
 #include <StormByte/logger/log.hxx>
 #include <StormByte/expected.hxx>
@@ -49,7 +50,6 @@
 #include <functional>
 #include <memory>
 #include <span>
-#include <vector>
 
 /**
  * @namespace StormByte::Buffer
@@ -73,15 +73,6 @@ namespace StormByte::Buffer {
 		Absolute,	///< Offset from the beginning of the buffer (position 0).
 		Relative	///< Offset from the current logical read position.
 	};
-
-	/**
-	 * @brief Primary byte storage type used throughout the buffer API.
-	 *
-	 * Alias for @c std::vector&lt;std::byte&gt;. Serves as the fundamental
-	 * container for byte-oriented buffer implementations
-	 * (@ref FIFO, adapters, extract/read destinations, etc.).
-	 */
-	using DataType = std::vector<std::byte>;
 
 	/**
 	 * @enum ExecutionMode

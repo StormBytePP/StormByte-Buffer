@@ -61,11 +61,11 @@ StormByte::Size Producer::Size() const noexcept {
 	return m_buffer->Size();
 }
 
-bool Producer::Write(const StormByte::Size& count, const DataType& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, const Data& data) noexcept {
 	return m_buffer->Write(count, data);
 }
 
-bool Producer::Write(const StormByte::Size& count, DataType&& data) noexcept {
+bool Producer::Write(const StormByte::Size& count, Data&& data) noexcept {
 	return m_buffer->Write(count, std::move(data));
 }
 

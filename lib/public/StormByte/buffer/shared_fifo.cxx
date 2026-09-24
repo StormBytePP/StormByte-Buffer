@@ -40,11 +40,6 @@
  */
 
 #include <StormByte/buffer/shared_fifo.hxx>
-#include <StormByte/string/string.hxx>
-
-#include <cctype>
-#include <iomanip>
-#include <sstream>
 
 using namespace StormByte::Buffer;
 
@@ -74,7 +69,7 @@ StormByte::Size SharedFIFO::AvailableBytes() const noexcept {
 	return FIFO::AvailableBytes();
 }
 
-const DataType& SharedFIFO::Data() const noexcept {
+const class Data& SharedFIFO::Data() const noexcept {
 	return m_buffer;
 }
 
@@ -139,7 +134,7 @@ bool SharedFIFO::HasError() const noexcept {
 	return !FIFO::IsReadable();
 }
 
-std::string SharedFIFO::HexDump(const StormByte::Size& columns,
+StormByte::String::String SharedFIFO::HexDump(const StormByte::Size& columns,
 								const StormByte::Size& byte_limit) const noexcept {
 	std::scoped_lock lock(m_mutex);
 	return FIFO::HexDump(columns, byte_limit);
@@ -168,7 +163,7 @@ std::ostringstream SharedFIFO::HexDumpHeader() const noexcept {
 	return FIFO::HexDumpHeader();
 }
 
-bool SharedFIFO::ReadInternal(const StormByte::Size& count, DataType& outBuffer,
+bool SharedFIFO::ReadInternal(const StormByte::Size& count, class Data& outBuffer,
 							const Operation& flag) noexcept {
 	std::unique_lock lock(m_mutex);
 	const StormByte::Size avail = AvailableBytesInternal();
@@ -211,7 +206,7 @@ void SharedFIFO::Wait(const StormByte::Size& n, std::unique_lock<std::mutex>& lo
 	});
 }
 
-bool SharedFIFO::WriteInternal(const StormByte::Size& count, const DataType& src) noexcept {
+bool SharedFIFO::WriteInternal(const StormByte::Size& count, const class Data& src) noexcept {
 	bool result;
 	{
 		std::scoped_lock lock(m_mutex);
@@ -223,7 +218,7 @@ bool SharedFIFO::WriteInternal(const StormByte::Size& count, const DataType& src
 	return result;
 }
 
-bool SharedFIFO::WriteInternal(const StormByte::Size& count, DataType&& src) noexcept {
+bool SharedFIFO::WriteInternal(const StormByte::Size& count, class Data&& src) noexcept {
 	bool result;
 	{
 		std::scoped_lock lock(m_mutex);

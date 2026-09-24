@@ -93,23 +93,23 @@ bool ExternalBufferReader::IsReadable() const noexcept {
 	return Store().IsReadable();
 }
 
-bool ExternalBufferReader::Read(const StormByte::Size& count, DataType& out) const noexcept {
+bool ExternalBufferReader::Read(const StormByte::Size& count, Data& out) const noexcept {
 	return Store().Read(count, out);
 }
 
-bool ExternalBufferReader::Extract(const StormByte::Size& count, DataType& out) noexcept {
+bool ExternalBufferReader::Extract(const StormByte::Size& count, Data& out) noexcept {
 	return Store().Extract(count, out);
 }
 
-bool ExternalBufferReader::Peek(const StormByte::Size& count, DataType& out) const noexcept {
+bool ExternalBufferReader::Peek(const StormByte::Size& count, Data& out) const noexcept {
 	return Store().Peek(count, out);
 }
 
-void ExternalBufferReader::ReadUntilEoF(DataType& out) const noexcept {
+void ExternalBufferReader::ReadUntilEoF(Data& out) const noexcept {
 	Store().ReadUntilEoF(out);
 }
 
-void ExternalBufferReader::ExtractUntilEoF(DataType& out) noexcept {
+void ExternalBufferReader::ExtractUntilEoF(Data& out) noexcept {
 	Store().ExtractUntilEoF(out);
 }
 
@@ -147,9 +147,9 @@ ExternalWriter::PointerType ExternalBufferWriter::Move() noexcept {
 
 bool ExternalWriter::Write(const std::string_view sv) noexcept {
 	if (sv.empty())
-		return Write(DataType{});
-	DataType tmp;
-	tmp.reserve(sv.size());
+		return Write(Data{});
+	Data tmp;
+	tmp.reserve(StormByte::Size{sv.size()});
 	std::transform(sv.begin(), sv.end(), std::back_inserter(tmp),
 		[](char c) noexcept { return static_cast<std::byte>(c); });
 	return Write(std::move(tmp));
@@ -157,7 +157,7 @@ bool ExternalWriter::Write(const std::string_view sv) noexcept {
 
 bool ExternalWriter::Write(const char* s) noexcept {
 	if (!s)
-		return Write(DataType{});
+		return Write(Data{});
 	return Write(std::string_view(s));
 }
 
@@ -165,9 +165,9 @@ bool ExternalWriter::Write(const StormByte::Size& count, const std::string_view 
 	const StormByte::Size to_write = (count == StormByte::Size{0})
 		? StormByte::Size{sv.size()}
 		: std::min(count, StormByte::Size{sv.size()});
-	DataType tmp;
+	Data tmp;
 	if (to_write > StormByte::Size{0})
-		tmp.reserve(static_cast<std::size_t>(to_write));
+		tmp.reserve(to_write);
 	std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(to_write),
 		std::back_inserter(tmp),
 		[](char c) noexcept { return static_cast<std::byte>(c); });
@@ -182,19 +182,19 @@ StormByte::Size ExternalBufferWriter::Occupied() const noexcept {
 	return Store().Size();
 }
 
-bool ExternalBufferWriter::Write(const DataType& data) noexcept {
+bool ExternalBufferWriter::Write(const Data& data) noexcept {
 	return Store().Write(StormByte::Size{0}, data);
 }
 
-bool ExternalBufferWriter::Write(DataType&& data) noexcept {
+bool ExternalBufferWriter::Write(Data&& data) noexcept {
 	return Store().Write(StormByte::Size{0}, std::move(data));
 }
 
-bool ExternalBufferWriter::Write(const StormByte::Size& count, const DataType& data) noexcept {
+bool ExternalBufferWriter::Write(const StormByte::Size& count, const Data& data) noexcept {
 	return Store().Write(count, data);
 }
 
-bool ExternalBufferWriter::Write(const StormByte::Size& count, DataType&& data) noexcept {
+bool ExternalBufferWriter::Write(const StormByte::Size& count, Data&& data) noexcept {
 	return Store().Write(count, std::move(data));
 }
 

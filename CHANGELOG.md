@@ -28,6 +28,7 @@ If you landed here from a release link and have not read the tree:
 - **Breaking:** public byte-length APIs use `StormByte::Size` instead of `std::size_t`. That covers occupancy, available bytes, `Read` / `Peek` / `Extract` / `Write` counts, `Tell`, `Dirty`, `Size` when it is a file or buffer length, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied`, Bridge high-water when it is a byte cap, and the matching test helpers. Implicit construction and mixed comparison / arithmetic with integer literals are part of the `Size` contract in Base.
 - Quantities that are not a byte length stay `std::size_t` (or `std::ptrdiff_t` for signed offsets): Hopper / Sink item counts, `BackPressure` as a chunk count, HexDump column count, and device rate fields until they become a byte length.
 - **Dependency:** Buffer now requires [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer (`Device`, `File::Temporary`). The library PUBLIC-links System (and String). Path-only `BufferedFileReader` / `BufferedFileWriter` take `ReadAhead` / `WriteChunk` from `CreateDevice()` + `Device::Window`. A derived File overrides `CreateDevice` and returns `unique_ptr<Device>` (no slicing). Failed probe leaves the chunk/prefetch at zero. Path-only writer `BackPressure` stays 4. Private Buffer device-throughput probe is gone.
+- **Breaking:** `StormByte::Buffer::Data` replaces `DataType` (`std::vector<std::byte>`). Byte payloads that cross a DLL boundary on Windows are no longer a CRT-owned `std::vector`. `Data` is a contiguous, vector-like container with a private `Storage` PIMPL so allocate and free stay in Buffer’s translation unit. Public names follow `std::vector` in lowercase (`size`, `data`, `span`, `begin`/`end`, `insert`, `push_back`, `reserve`, …), lengths are `StormByte::Size`, and construction is pointer+`Size`, `span`, initializer list or a range (no iterator-pair constructor). `using DataType` is gone: `Read` / `Peek` / `Extract` / `*UntilEoF`, `Write`, External, Bridge, Pipeline, `LockFreeRing` and IO now take or return `Data`. Do not pass `std::vector<std::byte>` or `std::string` across the Buffer DLL; text from the module (`HexDump`) is `StormByte::String::String`.
 
 ### Removed
 
@@ -36,8 +37,7 @@ If you landed here from a release link and have not read the tree:
 ### Tests
 
 - Buffer tests rewritten to the current suite format (section banners, alphabetical names in body and `main`, local `BytesToText` instead of removed String helpers). Scratch files use `StormByte::System::File::Temporary` instead of Base `TempFileName`.
-
-[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
+- Tests ported from `DataType` to `Data` (`size()` is `StormByte::Size`; `HexDump` is converted with `static_cast<std::string>`).
 
 ## [1.4.0] - 2026-09-23
 

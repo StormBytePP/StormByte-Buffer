@@ -55,17 +55,18 @@
 #include <vector>
 
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::Producer;
 
 namespace {
-	std::string BytesToText(const DataType& data) {
+	std::string BytesToText(const Data& data) {
 		if (data.empty())
 			return {};
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 }
 
@@ -80,7 +81,7 @@ int test_consumer_producer_shares_ring() {
 	Producer tip = consumer.Producer();
 	ASSERT_TRUE(fn, origin == tip);
 	ASSERT_TRUE(fn, tip.Write("RING"));
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(4, data));
 	ASSERT_EQUAL(fn, std::string("RING"), BytesToText(data));
 	tip.Close();
@@ -96,10 +97,10 @@ int test_producer_consumer_basic_write_read() {
 	const std::string message = "Hello, World!";
 	ASSERT_TRUE(fn, producer.Write(message));
 	producer.Close();
-	ASSERT_EQUAL(fn, message.size(), consumer.Size());
+	ASSERT_EQUAL(fn, StormByte::Size{message.size()}, consumer.Size());
 	ASSERT_FALSE(fn, consumer.Empty());
-	DataType data;
-	ASSERT_TRUE(fn, consumer.Read(message.size(), data));
+	Data data;
+	ASSERT_TRUE(fn, consumer.Read(StormByte::Size{message.size()}, data));
 	ASSERT_EQUAL(fn, message, BytesToText(data));
 	RETURN_TEST(fn, 0);
 }
@@ -110,9 +111,9 @@ int test_producer_consumer_byte_vector_write() {
 	auto consumer = producer.Consumer();
 	const std::string bytes = "Binary data";
 	ASSERT_TRUE(fn, producer.Write(bytes));
-	DataType read_data;
+	Data read_data;
 	ASSERT_TRUE(fn, consumer.Read(0, read_data));
-	ASSERT_EQUAL(fn, bytes.size(), read_data.size());
+	ASSERT_EQUAL(fn, StormByte::Size{bytes.size()}, read_data.size());
 	ASSERT_EQUAL(fn, std::string("Binary data"), BytesToText(read_data));
 	RETURN_TEST(fn, 0);
 }
@@ -149,7 +150,7 @@ int test_producer_consumer_copy_semantics() {
 	Producer producer2 = producer1;
 	ASSERT_TRUE(fn, producer2.Write("Added"));
 	auto consumer = producer1.Consumer();
-	DataType all;
+	Data all;
 	ASSERT_TRUE(fn, consumer.Read(0, all));
 	ASSERT_EQUAL(fn, std::string("OriginalAdded"), BytesToText(all));
 	auto consumer2 = consumer;
@@ -163,7 +164,7 @@ int test_producer_consumer_extract() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
 	ASSERT_EQUAL(fn, StormByte::Size{8}, consumer.Size());
-	DataType first, rest;
+	Data first, rest;
 	ASSERT_TRUE(fn, consumer.Extract(3, first));
 	ASSERT_EQUAL(fn, std::string("ABC"), BytesToText(first));
 	ASSERT_EQUAL(fn, StormByte::Size{5}, consumer.Size());
@@ -180,7 +181,7 @@ int test_producer_consumer_interleaved_operations() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("Part1"));
 	producer.Close();
-	DataType r1, r2;
+	Data r1, r2;
 	ASSERT_TRUE(fn, consumer.Extract(3, r1));
 	ASSERT_EQUAL(fn, std::string("Par"), BytesToText(r1));
 	ASSERT_TRUE(fn, consumer.Read(0, r2));
@@ -197,7 +198,7 @@ int test_producer_consumer_move_semantics() {
 	auto consumer = producer2.Consumer();
 	ASSERT_EQUAL(fn, StormByte::Size{8}, consumer.Size());
 	auto consumer2 = std::move(consumer);
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer2.Read(0, data));
 	ASSERT_EQUAL(fn, std::string("DataMore"), BytesToText(data));
 	RETURN_TEST(fn, 0);
@@ -210,7 +211,7 @@ int test_producer_consumer_multiple_writes() {
 	ASSERT_TRUE(fn, producer.Write("First"));
 	ASSERT_TRUE(fn, producer.Write("Second"));
 	ASSERT_TRUE(fn, producer.Write("Third"));
-	DataType all;
+	Data all;
 	ASSERT_TRUE(fn, consumer.Read(0, all));
 	ASSERT_EQUAL(fn, std::string("FirstSecondThird"), BytesToText(all));
 	RETURN_TEST(fn, 0);
@@ -222,7 +223,7 @@ int test_producer_consumer_seek_operations() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("0123456789"));
 	producer.Close();
-	DataType from5, fromStart, from7;
+	Data from5, fromStart, from7;
 	ASSERT_TRUE(fn, consumer.Read(5, from5));
 	ASSERT_EQUAL(fn, std::string("01234"), BytesToText(from5));
 	consumer.Seek(-5, Position::Relative);
@@ -239,13 +240,13 @@ int test_producer_consumer_span_until_eof() {
 	Producer producer;
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
-	DataType s1, s2, s3;
+	Data s1, s2, s3;
 	ASSERT_TRUE(fn, consumer.Read(3, s1));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), s1.size());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, s1.size());
 	ASSERT_TRUE(fn, consumer.Read(3, s2));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), s2.size());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, s2.size());
 	ASSERT_TRUE(fn, consumer.Read(2, s3));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(2), s3.size());
+	ASSERT_EQUAL(fn, StormByte::Size{2}, s3.size());
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.AvailableBytes());
 	ASSERT_FALSE(fn, consumer.EoF());
 	producer.Close();
@@ -261,9 +262,9 @@ int test_producer_consumer_with_reserve() {
 	ASSERT_TRUE(fn, producer.Write(large_message));
 	ASSERT_TRUE(fn, producer.Write(large_message));
 	ASSERT_EQUAL(fn, StormByte::Size{1000}, consumer.Size());
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(1000), data.size());
+	ASSERT_EQUAL(fn, StormByte::Size{1000}, data.size());
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.Size());
 	RETURN_TEST(fn, 0);
 }
@@ -273,7 +274,7 @@ int test_producer_write_span_consumer_read() {
 	Producer producer;
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("PCSPAN"));
-	DataType r;
+	Data r;
 	ASSERT_TRUE(fn, consumer.Read(6, r));
 	ASSERT_EQUAL(fn, std::string("PCSPAN"), BytesToText(r));
 	RETURN_TEST(fn, 0);
@@ -291,9 +292,9 @@ int test_alternating_small_large_writes() {
 	ASSERT_TRUE(fn, producer.Write(std::string(100, 'B')));
 	ASSERT_TRUE(fn, producer.Write("C"));
 	producer.Close();
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(102), data.size());
+	ASSERT_EQUAL(fn, StormByte::Size{102}, data.size());
 	RETURN_TEST(fn, 0);
 }
 
@@ -305,9 +306,9 @@ int test_burst_writes_with_reserve() {
 		ASSERT_TRUE(fn, producer.Write("Z"));
 	producer.Close();
 	ASSERT_EQUAL(fn, StormByte::Size{32}, consumer.Size());
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(32), data.size());
+	ASSERT_EQUAL(fn, StormByte::Size{32}, data.size());
 	RETURN_TEST(fn, 0);
 }
 
@@ -329,7 +330,7 @@ int test_consumer_extract_until_eof() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("GONE"));
 	producer.Close();
-	DataType data;
+	Data data;
 	consumer.ExtractUntilEoF(data);
 	ASSERT_EQUAL(fn, std::string("GONE"), BytesToText(data));
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.Size());
@@ -341,7 +342,7 @@ int test_consumer_peek_basic() {
 	Producer producer;
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("PEEK"));
-	DataType peeked, read;
+	Data peeked, read;
 	ASSERT_TRUE(fn, consumer.Peek(2, peeked));
 	ASSERT_EQUAL(fn, std::string("PE"), BytesToText(peeked));
 	ASSERT_EQUAL(fn, StormByte::Size{4}, consumer.AvailableBytes());
@@ -356,7 +357,7 @@ int test_consumer_peek_blocking() {
 	auto consumer = producer.Consumer();
 	std::string got;
 	std::thread waiter([&] {
-		DataType data;
+		Data data;
 		if (consumer.Peek(4, data))
 			got = BytesToText(data);
 	});
@@ -374,7 +375,7 @@ int test_consumer_read_until_eof() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("UNTILEOF"));
 	producer.Close();
-	DataType data;
+	Data data;
 	consumer.ReadUntilEoF(data);
 	ASSERT_EQUAL(fn, std::string("UNTILEOF"), BytesToText(data));
 	RETURN_TEST(fn, 0);
@@ -389,11 +390,11 @@ int test_consumer_waits_for_insufficient_data() {
 	std::string result;
 	std::thread consumer_thread([&] {
 		read_started.store(true);
-		DataType data;
+		Data data;
 		if (consumer.Read(20, data))
 			result = BytesToText(data);
 		else if (consumer.AvailableBytes() > 0) {
-			DataType rem;
+			Data rem;
 			if (consumer.Read(0, rem))
 				result = BytesToText(rem);
 		}
@@ -418,7 +419,7 @@ int test_empty_read_failure() {
 	Producer producer;
 	auto consumer = producer.Consumer();
 	producer.Close();
-	DataType data;
+	Data data;
 	ASSERT_FALSE(fn, consumer.Read(4, data));
 	ASSERT_TRUE(fn, consumer.EoF());
 	RETURN_TEST(fn, 0);
@@ -430,7 +431,7 @@ int test_extract_zero_bytes_behavior() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("TestData"));
 	producer.Close();
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
 	ASSERT_EQUAL(fn, std::string("TestData"), BytesToText(data));
 	ASSERT_TRUE(fn, consumer.Empty());
@@ -443,11 +444,11 @@ int test_interleaved_read_extract_with_blocking() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("ABCDEFGH"));
 	producer.Close();
-	DataType r1, e1;
+	Data r1, e1;
 	ASSERT_TRUE(fn, consumer.Read(5, r1));
 	ASSERT_TRUE(fn, consumer.Extract(3, e1));
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), r1.size());
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(3), e1.size());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, r1.size());
+	ASSERT_EQUAL(fn, StormByte::Size{3}, e1.size());
 	RETURN_TEST(fn, 0);
 }
 
@@ -459,7 +460,7 @@ int test_multiple_consumers_with_partial_data() {
 	std::vector<std::string> results(3);
 	auto consumer_func = [&](int id) {
 		Consumer cons = consumer;
-		DataType data;
+		Data data;
 		if (cons.Read(5, data))
 			results[static_cast<std::size_t>(id)] = BytesToText(data);
 		reads_completed.fetch_add(1);
@@ -499,7 +500,7 @@ int test_multiple_sequential_read_blocks() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("ABCDEFGHIJ"));
 	producer.Close();
-	DataType a, b;
+	Data a, b;
 	ASSERT_TRUE(fn, consumer.Read(4, a));
 	ASSERT_TRUE(fn, consumer.Read(6, b));
 	ASSERT_EQUAL(fn, std::string("ABCD"), BytesToText(a));
@@ -514,7 +515,7 @@ int test_out_of_sync_partial_writes() {
 	std::atomic<bool> consumer_done {false};
 	std::string result;
 	std::thread consumer_thread([&] {
-		DataType data;
+		Data data;
 		if (consumer.Read(10, data))
 			result = BytesToText(data);
 		consumer_done.store(true);
@@ -541,11 +542,11 @@ int test_producer_close_during_consumer_wait() {
 	std::atomic<bool> completed {false};
 	std::string result;
 	std::thread consumer_thread([&] {
-		DataType data;
+		Data data;
 		if (consumer.Read(100, data))
 			result = BytesToText(data);
 		else if (consumer.AvailableBytes() > 0) {
-			DataType rem;
+			Data rem;
 			if (consumer.Read(0, rem))
 				result = BytesToText(rem);
 		}
@@ -568,7 +569,7 @@ int test_producer_consumer_available_bytes() {
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.AvailableBytes());
 	ASSERT_TRUE(fn, producer.Write("ABCD"));
 	ASSERT_EQUAL(fn, StormByte::Size{4}, consumer.AvailableBytes());
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Read(2, data));
 	ASSERT_EQUAL(fn, StormByte::Size{2}, consumer.AvailableBytes());
 	RETURN_TEST(fn, 0);
@@ -593,10 +594,10 @@ int test_producer_consumer_partial_read_eof() {
 	auto consumer = producer.Consumer();
 	ASSERT_TRUE(fn, producer.Write("XY"));
 	producer.Close();
-	DataType data;
+	Data data;
 	static_cast<void>(consumer.Read(8, data));
 	if (data.empty()) {
-		DataType rem;
+		Data rem;
 		static_cast<void>(consumer.Read(0, rem));
 		data = std::move(rem);
 	}
@@ -632,18 +633,18 @@ int test_rapid_write_close_with_slow_consumer() {
 	std::thread consumer_thread([&] {
 		for (;;) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
-			DataType part;
+			Data part;
 			if (!consumer.Extract(5, part)) {
 				if (consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (consumer.Extract(0, rem))
-						total_consumed.fetch_add(rem.size());
+						total_consumed.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
 				break;
 			}
 			if (part.empty() && consumer.EoF())
 				break;
-			total_consumed.fetch_add(part.size());
+			total_consumed.fetch_add(static_cast<std::size_t>(part.size()));
 		}
 	});
 	producer_thread.join();
@@ -660,7 +661,7 @@ int test_seek_during_blocked_read() {
 	ASSERT_TRUE(fn, producer.Write("0123456789"));
 	producer.Close();
 	consumer.Seek(4, Position::Absolute);
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Read(0, data));
 	ASSERT_EQUAL(fn, std::string("456789"), BytesToText(data));
 	RETURN_TEST(fn, 0);
@@ -673,9 +674,9 @@ int test_very_large_data_transfer() {
 	const std::string payload(64 * 1024, 'A');
 	ASSERT_TRUE(fn, producer.Write(payload));
 	producer.Close();
-	DataType data;
+	Data data;
 	ASSERT_TRUE(fn, consumer.Extract(0, data));
-	ASSERT_EQUAL(fn, payload.size(), data.size());
+	ASSERT_EQUAL(fn, StormByte::Size{payload.size()}, data.size());
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.Size());
 	RETURN_TEST(fn, 0);
 }
@@ -693,13 +694,13 @@ int test_occupied_drops_after_consumer_extract() {
 	ASSERT_EQUAL(fn, StormByte::Size{8}, adapter.Occupied());
 	ASSERT_EQUAL(fn, producer.Size(), adapter.Occupied());
 	ASSERT_EQUAL(fn, consumer.Size(), adapter.Occupied());
-	DataType first;
+	Data first;
 	ASSERT_TRUE(fn, consumer.Extract(3, first));
 	ASSERT_EQUAL(fn, std::string("ABC"), BytesToText(first));
 	ASSERT_EQUAL(fn, StormByte::Size{5}, consumer.Size());
 	ASSERT_EQUAL(fn, StormByte::Size{5}, producer.Size());
 	ASSERT_EQUAL(fn, StormByte::Size{5}, adapter.Occupied());
-	DataType rest;
+	Data rest;
 	ASSERT_TRUE(fn, consumer.Extract(0, rest));
 	ASSERT_EQUAL(fn, std::string("DEFGH"), BytesToText(rest));
 	ASSERT_EQUAL(fn, StormByte::Size{0}, consumer.Size());
@@ -716,16 +717,16 @@ int test_occupied_drops_under_concurrent_extract() {
 	ExternalBufferWriter adapter(producer);
 	const std::string payload(256, 'Z');
 	ASSERT_TRUE(fn, adapter.Write(payload));
-	ASSERT_EQUAL(fn, payload.size(), adapter.Occupied());
+	ASSERT_EQUAL(fn, StormByte::Size{payload.size()}, adapter.Occupied());
 	std::atomic<std::size_t> taken {0};
 	std::thread cons([&] {
 		while (taken.load() < payload.size()) {
-			DataType chunk;
+			Data chunk;
 			const std::size_t left = payload.size() - taken.load();
 			const std::size_t n = std::min<std::size_t>(16, left);
 			if (!consumer.Extract(n, chunk))
 				break;
-			taken.fetch_add(chunk.size());
+			taken.fetch_add(static_cast<std::size_t>(chunk.size()));
 		}
 	});
 	cons.join();
@@ -742,7 +743,7 @@ int test_occupied_read_does_not_drop() {
 	auto consumer = producer.Consumer();
 	ExternalBufferWriter adapter(producer);
 	ASSERT_TRUE(fn, adapter.Write("ABCDEF"));
-	DataType peek;
+	Data peek;
 	ASSERT_TRUE(fn, consumer.Read(2, peek));
 	ASSERT_EQUAL(fn, StormByte::Size{6}, adapter.Occupied());
 	ASSERT_EQUAL(fn, StormByte::Size{6}, producer.Size());
@@ -791,18 +792,18 @@ int test_multiple_producers_multiple_consumers() {
 			Consumer cons_copy = consumer;
 			std::size_t local_consumed = 0;
 			for (;;) {
-				DataType part;
+				Data part;
 				if (!cons_copy.Extract(10, part)) {
 					if (cons_copy.AvailableBytes() > 0) {
-						DataType rem;
+						Data rem;
 						if (cons_copy.Extract(0, rem))
-							local_consumed += rem.size();
+							local_consumed += static_cast<std::size_t>(rem.size());
 					}
 					break;
 				}
 				if (part.empty() && cons_copy.EoF())
 					break;
-				local_consumed += part.size();
+				local_consumed += static_cast<std::size_t>(part.size());
 			}
 			total_consumed.fetch_add(local_consumed);
 		});
@@ -836,10 +837,10 @@ int test_multiple_producers_single_consumer() {
 	std::thread cons_thread([&] {
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		while (completed_producers.load() < 3) {
-			DataType part;
+			Data part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (consumer.Extract(0, rem) && !rem.empty())
 						collected.append(BytesToText(rem));
 				}
@@ -850,7 +851,7 @@ int test_multiple_producers_single_consumer() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		while (!consumer.Empty()) {
-			DataType data;
+			Data data;
 			if (consumer.Extract(0, data) && !data.empty())
 				collected.append(BytesToText(data));
 		}
@@ -884,10 +885,10 @@ int test_producer_consumer_pipeline_pattern() {
 	});
 	std::thread stage2([&] {
 		for (;;) {
-			DataType part;
+			Data part;
 			if (!stage1_consumer.Extract(10, part)) {
 				if (stage1_consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (stage1_consumer.Extract(0, rem) && !rem.empty()) {
 						std::string remstr = BytesToText(rem);
 						std::transform(remstr.begin(), remstr.end(), remstr.begin(),
@@ -909,10 +910,10 @@ int test_producer_consumer_pipeline_pattern() {
 	std::string final_result;
 	std::thread stage3([&] {
 		for (;;) {
-			DataType part;
+			Data part;
 			if (!stage2_consumer.Extract(10, part)) {
 				if (stage2_consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (stage2_consumer.Extract(0, rem) && !rem.empty())
 						final_result.append(BytesToText(rem));
 				}
@@ -948,18 +949,18 @@ int test_producer_consumer_stress_rapid_operations() {
 	});
 	std::thread reader([&] {
 		for (;;) {
-			DataType part;
+			Data part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (consumer.Extract(0, rem))
-						read_count.fetch_add(rem.size());
+						read_count.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
 				break;
 			}
 			if (part.empty() && consumer.EoF())
 				break;
-			read_count.fetch_add(part.size());
+			read_count.fetch_add(static_cast<std::size_t>(part.size()));
 		}
 	});
 	writer.join();
@@ -985,18 +986,18 @@ int test_single_producer_multiple_consumers() {
 	});
 	auto consumer_func = [&](Consumer& cons, std::atomic<std::size_t>& counter) {
 		for (;;) {
-			DataType part;
+			Data part;
 			if (!cons.Extract(5, part)) {
 				if (cons.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (cons.Extract(0, rem))
-						counter.fetch_add(rem.size());
+						counter.fetch_add(static_cast<std::size_t>(rem.size()));
 				}
 				break;
 			}
 			if (part.empty() && cons.EoF())
 				break;
-			counter.fetch_add(part.size());
+			counter.fetch_add(static_cast<std::size_t>(part.size()));
 		}
 	};
 	std::thread cons1_thread(consumer_func, std::ref(consumer1), std::ref(consumed1));
@@ -1031,10 +1032,10 @@ int test_single_producer_single_consumer_threaded() {
 	});
 	std::thread cons_thread([&] {
 		for (;;) {
-			DataType part;
+			Data part;
 			if (!consumer.Extract(10, part)) {
 				if (consumer.AvailableBytes() > 0) {
-					DataType rem;
+					Data rem;
 					if (consumer.Extract(0, rem) && !rem.empty())
 						collected.append(BytesToText(rem));
 				}

@@ -197,37 +197,37 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Append bytes from a @ref DataType (copy).
+				 * @brief Append bytes from a @ref StormByte::Buffer::Data (copy).
 				 * @param count Bytes to write.
-				 * @param data Source vector.
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, const DataType& data) noexcept override;
+				bool Write(const StormByte::Size& count, const Data& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref DataType (copy).
-				 * @param data Source vector.
+				 * @brief Append an entire @ref StormByte::Buffer::Data (copy).
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				inline bool Write(const DataType& data) noexcept {
-					return Write(StormByte::Size{data.size()}, data);
+				inline bool Write(const Data& data) noexcept {
+					return Write(data.size(), data);
 				}
 
 				/**
-				 * @brief Append bytes from a @ref DataType (move).
+				 * @brief Append bytes from a @ref StormByte::Buffer::Data (move).
 				 * @param count Bytes to write.
-				 * @param data Source vector.
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				bool Write(const StormByte::Size& count, DataType&& data) noexcept override;
+				bool Write(const StormByte::Size& count, Data&& data) noexcept override;
 
 				/**
-				 * @brief Append an entire @ref DataType (move).
-				 * @param data Source vector.
+				 * @brief Append an entire @ref StormByte::Buffer::Data (move).
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 */
-				inline bool Write(DataType&& data) noexcept {
-					return Write(StormByte::Size{data.size()}, std::move(data));
+				inline bool Write(Data&& data) noexcept {
+					return Write(data.size(), std::move(data));
 				}
 
 				/**

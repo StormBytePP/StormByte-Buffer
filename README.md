@@ -9,7 +9,7 @@
 
 This repository is **StormByte Buffer**: FIFO, SharedFIFO, Ring, Producer/Consumer, Hopper, Sink, pipelines, Bridge and buffered I/O for the StormByte C++ suite.
 
-It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer (`Device`, `File`), and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline stages (`Scope`). Public headers live under `StormByte/buffer/`.
+It depends on [StormByte-String 1.0.0](https://github.com/StormBytePP/StormByte-String/releases/tag/1.0.0) or newer, which vendors [StormByte Base 2.0.0](https://github.com/StormBytePP/StormByte/releases/tag/2.0.0) or newer, [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer, and optionally [StormByte-Logger 2.0.0](https://github.com/StormBytePP/StormByte-Logger/releases/tag/2.0.0) or newer for pipeline stages (`Scope`). Public headers live under `StormByte/buffer/`.
 
 The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedia, Network, String and System are **other repositories**. This one does not implement them.
 
@@ -22,39 +22,39 @@ Typical wires:
 - `Producer` → `Consumer` (same ring).
 - `Bridge(Consumer, BufferedFileWriter)` — drain a ring to a file.
 - `BufferedFileReader` as a `BufferedReader` — sequential or seekable reads with a cache map.
-- Future leaves (remote file, socket) inherit the File leaves, override `CreateDevice()` with a `Device` derivative, and override the same origin hooks.
+- Future leaves (remote file, socket) inherit the File leaves and override the same hooks.
 
 See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWriter](#iobufferedwriter) and [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 
 ## What this module does
 
+- **Data** — owned contiguous octets (`StormByte::Buffer::Data`). Vector-like API in lowercase (`size`, `data`, `span`, `begin`/`end`, …). Lengths are `StormByte::Size`. Use this type for every octet payload that enters or leaves Buffer; do not use `std::vector<std::byte>` across a DLL boundary on Windows.
 - **FIFO** — grow-on-demand byte buffer. Not thread-safe. `Read` / `Peek` keep data; `Extract` consumes it.
 - **SharedFIFO** — thread-safe FIFO. `Read` / `Extract` block until data or `Close` / `SetError`.
-- **Ring** — concurrent ring (`shared_mutex`, many-to-many).
+- **Ring** — concurrent ring (many-to-many).
 - **Producer / Consumer** — write-only / read-only handles over a shared `Ring`. See [Producer and Consumer](#producer-and-consumer).
 - **Hopper** — SPSC queue of typed items with optional capacity. See [Hopper](#hopper).
 - **Sink** — map of integer keys to Hopper buckets. See [Sink](#sink).
 - **Bridge** — chunked passthrough `ExternalReader` → `ExternalWriter`, with optional high-water. See [Bridge](#bridge).
 - **IO::BufferedReader / IO::BufferedWriter** — session bases (`Open` / `Close` / `Tell` / `EoF`). Leaves implement `Origin*`. See [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
-- **BufferedFileReader / BufferedFileWriter** — file leaves. Path-only constructors take windows from System `Device` at `Setup`; explicit constructors keep the knobs you pass. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
+- **BufferedFileReader / BufferedFileWriter** — file leaves. Path-only constructors pick device-tuned windows at `Open` via System `Device`; explicit constructors keep the knobs you pass. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 - **Pipeline** — stages chained with `ExecutionMode`. See [Pipeline](#pipeline).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
-- **Private** — `LockFreeRing` is SPSC only, used between pipeline stages.
 
 ## The rest of the suite
 
 | Module | Role | API |
 | --- | --- | --- |
-| [Base](https://github.com/StormBytePP/StormByte) | Exceptions, Expected, `Size`, serialization, UUID, concepts | [/StormByte](https://dev.stormbyte.org/StormByte) |
+| [Base](https://github.com/StormBytePP/StormByte) | Exceptions, Expected, serialization, UUID, concepts | [/StormByte](https://dev.stormbyte.org/StormByte) |
 | **Buffer** | This repository | [/StormByte-Buffer](https://dev.stormbyte.org/StormByte-Buffer) |
 | [Config](https://github.com/StormBytePP/StormByte-Config) | Human-readable text and versioned binary documents (groups, lists, raw bytes) | [/StormByte-Config](https://dev.stormbyte.org/StormByte-Config) |
-| [Crypto](https://github.com/StormBytePP/StormByte-Crypto) | Hash, compress, encrypt, sign and key agreement — Crypto++ never leaves the private tree | [/StormByte-Crypto](https://dev.stormbyte.org/StormByte-Crypto) |
+| [Crypto](https://github.com/StormBytePP/StormByte-Crypto) | Hash, compress, encrypt, sign and key agreement — Crypto++ never leaves the public API | [/StormByte-Crypto](https://dev.stormbyte.org/StormByte-Crypto) |
 | [Database](https://github.com/StormBytePP/StormByte-Database) | One API over SQLite, PostgreSQL and MariaDB | [/StormByte-Database](https://dev.stormbyte.org/StormByte-Database) |
 | [Logger](https://github.com/StormBytePP/StormByte-Logger) | Stream logger with levels, headers, hierarchical components and `Scope` | [/StormByte-Logger](https://dev.stormbyte.org/StormByte-Logger) |
 | [Multimedia](https://github.com/StormBytePP/StormByte-Multimedia) | Decode, encode and containers without raw FFmpeg types; codecs enabled only if present | [/StormByte-Multimedia](https://dev.stormbyte.org/StormByte-Multimedia) |
 | [Network](https://github.com/StormBytePP/StormByte-Network) | Framed packets, Client/Server, IPv4/IPv6 TCP and Buffer pipelines (compress/encrypt) | [/StormByte-Network](https://dev.stormbyte.org/StormByte-Network) |
 | [String](https://github.com/StormBytePP/StormByte-String) | Owned UTF-8 / wide text that can cross a DLL boundary (`String`, `WString`, `CString`, `WCString`) | [/StormByte-String](https://dev.stormbyte.org/StormByte-String) |
-| [System](https://github.com/StormBytePP/StormByte-System) | `Device`, processes, directories, files, host identity and this-thread helpers on Linux, Windows and macOS | [/StormByte-System](https://dev.stormbyte.org/StormByte-System) |
+| [System](https://github.com/StormBytePP/StormByte-System) | Processes, pipes, `Device`, host and environment across Linux, Windows and macOS | [/StormByte-System](https://dev.stormbyte.org/StormByte-System) |
 
 ## Table of Contents
 
@@ -63,7 +63,6 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 - [The rest of the suite](#the-rest-of-the-suite)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Byte lengths](#byte-lengths)
   - [FIFO](#fifo)
   - [Producer and Consumer](#producer-and-consumer)
   - [Hopper](#hopper)
@@ -92,19 +91,14 @@ cmake --build build
 
 Headers are `#include <StormByte/buffer/….hxx>`. Namespace root is `StormByte::Buffer`. I/O types live in `StormByte::Buffer::IO`.
 
-### Byte lengths
-
-Byte counts on the public API are `StormByte::Size` from Base, not `std::size_t`. That includes available / occupied bytes, `Read` / `Peek` / `Extract` / `Write` lengths, `Tell`, `Dirty`, file or buffer `Size`, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied` and a Bridge high-water when it is a byte cap.
-
-Integer literals still work (`fifo.Read(5, data)`, `out.Tell() == 0`) because `Size` constructs from an integral and compares / adds with integers. Do not use `Size` for a quantity that is not a length in bytes.
-
-Stay on `std::size_t` (or `std::ptrdiff_t` for a signed offset) for Hopper / Sink item counts, writer `BackPressure` (chunk count, not bytes), HexDump column count, and device rate fields until they become a byte length.
+Octet payloads use `StormByte::Buffer::Data`. `size()` is `StormByte::Size`. Text that leaves the module (`HexDump`) is `StormByte::String::String`.
 
 ### FIFO
 
 ```cpp
 #include <StormByte/buffer/fifo.hxx>
 
+using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 
@@ -112,11 +106,11 @@ int main() {
 	FIFO fifo;
 	fifo.Write("Hello World");
 
-	StormByte::Buffer::DataType data;
+	Data data;
 	auto res = fifo.Read(5, data); // "Hello", still in the buffer
 	fifo.Seek(6, Position::Absolute);
 
-	StormByte::Buffer::DataType extracted;
+	Data extracted;
 	auto gone = fifo.Extract(5, extracted); // "World"
 }
 ```
@@ -132,8 +126,9 @@ Prefer these over touching `SharedFIFO` / `Ring` by hand. A `Producer` yields a 
 #include <StormByte/buffer/consumer.hxx>
 #include <thread>
 
-using StormByte::Buffer::Producer;
 using StormByte::Buffer::Consumer;
+using StormByte::Buffer::Data;
+using StormByte::Buffer::Producer;
 
 int main() {
 	Producer producer;
@@ -147,9 +142,8 @@ int main() {
 
 	std::thread reader([consumer]() mutable {
 		while (!consumer.EoF()) {
-			StormByte::Buffer::DataType data;
-			auto res = consumer.Extract(0, data);
-			if (res.has_value() && !data.empty()) {
+			Data data;
+			if (consumer.Extract(0, data) && !data.empty()) {
 				// process
 			}
 		}
@@ -259,7 +253,7 @@ using StormByte::Buffer::IO::BufferedFileWriter;
 
 int main() {
 	Producer producer;
-	BufferedFileWriter out("out.bin"); // path-only: Device window, see File leaves
+	BufferedFileWriter out("out.bin");
 	out.Open();
 
 	Bridge bridge(producer.Consumer(), out, /*high_water=*/0);
@@ -276,12 +270,12 @@ Session over a byte origin. The public type owns cache, prefetch, `Tell` and `Se
 
 - `Open` is not idempotent. It calls the leaf `Setup()` once, then the origin.
 - `Read` / `Peek` take a `FIFO` or a writable `std::span<std::byte>`.
-- `Seek` is valid only when the origin is seekable. It is **not** guaranteed O(1): a remote or CPU-heavy origin may block. Seekable origins keep a map of cached spans; a hit does not drop the window. A miss seeks the origin and adds a span. `MaxMemory` is a cap; GC drops spans farthest from `Tell`. `MaxMemory == 0` disables the cache. Not seekable: one forward span; `Seek` returns `Failed` and does not call the hook.
-- Prefetch is stopped before `Seek` and before a move (`Rebind`). The next `Read` / `Peek` requests it again.
+- `Seek` is valid only when the origin is seekable. It is **not** guaranteed O(1). Seekable origins keep a map of cached spans; a hit does not drop the window. A miss seeks the origin and adds a span. `MaxMemory` is a cap; GC drops spans farthest from `Tell`. `MaxMemory == 0` disables the cache. Not seekable: one forward span; `Seek` returns `Failed` and does not call the hook.
+- Prefetch is stopped before `Seek` and before a move. The next `Read` / `Peek` requests it again.
 
 ### IO::BufferedWriter
 
-Session over a byte sink. The public type owns the write ring, `Dirty`, `Flush` and `Truncate`. A leaf implements `OriginOpen` / `OriginClose` / `OriginPush` and optionally `OriginFlush` / `OriginTruncate`.
+Session over a byte sink. The public type owns write buffering, `Dirty`, `Flush` and `Truncate`. A leaf implements `OriginOpen` / `OriginClose` / `OriginPush` and optionally `OriginFlush` / `OriginTruncate`.
 
 - `WriteChunk == 0` is direct: each `Write` hits the origin and `Dirty()` stays `0`.
 - `WriteChunk > 0` holds bytes until a full chunk, `Flush`, or `Close`.
@@ -290,22 +284,18 @@ Session over a byte sink. The public type owns the write ring, `Dirty`, `Flush` 
 
 ### BufferedFileReader / BufferedFileWriter
 
-File leaves of the bases above. They are meant to be derived from (same hooks, no extra setters for the path).
+File leaves of the bases above. They are meant to be derived from (same hooks, no extra setters for the path). Override `CreateDevice()` to return a `unique_ptr<StormByte::System::Device>` when a derived leaf needs its own measurement (no slicing).
 
 Two constructors:
 
 | Constructor | What happens at `Open` |
 | --- | --- |
-| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` calls `CreateDevice()` and reads `Device::Window`. Reader sets `ReadAhead`. Writer sets `WriteChunk` and `BackPressure` 4. `MaxMemory` on the short reader ctor is 1 MiB. A failed Device probe leaves the window at zero. |
-| `BufferedFileReader(path, read_ahead, max_memory)` / `BufferedFileWriter(path, write_chunk, backpressure)` | Those values stay. `Setup()` does not call `CreateDevice`. `(path, 0, 0)` is direct / no prefetch. |
-
-`CreateDevice()` is a protected virtual that returns `std::unique_ptr<StormByte::System::Device>`. The File default constructs a `Device` on the stored path. A derived leaf (network, metered transport) overrides it and returns its own `Device` type so there is no slicing. File only uses measurement and `Window`; it does not keep the `Device`.
+| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` uses `CreateDevice()` and `Device::Window` to set `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). `MaxMemory` on the short reader ctor is 1 MiB. |
+| `BufferedFileReader(path, read_ahead, max_memory)` / `BufferedFileWriter(path, write_chunk, backpressure)` | Those values stay. `Setup()` does not overwrite them. `(path, 0, 0)` is direct / no prefetch. |
 
 The device does not change after construction, so there are no setters for `ReadAhead` / `WriteChunk` / `BackPressure` on the *policy of the device*. `MaxMemory` and `MaxWait` stay settable: they are cache and wait policy, not device speed.
 
-`Setup()` is a protected hook on the base, called from `Open` before `OriginOpen`, when the most-derived vtable is live.
-
-Windows and rates live in System `Device` (nominal HDD / SSD / NVMe / USB / network figures, window `bps / 500` clamped 16 KiB–1 MiB). Buffer does not classify hardware itself.
+`Setup()` is a protected hook on the base, called from `Open` before `OriginOpen`. A derived leaf can override `Setup()` (or skip the probe) and still reuse File origin hooks.
 
 ```cpp
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
@@ -316,12 +306,12 @@ using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::BufferedFileWriter;
 
 int main() {
-	BufferedFileReader in("in.bin");          // Device::Window().read
+	BufferedFileReader in("in.bin");
 	in.Open();
 	FIFO dest;
 	(void)in.Read(16, dest);
 
-	BufferedFileWriter direct("out.bin", 0, 0); // no ring
+	BufferedFileWriter direct("out.bin", 0, 0);
 	direct.Open();
 	(void)direct.Write(dest);
 	direct.Close();
@@ -341,6 +331,7 @@ When `Process` gets a non-null logger it passes `log->Scope("Buffer/Pipeline")` 
 #include <cctype>
 #include <memory>
 
+using StormByte::Buffer::Data;
 using StormByte::Buffer::Pipeline;
 using StormByte::Buffer::Producer;
 using StormByte::Buffer::ExternalReader;
@@ -354,9 +345,10 @@ int main() {
 	pipeline.AddPipe([](ExternalReader& in, ExternalWriter& out,
 						std::shared_ptr<Log> log) {
 		while (!in.EoF()) {
-			StormByte::Buffer::DataType data;
+			Data data;
 			if (in.Extract(0, data) && !data.empty()) {
-				std::string str(reinterpret_cast<const char*>(data.data()), data.size());
+				std::string str(reinterpret_cast<const char*>(data.data()),
+					static_cast<std::size_t>(data.size()));
 				for (auto& c : str)
 					c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 				(void)out.Write(str);

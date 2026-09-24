@@ -46,6 +46,7 @@
 #include <StormByte/type_traits.hxx>
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <ranges>
 #include <span>
@@ -70,7 +71,7 @@ namespace StormByte {
 		 * No data members. Concrete types own storage. @ref Size is declared
 		 * here so every buffer (read, write or both) reports occupancy.
 		 * Protected @c DataConvert helpers turn ranges and strings into
-		 * @ref DataType.
+		 * @ref StormByte::Buffer::Data.
 		 *
 		 * @see ReadOnly, WriteOnly, ReadWrite
 		 */
@@ -143,18 +144,18 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Convert an lvalue input range to @ref DataType.
+				 * @brief Convert an lvalue input range to @ref StormByte::Buffer::Data.
 				 * @tparam Src Range whose value_type converts to @c std::byte.
 				 * @param src Source range.
-				 * @return Converted byte vector.
+				 * @return Converted @ref StormByte::Buffer::Data.
 				 */
 				template<Type::ByteInputRange Src>
-				static DataType DataConvert(const Src& src) noexcept {
-					DataType out;
+				static Data DataConvert(const Src& src) noexcept {
+					Data out;
 					if constexpr (requires { std::ranges::size(src); }) {
 						auto s = std::ranges::size(src);
 						if (s > 0)
-							out.reserve(static_cast<typename DataType::size_type>(s));
+							out.reserve(StormByte::Size{static_cast<std::size_t>(s)});
 					}
 					std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
 						[](auto&& e) noexcept { return static_cast<std::byte>(e); });
@@ -162,21 +163,21 @@ namespace StormByte {
 				}
 
 				/**
-				 * @brief Convert an rvalue input range to @ref DataType.
-				 * @tparam Src Range type. Moved when already @ref DataType.
+				 * @brief Convert an rvalue input range to @ref StormByte::Buffer::Data.
+				 * @tparam Src Range type. Moved when already @ref StormByte::Buffer::Data.
 				 * @param src Source range.
-				 * @return Converted or moved byte vector.
+				 * @return Converted or moved @ref StormByte::Buffer::Data.
 				 */
 				template<Type::ByteInputRange Src>
-				static DataType DataConvert(Src&& src) noexcept {
-					if constexpr (Type::SameAs<Src, DataType>) {
+				static Data DataConvert(Src&& src) noexcept {
+					if constexpr (Type::SameAs<Src, Data>) {
 						return std::move(src);
 					} else {
-						DataType out;
+						Data out;
 						if constexpr (requires { std::ranges::size(src); }) {
 							auto s = std::ranges::size(src);
 							if (s > 0)
-								out.reserve(static_cast<typename DataType::size_type>(s));
+								out.reserve(StormByte::Size{static_cast<std::size_t>(s)});
 						}
 						std::transform(std::ranges::begin(src), std::ranges::end(src), std::back_inserter(out),
 							[](auto&& e) noexcept { return static_cast<std::byte>(e); });
@@ -185,27 +186,27 @@ namespace StormByte {
 				}
 
 				/**
-				 * @brief Convert a string view to @ref DataType. No trailing NUL.
+				 * @brief Convert a string view to @ref StormByte::Buffer::Data. No trailing NUL.
 				 * @param sv Source characters.
-				 * @return Byte vector.
+				 * @return @ref StormByte::Buffer::Data.
 				 */
-				static DataType DataConvert(std::string_view sv) noexcept {
-					DataType out;
+				static Data DataConvert(std::string_view sv) noexcept {
+					Data out;
 					if (!sv.empty())
-						out.reserve(static_cast<typename DataType::size_type>(sv.size()));
+						out.reserve(StormByte::Size{sv.size()});
 					std::transform(sv.begin(), sv.end(), std::back_inserter(out),
 						[](char c) noexcept { return static_cast<std::byte>(c); });
 					return out;
 				}
 
 				/**
-				 * @brief Convert a C string to @ref DataType.
-				 * @param s Source. Null yields an empty vector.
-				 * @return Byte vector.
+				 * @brief Convert a C string to @ref StormByte::Buffer::Data.
+				 * @param s Source. Null yields an empty @ref StormByte::Buffer::Data.
+				 * @return @ref StormByte::Buffer::Data.
 				 */
-				static DataType DataConvert(const char* s) noexcept {
+				static Data DataConvert(const char* s) noexcept {
 					if (!s)
-						return DataType{};
+						return Data{};
 					return DataConvert(std::string_view(s));
 				}
 
@@ -284,9 +285,9 @@ namespace StormByte {
 
 				/**
 				 * @brief View of internal storage. Implementation-defined.
-				 * @return Constant reference to a @ref DataType.
+				 * @return Constant reference to a @ref StormByte::Buffer::Data.
 				 */
-				virtual const DataType& Data() const noexcept = 0;
+				virtual const Data& Data() const noexcept = 0;
 
 				/**
 				 * @brief Whether the store holds no bytes.
@@ -356,19 +357,19 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Extract bytes into a @ref DataType.
+				 * @brief Extract bytes into a @ref StormByte::Buffer::Data.
 				 * @param count Bytes to extract. 0 = all available.
 				 * @param outBuffer Destination.
 				 * @return @c false on failure.
 				 */
-				inline virtual bool Extract(const StormByte::Size& count, DataType& outBuffer) noexcept = 0;
+				inline virtual bool Extract(const StormByte::Size& count, class Data& outBuffer) noexcept = 0;
 
 				/**
-				 * @brief Extract all available bytes into a @ref DataType.
+				 * @brief Extract all available bytes into a @ref StormByte::Buffer::Data.
 				 * @param outBuffer Destination.
 				 * @return @c false on failure.
 				 */
-				inline bool Extract(DataType& outBuffer) noexcept {
+				inline bool Extract(class Data& outBuffer) noexcept {
 					return Extract(StormByte::Size{0}, outBuffer);
 				}
 
@@ -390,11 +391,11 @@ namespace StormByte {
 				}
 
 				/**
-				 * @brief Extract until EoF into a @ref DataType.
+				 * @brief Extract until EoF into a @ref StormByte::Buffer::Data.
 				 * @param outBuffer Destination.
 				 * @warning Can grow without bound.
 				 */
-				virtual void ExtractUntilEoF(DataType& outBuffer) noexcept = 0;
+				virtual void ExtractUntilEoF(class Data& outBuffer) noexcept = 0;
 
 				/**
 				 * @brief Extract until EoF into a @ref WriteOnly.
@@ -413,18 +414,18 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Peek into a @ref DataType. Does not advance the cursor.
+				 * @brief Peek into a @ref StormByte::Buffer::Data. Does not advance the cursor.
 				 * @param count Bytes to peek. 0 = all available (fails if none).
 				 *        Greater than 0: exactly that many bytes, or fail.
 				 * @param outBuffer Destination.
 				 * @return @c false if insufficient data or error.
 				 * @see Read(), Seek()
 				 */
-				virtual bool Peek(const StormByte::Size& count, DataType& outBuffer) const noexcept = 0;
+				virtual bool Peek(const StormByte::Size& count, class Data& outBuffer) const noexcept = 0;
 
 				/**
 				 * @brief Peek into a @ref WriteOnly. Does not advance the cursor.
-				 * @param count Same semantics as the @ref DataType overload.
+				 * @param count Same semantics as the @ref StormByte::Buffer::Data overload.
 				 * @param outBuffer Destination writer.
 				 * @return @c false if insufficient data or error.
 				 * @see Read(), Seek()
@@ -441,19 +442,19 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Read into a @ref DataType. Advances the cursor.
+				 * @brief Read into a @ref StormByte::Buffer::Data. Advances the cursor.
 				 * @param count Bytes to read. 0 = all available.
 				 * @param outBuffer Destination.
 				 * @return @c false on failure.
 				 */
-				virtual bool Read(const StormByte::Size& count, DataType& outBuffer) const noexcept = 0;
+				virtual bool Read(const StormByte::Size& count, class Data& outBuffer) const noexcept = 0;
 
 				/**
-				 * @brief Read all available bytes into a @ref DataType.
+				 * @brief Read all available bytes into a @ref StormByte::Buffer::Data.
 				 * @param outBuffer Destination.
 				 * @return @c false on failure.
 				 */
-				inline bool Read(DataType& outBuffer) const noexcept {
+				inline bool Read(class Data& outBuffer) const noexcept {
 					return Read(StormByte::Size{0}, outBuffer);
 				}
 
@@ -475,11 +476,11 @@ namespace StormByte {
 				}
 
 				/**
-				 * @brief Read until EoF into a @ref DataType.
+				 * @brief Read until EoF into a @ref StormByte::Buffer::Data.
 				 * @param outBuffer Destination.
 				 * @warning Can grow without bound.
 				 */
-				virtual void ReadUntilEoF(DataType& outBuffer) const noexcept = 0;
+				virtual void ReadUntilEoF(class Data& outBuffer) const noexcept = 0;
 
 				/**
 				 * @brief Read until EoF into a @ref WriteOnly.
@@ -579,22 +580,22 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Append bytes from a @ref DataType (copy).
+				 * @brief Append bytes from a @ref StormByte::Buffer::Data (copy).
 				 * @param count Bytes to write.
-				 * @param data Source vector.
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 * @see IsWritable()
 				 */
-				virtual bool Write(const StormByte::Size& count, const DataType& data) noexcept = 0;
+				virtual bool Write(const StormByte::Size& count, const Data& data) noexcept = 0;
 
 				/**
-				 * @brief Append bytes from a @ref DataType (move).
+				 * @brief Append bytes from a @ref StormByte::Buffer::Data (move).
 				 * @param count Bytes to write.
-				 * @param data Source vector.
+				 * @param data Source.
 				 * @return @c false if closed or in error.
 				 * @see IsWritable()
 				 */
-				virtual bool Write(const StormByte::Size& count, DataType&& data) noexcept = 0;
+				virtual bool Write(const StormByte::Size& count, Data&& data) noexcept = 0;
 
 				/**
 				 * @brief Append bytes from a @ref ReadOnly (copy).
@@ -656,12 +657,12 @@ namespace StormByte {
 				 * @return @c false if closed or in error.
 				 */
 				bool Write(std::string_view sv) noexcept {
-					DataType tmp;
+					Data tmp;
 					if (!sv.empty())
-						tmp.reserve(static_cast<typename DataType::size_type>(sv.size()));
+						tmp.reserve(StormByte::Size{sv.size()});
 					std::transform(sv.begin(), sv.end(), std::back_inserter(tmp),
 						[](char e) noexcept { return static_cast<std::byte>(e); });
-					return Write(StormByte::Size{tmp.size()}, std::move(tmp));
+					return Write(tmp.size(), std::move(tmp));
 				}
 
 				/**
@@ -671,7 +672,7 @@ namespace StormByte {
 				 */
 				bool Write(const char* s) noexcept {
 					if (!s)
-						return Write(DataType{});
+						return Write(Data{});
 					return Write(std::string_view(s));
 				}
 
@@ -685,9 +686,9 @@ namespace StormByte {
 					const StormByte::Size to_write = (count == StormByte::Size{0})
 						? StormByte::Size{sv.size()}
 						: std::min(count, StormByte::Size{sv.size()});
-					DataType tmp;
+					Data tmp;
 					if (to_write > StormByte::Size{0})
-						tmp.reserve(static_cast<typename DataType::size_type>(to_write.Value()));
+						tmp.reserve(to_write);
 					std::transform(sv.begin(), sv.begin() + static_cast<std::ptrdiff_t>(to_write.Value()),
 						std::back_inserter(tmp),
 						[](char e) noexcept { return static_cast<std::byte>(e); });
@@ -702,7 +703,7 @@ namespace StormByte {
 				 */
 				bool Write(const StormByte::Size& count, const char* s) noexcept {
 					if (!s)
-						return Write(count, DataType{});
+						return Write(count, Data{});
 					return Write(count, std::string_view(s));
 				}
 
@@ -715,7 +716,7 @@ namespace StormByte {
 				template<std::size_t N>
 				bool Write(const char (&s)[N]) noexcept {
 					if (N == 0)
-						return Write(DataType{});
+						return Write(Data{});
 					return Write(std::string_view(s, (N > 0) ? (N - 1) : 0));
 				}
 
@@ -736,15 +737,15 @@ namespace StormByte {
 				 */
 				template<Type::ByteInputRange R>
 				bool Write(const R& r) noexcept {
-					DataType tmp;
-					if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
-						auto dist = std::ranges::distance(r);
+					Data tmp;
+					if constexpr (requires { std::ranges::size(r); }) {
+						auto dist = std::ranges::size(r);
 						if (dist > 0)
-							tmp.reserve(static_cast<typename DataType::size_type>(dist));
+							tmp.reserve(StormByte::Size{static_cast<std::size_t>(dist)});
 					}
 					std::transform(std::ranges::begin(r), std::ranges::end(r), std::back_inserter(tmp),
 						[](auto&& e) noexcept { return static_cast<std::byte>(e); });
-					return Write(StormByte::Size{tmp.size()}, std::move(tmp));
+					return Write(tmp.size(), std::move(tmp));
 				}
 
 				/**
@@ -758,13 +759,8 @@ namespace StormByte {
 				bool Write(const StormByte::Size& count, const Rw& r) noexcept {
 					if (count == StormByte::Size{0})
 						return Write(r);
-					DataType tmp;
-					if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
-						auto dist = std::ranges::distance(r);
-						if (dist > 0)
-							tmp.reserve(static_cast<typename DataType::size_type>(
-								std::min(static_cast<std::uint64_t>(dist), count.Value())));
-					}
+					Data tmp;
+					tmp.reserve(count);
 					auto it = std::ranges::begin(r);
 					auto end = std::ranges::end(r);
 					StormByte::Size written{0};
@@ -775,7 +771,7 @@ namespace StormByte {
 
 				/**
 				 * @brief Write up to @p count elements from an rvalue range.
-				 * @tparam Rrw Range type. Moved when @ref DataType.
+				 * @tparam Rrw Range type. Moved when @ref StormByte::Buffer::Data.
 				 * @param count Maximum elements. 0 = entire range.
 				 * @param r Source range.
 				 * @return @c false if closed or in error.
@@ -784,19 +780,14 @@ namespace StormByte {
 				bool Write(const StormByte::Size& count, Rrw&& r) noexcept {
 					if (count == StormByte::Size{0})
 						return Write(std::forward<Rrw>(r));
-					if constexpr (Type::SameAs<Rrw, DataType>) {
-						DataType tmp = std::move(r);
-						if (StormByte::Size{tmp.size()} > count)
-							tmp.resize(static_cast<typename DataType::size_type>(count.Value()));
-						return Write(StormByte::Size{tmp.size()}, std::move(tmp));
+					if constexpr (Type::SameAs<Rrw, Data>) {
+						Data tmp = std::move(r);
+						if (tmp.size() > count)
+							tmp.resize(count);
+						return Write(tmp.size(), std::move(tmp));
 					} else {
-						DataType tmp;
-						if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
-							auto dist = std::ranges::distance(r);
-							if (dist > 0)
-								tmp.reserve(static_cast<typename DataType::size_type>(
-									std::min(static_cast<std::uint64_t>(dist), count.Value())));
-						}
+						Data tmp;
+						tmp.reserve(count);
 						auto it = std::ranges::begin(r);
 						auto end = std::ranges::end(r);
 						StormByte::Size written{0};
@@ -808,24 +799,24 @@ namespace StormByte {
 
 				/**
 				 * @brief Write all elements from an rvalue range.
-				 * @tparam Rr Range type. Moved when @ref DataType.
+				 * @tparam Rr Range type. Moved when @ref StormByte::Buffer::Data.
 				 * @param r Source.
 				 * @return @c false if closed or in error.
 				 */
 				template<Type::ByteInputRange Rr>
 				bool Write(Rr&& r) noexcept {
-					if constexpr (Type::SameAs<Rr, DataType>) {
-						return Write(StormByte::Size{r.size()}, std::move(r));
+					if constexpr (Type::SameAs<Rr, Data>) {
+						return Write(r.size(), std::move(r));
 					} else {
-						DataType tmp;
-						if constexpr (requires(DataType& d, typename DataType::size_type n) { d.reserve(n); }) {
-							auto dist = std::ranges::distance(r);
+						Data tmp;
+						if constexpr (requires { std::ranges::size(r); }) {
+							auto dist = std::ranges::size(r);
 							if (dist > 0)
-								tmp.reserve(static_cast<typename DataType::size_type>(dist));
+								tmp.reserve(StormByte::Size{static_cast<std::size_t>(dist)});
 						}
 						std::transform(std::ranges::begin(r), std::ranges::end(r), std::back_inserter(tmp),
 							[](auto&& e) noexcept { return static_cast<std::byte>(e); });
-						return Write(StormByte::Size{tmp.size()}, std::move(tmp));
+						return Write(tmp.size(), std::move(tmp));
 					}
 				}
 
@@ -840,10 +831,10 @@ namespace StormByte {
 				template<Type::ByteInputIterator I, typename S>
 					requires Type::SentinelFor<S, I>
 				bool Write(I first, S last) noexcept {
-					DataType tmp;
+					Data tmp;
 					std::transform(first, last, std::back_inserter(tmp),
 						[](auto&& e) noexcept { return static_cast<std::byte>(e); });
-					return Write(StormByte::Size{tmp.size()}, std::move(tmp));
+					return Write(tmp.size(), std::move(tmp));
 				}
 
 				/**
@@ -860,7 +851,7 @@ namespace StormByte {
 				bool Write(const StormByte::Size& count, I2 first, S2 last) noexcept {
 					if (count == StormByte::Size{0})
 						return Write(first, last);
-					DataType tmp;
+					Data tmp;
 					StormByte::Size written{0};
 					for (; first != last && written < count; ++first, written = written + StormByte::Size{1})
 						tmp.push_back(static_cast<std::byte>(*first));
@@ -927,24 +918,24 @@ namespace StormByte {
 		};
 
 		/// @cond
-		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<DataType>(const DataType&) noexcept;
-		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<DataType>(DataType&&) noexcept;
-		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
-		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
-		extern template DataType STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<std::byte>>(std::span<std::byte>&&) noexcept;
+		extern template Data STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<Data>(const Data&) noexcept;
+		extern template Data STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<Data>(Data&&) noexcept;
+		extern template Data STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
+		extern template Data STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
+		extern template Data STORMBYTE_BUFFER_PUBLIC Generic::DataConvert<std::span<std::byte>>(std::span<std::byte>&&) noexcept;
 
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType>(const DataType&) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType>(DataType&&) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType>(const StormByte::Size&, const DataType&) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType>(const StormByte::Size&, DataType&&) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data>(const Data&) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data>(Data&&) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data>(const StormByte::Size&, const Data&) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data>(const StormByte::Size&, Data&&) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<std::span<const std::byte>>(const std::span<const std::byte>&) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<std::span<const std::byte>>(const StormByte::Size&, const std::span<const std::byte>&) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<std::span<std::byte>>(const std::span<std::byte>&) noexcept;
 		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<std::span<std::byte>>(const StormByte::Size&, const std::span<std::byte>&) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(DataType::const_iterator, DataType::const_iterator) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::iterator, DataType::iterator>(DataType::iterator, DataType::iterator) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::const_iterator, DataType::const_iterator>(const StormByte::Size&, DataType::const_iterator, DataType::const_iterator) noexcept;
-		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<DataType::iterator, DataType::iterator>(const StormByte::Size&, DataType::iterator, DataType::iterator) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data::const_iterator, Data::const_iterator>(Data::const_iterator, Data::const_iterator) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data::iterator, Data::iterator>(Data::iterator, Data::iterator) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data::const_iterator, Data::const_iterator>(const StormByte::Size&, Data::const_iterator, Data::const_iterator) noexcept;
+		extern template bool STORMBYTE_BUFFER_PUBLIC WriteOnly::Write<Data::iterator, Data::iterator>(const StormByte::Size&, Data::iterator, Data::iterator) noexcept;
 		/// @endcond
 	}
 }

@@ -263,10 +263,10 @@ Result BufferedWriter::Write(const FIFO& src) {
 		if (!WouldAccept(need))
 			return { Status::TryAgain, 0 };
 	}
-	DataType chunk;
+	Data chunk;
 	if (!src.Read(need, chunk))
 		return { Status::Failed, 0 };
-	return WriteSpan(std::span<const std::byte>(chunk.data(), chunk.size()));
+	return WriteSpan(std::span<const std::byte>(chunk.data(), static_cast<std::size_t>(chunk.size())));
 }
 
 Result BufferedWriter::Write(FIFO& src) {

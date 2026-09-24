@@ -52,7 +52,7 @@
 #include <span>
 #include <string>
 
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileReader;
@@ -196,14 +196,15 @@ namespace {
 	}
 
 	std::string Text(FIFO& fifo) {
-		DataType data;
-		static_cast<void>(fifo.Peek(0, data));
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		Data data;
+		static_cast<void>(fifo.Peek(StormByte::Size{0}, data));
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 
 	FIFO FromText(const std::string& text) {
 		FIFO fifo;
-		DataType data(text.size());
+		Data data(StormByte::Size{text.size()});
 		for (std::size_t i = 0; i < text.size(); ++i)
 			data[i] = static_cast<std::byte>(text[i]);
 		static_cast<void>(fifo.Write(data.size(), std::move(data)));
@@ -252,8 +253,8 @@ int test_metered_reader_prefetch_at_least_requested() {
 	FIFO dest;
 	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Read(1, dest).count);
 	ASSERT_EQUAL(fn, std::string("A"), Text(dest));
-	ASSERT_TRUE(fn, in.BytesRead() >= 1);
-	ASSERT_TRUE(fn, in.BytesRead() <= 5);
+	ASSERT_TRUE(fn, in.BytesRead() >= StormByte::Size{1});
+	ASSERT_TRUE(fn, in.BytesRead() <= StormByte::Size{5});
 	ASSERT_EQUAL(fn, StormByte::Size{1}, in.Tell());
 	RETURN_TEST(fn, 0);
 }

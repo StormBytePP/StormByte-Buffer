@@ -52,7 +52,7 @@
 #include <string>
 #include <thread>
 
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileReader;
@@ -66,14 +66,15 @@ namespace {
 	}
 
 	std::string Text(FIFO& fifo) {
-		DataType data;
-		static_cast<void>(fifo.Peek(0, data));
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		Data data;
+		static_cast<void>(fifo.Peek(StormByte::Size{0}, data));
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 
-	DataType Bytes(FIFO& fifo) {
-		DataType data;
-		static_cast<void>(fifo.Peek(0, data));
+	Data Bytes(FIFO& fifo) {
+		Data data;
+		static_cast<void>(fifo.Peek(StormByte::Size{0}, data));
 		return data;
 	}
 
@@ -112,7 +113,7 @@ int test_no_nl_and_nul() {
 	FIFO n;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(raw.Read(5, n).status));
 	const auto bytes = Bytes(n);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), bytes.size());
+	ASSERT_EQUAL(fn, StormByte::Size{5}, bytes.size());
 	ASSERT_EQUAL(fn, std::byte{'A'}, bytes[0]);
 	ASSERT_EQUAL(fn, std::byte{0}, bytes[1]);
 	RETURN_TEST(fn, 0);
@@ -126,7 +127,7 @@ int test_pattern_256() {
 	const auto read = in.Read(256, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
 	const auto bytes = Bytes(dest);
-	ASSERT_EQUAL(fn, static_cast<std::size_t>(256), bytes.size());
+	ASSERT_EQUAL(fn, StormByte::Size{256}, bytes.size());
 	for (std::size_t i = 0; i < 256; ++i)
 		ASSERT_EQUAL(fn, static_cast<std::byte>(i), bytes[i]);
 	ASSERT_EQUAL(fn, StormByte::Size{256}, in.Tell());
@@ -186,7 +187,7 @@ int test_path_only_setup_sets_readahead() {
 	const std::string fn = "test_path_only_setup_sets_readahead";
 	BufferedFileReader in(File("five.bin"));
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_TRUE(fn, in.ReadAhead() > 0);
+	ASSERT_TRUE(fn, in.ReadAhead() > StormByte::Size{0});
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));

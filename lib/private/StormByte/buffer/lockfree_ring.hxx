@@ -93,10 +93,14 @@ namespace StormByte::Buffer {
 			 */
 			explicit LockFreeRing(StormByte::Size initial_capacity = StormByte::Size{1u << 20});
 
-			/** @brief Copy constructor (deleted – not copyable). */
+			/**
+			 * @brief Copy constructor (deleted).
+			 */
 			LockFreeRing(const LockFreeRing&) = delete;
 
-			/** @brief Copy assignment (deleted – not copyable). */
+			/**
+			 * @brief Copy assignment (deleted).
+			 */
 			LockFreeRing& operator=(const LockFreeRing&) = delete;
 
 			/**
@@ -112,7 +116,9 @@ namespace StormByte::Buffer {
 			 */
 			LockFreeRing& operator=(LockFreeRing&& other) noexcept;
 
-			/** @brief Destructor. */
+			/**
+			 * @brief Destructor.
+			 */
 			~LockFreeRing() noexcept override = default;
 
 			/** @} */
@@ -166,17 +172,16 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Snapshot of stored data (may rebuild an internal cache).
-			 * @return Constant reference to a @ref DataType view.
+			 * @return Constant reference to a @ref StormByte::Buffer::Data view.
 			 * @warning Intended for diagnostics; prefer Read / Extract on the hot path.
 			 */
-			const DataType& Data() const noexcept override;
+			const class Data& Data() const noexcept override;
 
 			/**
 			 * @brief Longest contiguous unread span from the read cursor.
 			 * @return Empty if none. Does not wrap; call again after Consume.
-			 *
-			 * Valid until the next producer Grow or a Consume/Extract that
-			 * advances past this span.
+			 * @details Valid until the next producer Grow or a Consume/Extract that
+			 *          advances past this span.
 			 */
 			std::span<const std::byte> FrontSpan() const noexcept;
 
@@ -240,12 +245,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Peek into a @ref DataType without advancing the read position.
+			 * @brief Peek into a @ref StormByte::Buffer::Data without advancing the read position.
 			 * @param count Bytes to peek; 0 = all available.
 			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			bool Peek(const StormByte::Size& count, DataType& out) const noexcept override;
+			bool Peek(const StormByte::Size& count, class Data& out) const noexcept override;
 
 			/**
 			 * @brief Peek into a @ref WriteOnly without advancing the read position.
@@ -263,12 +268,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Non-destructive read into a @ref DataType.
+			 * @brief Non-destructive read into a @ref StormByte::Buffer::Data.
 			 * @param count Bytes to read; 0 = all available.
 			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			bool Read(const StormByte::Size& count, DataType& out) const noexcept override;
+			bool Read(const StormByte::Size& count, class Data& out) const noexcept override;
 
 			/**
 			 * @brief Non-destructive read into a @ref WriteOnly.
@@ -279,10 +284,10 @@ namespace StormByte::Buffer {
 			bool Read(const StormByte::Size& count, WriteOnly& out) const noexcept override;
 
 			/**
-			 * @brief Read until EoF into a @ref DataType.
+			 * @brief Read until EoF into a @ref StormByte::Buffer::Data.
 			 * @param out Destination.
 			 */
-			void ReadUntilEoF(DataType& out) const noexcept override;
+			void ReadUntilEoF(class Data& out) const noexcept override;
 
 			/**
 			 * @brief Read until EoF into a @ref WriteOnly.
@@ -298,12 +303,12 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Extract bytes into a @ref DataType (consumes data).
+			 * @brief Extract bytes into a @ref StormByte::Buffer::Data (consumes data).
 			 * @param count Bytes to extract; 0 = all available.
 			 * @param out Destination.
 			 * @return @c true on success, @c false on insufficient data or error.
 			 */
-			bool Extract(const StormByte::Size& count, DataType& out) noexcept override;
+			bool Extract(const StormByte::Size& count, class Data& out) noexcept override;
 
 			/**
 			 * @brief Extract bytes into a @ref WriteOnly (consumes data).
@@ -314,10 +319,10 @@ namespace StormByte::Buffer {
 			bool Extract(const StormByte::Size& count, WriteOnly& out) noexcept override;
 
 			/**
-			 * @brief Extract until EoF into a @ref DataType.
+			 * @brief Extract until EoF into a @ref StormByte::Buffer::Data.
 			 * @param out Destination.
 			 */
-			void ExtractUntilEoF(DataType& out) noexcept override;
+			void ExtractUntilEoF(class Data& out) noexcept override;
 
 			/**
 			 * @brief Extract until EoF into a @ref WriteOnly.
@@ -333,20 +338,20 @@ namespace StormByte::Buffer {
 			 */
 
 			/**
-			 * @brief Append bytes from a @ref DataType (copy).
+			 * @brief Append bytes from a @ref StormByte::Buffer::Data (copy).
 			 * @param count Number of bytes to write.
-			 * @param data Source vector.
+			 * @param data Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, const DataType& data) noexcept override;
+			bool Write(const StormByte::Size& count, const class Data& data) noexcept override;
 
 			/**
-			 * @brief Append bytes from a @ref DataType (move path).
+			 * @brief Append bytes from a @ref StormByte::Buffer::Data (move path).
 			 * @param count Number of bytes to write.
-			 * @param data Source vector.
+			 * @param data Source.
 			 * @return @c true on success, @c false if closed / error.
 			 */
-			bool Write(const StormByte::Size& count, DataType&& data) noexcept override;
+			bool Write(const StormByte::Size& count, class Data&& data) noexcept override;
 
 			/**
 			 * @brief Append bytes from a @ref ReadOnly (copy path).
@@ -371,7 +376,9 @@ namespace StormByte::Buffer {
 			 */
 			bool Write(std::span<const std::byte> src) noexcept;
 
-			/** @brief Bring @ref WriteOnly convenience Write overloads into scope. */
+			/**
+			 * @brief Bring @ref WriteOnly convenience Write overloads into scope.
+			 */
 			using WriteOnly::Write;
 
 			/** @} */
@@ -401,7 +408,7 @@ namespace StormByte::Buffer {
 			mutable std::mutex m_wait_mtx;					///< Mutex for blocking waits only
 			mutable std::condition_variable m_cv;			///< Signalled on data / close / error
 
-			mutable DataType m_data_cache;					///< Cache used by @ref Data()
+			mutable class Data m_data_cache;				///< Cache used by @ref ReadOnly::Data()
 
 			/**
 			 * @brief Round @p v up to the next power of two.
@@ -423,13 +430,13 @@ namespace StormByte::Buffer {
 			bool WaitFor(StormByte::Size n) const;
 
 			/**
-			 * @brief Shared Extract / Read / Peek implementation into @ref DataType.
+			 * @brief Shared Extract / Read / Peek implementation into @ref StormByte::Buffer::Data.
 			 * @param count Requested bytes.
 			 * @param out Destination.
 			 * @param op Operation kind.
 			 * @return @c true on success.
 			 */
-			bool ReadInternal(StormByte::Size count, DataType& out, Operation op) noexcept;
+			bool ReadInternal(StormByte::Size count, class Data& out, Operation op) noexcept;
 
 			/**
 			 * @brief Append raw bytes (producer path).

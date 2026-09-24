@@ -54,7 +54,7 @@ StormByte::Size Consumer::AvailableBytes() const noexcept {
 	return m_buffer->AvailableBytes();
 }
 
-const DataType& Consumer::Data() const noexcept {
+const class Data& Consumer::Data() const noexcept {
 	return m_buffer->Data();
 }
 
@@ -90,7 +90,7 @@ void Consumer::Seek(const std::ptrdiff_t& offset, const Position& mode) const no
 	m_buffer->Seek(offset, mode);
 }
 
-bool Consumer::Extract(const StormByte::Size& count, DataType& out) noexcept {
+bool Consumer::Extract(const StormByte::Size& count, class Data& out) noexcept {
 	return m_buffer->Extract(count, out);
 }
 
@@ -98,7 +98,7 @@ bool Consumer::Extract(const StormByte::Size& count, WriteOnly& out) noexcept {
 	return m_buffer->Extract(count, out);
 }
 
-void Consumer::ExtractUntilEoF(DataType& out) noexcept {
+void Consumer::ExtractUntilEoF(class Data& out) noexcept {
 	m_buffer->ExtractUntilEoF(out);
 }
 
@@ -106,7 +106,7 @@ void Consumer::ExtractUntilEoF(WriteOnly& out) noexcept {
 	m_buffer->ExtractUntilEoF(out);
 }
 
-bool Consumer::Read(const StormByte::Size& count, DataType& out) const noexcept {
+bool Consumer::Read(const StormByte::Size& count, class Data& out) const noexcept {
 	return m_buffer->Read(count, out);
 }
 
@@ -114,7 +114,7 @@ bool Consumer::Read(const StormByte::Size& count, WriteOnly& out) const noexcept
 	return m_buffer->Read(count, out);
 }
 
-void Consumer::ReadUntilEoF(DataType& out) const noexcept {
+void Consumer::ReadUntilEoF(class Data& out) const noexcept {
 	m_buffer->ReadUntilEoF(out);
 }
 
@@ -122,7 +122,7 @@ void Consumer::ReadUntilEoF(WriteOnly& out) const noexcept {
 	m_buffer->ReadUntilEoF(out);
 }
 
-bool Consumer::Peek(const StormByte::Size& count, DataType& out) const noexcept {
+bool Consumer::Peek(const StormByte::Size& count, class Data& out) const noexcept {
 	return m_buffer->Peek(count, out);
 }
 

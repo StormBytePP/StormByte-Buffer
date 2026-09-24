@@ -40,14 +40,14 @@
  */
 
 #include <StormByte/buffer/ring.hxx>
-#include <StormByte/helpers.hxx>
 
 #include <algorithm>
 #include <cctype>
-#include <cstring>
 #include <iomanip>
 #include <iterator>
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <vector>
 
 using namespace StormByte::Buffer;
@@ -132,7 +132,7 @@ StormByte::Size Ring::Size() const noexcept {
 	return StormByte::Size{m_buffer.size()};
 }
 
-const DataType& Ring::Data() const noexcept {
+const class Data& Ring::Data() const noexcept {
 	std::unique_lock lock(m_mutex);
 	m_data_cache.assign(m_buffer.begin(), m_buffer.end());
 	return m_data_cache;
@@ -234,7 +234,7 @@ void Ring::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexce
 	}
 }
 
-std::string Ring::HexDump(const StormByte::Size& columns,
+StormByte::String::String Ring::HexDump(const StormByte::Size& columns,
 						const StormByte::Size& byte_limit) const noexcept {
 	std::shared_lock lock(m_mutex);
 	const StormByte::Size cols = (columns == StormByte::Size{0}) ? StormByte::Size{16} : columns;
@@ -245,13 +245,14 @@ std::string Ring::HexDump(const StormByte::Size& columns,
 	std::ostringstream oss = HexDumpHeader();
 	oss << '\n';
 	if (end > m_position_offset) {
-		DataType tmp(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset),
+		class Data tmp;
+		tmp.assign(m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset),
 					m_buffer.begin() + static_cast<std::ptrdiff_t>(end));
-		std::span<const std::byte> view(tmp.data(), tmp.size());
-		oss << FormatHexLines(view, m_position_offset, cols);
+		std::span<const std::byte> view(tmp.data(), static_cast<std::size_t>(tmp.size()));
+		oss << static_cast<const char*>(FormatHexLines(view, m_position_offset, cols));
 	}
 
-	return oss.str();
+	return StormByte::String::String{oss.str()};
 }
 
 std::ostringstream Ring::HexDumpHeader() const noexcept {
@@ -263,7 +264,7 @@ std::ostringstream Ring::HexDumpHeader() const noexcept {
 	return oss;
 }
 
-std::string Ring::FormatHexLines(std::span<const std::byte> data,
+StormByte::String::String Ring::FormatHexLines(std::span<const std::byte> data,
 								StormByte::Size start_offset,
 								StormByte::Size columns) noexcept {
 	const std::size_t cols = static_cast<std::size_t>(
@@ -302,10 +303,10 @@ std::string Ring::FormatHexLines(std::span<const std::byte> data,
 			oss << '\n';
 	}
 
-	return oss.str();
+	return StormByte::String::String{oss.str()};
 }
 
-bool Ring::Peek(const StormByte::Size& count, DataType& outBuffer) const noexcept {
+bool Ring::Peek(const StormByte::Size& count, class Data& outBuffer) const noexcept {
 	return const_cast<Ring*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
@@ -313,7 +314,7 @@ bool Ring::Peek(const StormByte::Size& count, WriteOnly& outBuffer) const noexce
 	return const_cast<Ring*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
-bool Ring::Read(const StormByte::Size& count, DataType& outBuffer) const noexcept {
+bool Ring::Read(const StormByte::Size& count, class Data& outBuffer) const noexcept {
 	return const_cast<Ring*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
@@ -321,7 +322,7 @@ bool Ring::Read(const StormByte::Size& count, WriteOnly& outBuffer) const noexce
 	return const_cast<Ring*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
-bool Ring::Extract(const StormByte::Size& count, DataType& outBuffer) noexcept {
+bool Ring::Extract(const StormByte::Size& count, class Data& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
@@ -329,7 +330,7 @@ bool Ring::Extract(const StormByte::Size& count, WriteOnly& outBuffer) noexcept 
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
-void Ring::ReadUntilEoF(DataType& outBuffer) const noexcept {
+void Ring::ReadUntilEoF(class Data& outBuffer) const noexcept {
 	const_cast<Ring*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
@@ -337,7 +338,7 @@ void Ring::ReadUntilEoF(WriteOnly& outBuffer) const noexcept {
 	const_cast<Ring*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
-void Ring::ExtractUntilEoF(DataType& outBuffer) noexcept {
+void Ring::ExtractUntilEoF(class Data& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
@@ -345,8 +346,8 @@ void Ring::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
-bool Ring::ReadInternal(const StormByte::Size& count, DataType& outBuffer, Operation flag) noexcept {
-	DataType local;
+bool Ring::ReadInternal(const StormByte::Size& count, class Data& outBuffer, Operation flag) noexcept {
+	class Data local;
 	{
 		std::unique_lock lock(m_mutex);
 		StormByte::Size stored{m_buffer.size()};
@@ -402,13 +403,13 @@ bool Ring::ReadInternal(const StormByte::Size& count, DataType& outBuffer, Opera
 }
 
 bool Ring::ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer, Operation flag) noexcept {
-	DataType temp;
+	class Data temp;
 	if (!ReadInternal(count, temp, flag))
 		return false;
 	return outBuffer.Write(std::move(temp));
 }
 
-void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
+void Ring::ReadUntilEoFInternal(class Data& outBuffer, Operation flag) noexcept {
 	while (true) {
 		{
 			std::unique_lock lock(m_mutex);
@@ -431,7 +432,7 @@ void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 				return;
 		}
 
-		DataType chunk;
+		class Data chunk;
 		bool ok = false;
 		switch (flag) {
 			case Operation::Read:
@@ -457,41 +458,41 @@ void Ring::ReadUntilEoFInternal(DataType& outBuffer, Operation flag) noexcept {
 }
 
 void Ring::ReadUntilEoFInternal(WriteOnly& outBuffer, Operation flag) noexcept {
-	DataType tmp;
+	class Data tmp;
 	ReadUntilEoFInternal(tmp, flag);
 	if (!tmp.empty())
 		(void)outBuffer.Write(std::move(tmp));
 }
 
-bool Ring::Write(const StormByte::Size& count, const DataType& data) noexcept {
+bool Ring::Write(const StormByte::Size& count, const class Data& data) noexcept {
 	return WriteInternal(count, data);
 }
 
-bool Ring::Write(const StormByte::Size& count, DataType&& data) noexcept {
+bool Ring::Write(const StormByte::Size& count, class Data&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
 
 bool Ring::Write(const StormByte::Size& count, const ReadOnly& data) noexcept {
-	DataType tmp;
+	class Data tmp;
 	if (!data.Read(count, tmp))
 		return false;
 	return WriteInternal(StormByte::Size{0}, std::move(tmp));
 }
 
 bool Ring::Write(const StormByte::Size& count, ReadOnly&& data) noexcept {
-	DataType tmp;
+	class Data tmp;
 	if (!data.Extract(count, tmp))
 		return false;
 	return WriteInternal(StormByte::Size{0}, std::move(tmp));
 }
 
-bool Ring::WriteInternal(const StormByte::Size& count, const DataType& src) noexcept {
+bool Ring::WriteInternal(const StormByte::Size& count, const class Data& src) noexcept {
 	bool result = false;
 	{
 		std::unique_lock lock(m_mutex);
 		if (m_closed || m_error)
 			return false;
-		const StormByte::Size src_size{src.size()};
+		const StormByte::Size src_size = src.size();
 		const StormByte::Size real_count = (count == StormByte::Size{0}) ? src_size : count;
 		if (real_count > src_size)
 			return false;
@@ -505,13 +506,13 @@ bool Ring::WriteInternal(const StormByte::Size& count, const DataType& src) noex
 	return result;
 }
 
-bool Ring::WriteInternal(const StormByte::Size& count, DataType&& src) noexcept {
+bool Ring::WriteInternal(const StormByte::Size& count, class Data&& src) noexcept {
 	bool result = false;
 	{
 		std::unique_lock lock(m_mutex);
 		if (m_closed || m_error)
 			return false;
-		const StormByte::Size src_size{src.size()};
+		const StormByte::Size src_size = src.size();
 		const StormByte::Size real_count = (count == StormByte::Size{0}) ? src_size : count;
 		if (real_count > src_size)
 			return false;

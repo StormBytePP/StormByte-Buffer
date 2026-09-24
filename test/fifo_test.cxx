@@ -50,7 +50,7 @@
 #include <string>
 #include <vector>
 
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
 using StormByte::Buffer::Position;
 using StormByte::Buffer::ReadOnly;
@@ -58,14 +58,15 @@ using StormByte::Buffer::ReadWrite;
 using StormByte::Buffer::WriteOnly;
 
 namespace {
-	std::string BytesToText(const DataType& data) {
+	std::string BytesToText(const Data& data) {
 		if (data.empty())
 			return {};
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 
-	DataType TextToBytes(std::string_view text) {
-		DataType out(text.size());
+	Data TextToBytes(std::string_view text) {
+		Data out(StormByte::Size{text.size()});
 		if (!text.empty())
 			std::memcpy(out.data(), text.data(), text.size());
 		return out;
@@ -89,24 +90,24 @@ int test_fifo_available_bytes() {
 	ASSERT_EQUAL("empty available", fifo.AvailableBytes(), StormByte::Size{0});
 	(void)fifo.Write("ABCDEFGHIJ");
 	ASSERT_EQUAL("after write available", fifo.AvailableBytes(), StormByte::Size{10});
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(3, r1);
 	ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), StormByte::Size{7});
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(2, r2);
 	ASSERT_EQUAL("after read 2 more", fifo.AvailableBytes(), StormByte::Size{5});
 	fifo.Seek(0, Position::Absolute);
 	ASSERT_EQUAL("after seek to 0", fifo.AvailableBytes(), StormByte::Size{10});
 	fifo.Seek(4, Position::Absolute);
 	ASSERT_EQUAL("after seek to 4", fifo.AvailableBytes(), StormByte::Size{6});
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(3, e1);
 	ASSERT_EQUAL("after extract 3", fifo.AvailableBytes(), StormByte::Size{3});
-	DataType r3;
+	Data r3;
 	(void)fifo.Read(0, r3);
 	ASSERT_EQUAL("after reading all remaining", fifo.AvailableBytes(), StormByte::Size{0});
 	fifo.Seek(0, Position::Absolute);
-	DataType e2;
+	Data e2;
 	(void)fifo.Extract(0, e2);
 	ASSERT_EQUAL("after extract all", fifo.AvailableBytes(), StormByte::Size{0});
 	ASSERT_TRUE("buffer empty", fifo.Empty());
@@ -117,15 +118,15 @@ int test_fifo_available_bytes_after_ops() {
 	FIFO fifo;
 	(void)fifo.Write("ABCDEFGH");
 	ASSERT_EQUAL("initial available", fifo.AvailableBytes(), StormByte::Size{8});
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(3, r1);
 	ASSERT_EQUAL("after read 3", fifo.AvailableBytes(), StormByte::Size{5});
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(4, e1);
 	ASSERT_EQUAL("after extract 4", fifo.AvailableBytes(), StormByte::Size{1});
 	(void)fifo.Write("1234");
 	ASSERT_EQUAL("after wrap write", fifo.AvailableBytes(), StormByte::Size{5});
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(5, r2);
 	ASSERT_EQUAL("after read 5", fifo.AvailableBytes(), StormByte::Size{0});
 	RETURN_TEST("test_fifo_available_bytes_after_ops", 0);
@@ -141,7 +142,7 @@ int test_fifo_close_eof_when_empty() {
 	ASSERT_TRUE("eof when closed and empty", fifo.EoF());
 	ASSERT_FALSE("not writable", fifo.IsWritable());
 	ASSERT_TRUE("still readable (no error)", fifo.IsReadable());
-	DataType out;
+	Data out;
 	ASSERT_FALSE("read on closed empty fails", fifo.Read(0, out));
 	RETURN_TEST("test_fifo_close_eof_when_empty", 0);
 }
@@ -153,7 +154,7 @@ int test_fifo_close_preserves_copy_state() {
 	FIFO b(a);
 	ASSERT_FALSE("copy not writable", b.IsWritable());
 	ASSERT_TRUE("copy still readable", b.IsReadable());
-	DataType out;
+	Data out;
 	ASSERT_TRUE("copy extract ok", b.Extract(0, out));
 	ASSERT_EQUAL("copy content", BytesToText(out), std::string("HI"));
 	RETURN_TEST("test_fifo_close_preserves_copy_state", 0);
@@ -169,7 +170,7 @@ int test_fifo_close_rejects_writes() {
 	ASSERT_TRUE("still readable after close", fifo.IsReadable());
 	ASSERT_FALSE("write after close fails", fifo.Write("X"));
 	ASSERT_EQUAL("size unchanged after failed write", fifo.Size(), StormByte::Size{3});
-	DataType out;
+	Data out;
 	ASSERT_TRUE("extract after close ok", fifo.Extract(0, out));
 	ASSERT_EQUAL("content after close", BytesToText(out), std::string("ABC"));
 	ASSERT_TRUE("eof after drain", fifo.EoF());
@@ -184,7 +185,7 @@ int test_fifo_seterror_blocks_all() {
 	ASSERT_FALSE("not readable on error", fifo.IsReadable());
 	ASSERT_TRUE("eof on error", fifo.EoF());
 	ASSERT_FALSE("write fails on error", fifo.Write("X"));
-	DataType out;
+	Data out;
 	ASSERT_FALSE("read fails on error", fifo.Read(0, out));
 	ASSERT_FALSE("extract fails on error", fifo.Extract(0, out));
 	RETURN_TEST("test_fifo_seterror_blocks_all", 0);
@@ -199,7 +200,7 @@ int test_fifo_copy_ctor_assign() {
 	(void)a.Write(std::string("AB"));
 	FIFO b(a);
 	ASSERT_EQUAL("copy ctor size", a.Size(), b.Size());
-	DataType out1, out2;
+	Data out1, out2;
 	(void)b.Extract(2, out1);
 	ASSERT_EQUAL("copy ctor content", std::string("AB"), BytesToText(out1));
 	FIFO c;
@@ -224,7 +225,7 @@ int test_fifo_equality() {
 	(void)b.Write("ABC");
 	ASSERT_TRUE("fifo equal same content", a == b);
 	ASSERT_FALSE("fifo unequal same content", a != b);
-	DataType tmp;
+	Data tmp;
 	(void)a.Read(1, tmp);
 	ASSERT_FALSE("fifo unequal after read changes position", a == b);
 	(void)b.Read(1, tmp);
@@ -251,8 +252,8 @@ int test_fifo_polymorphic_interface_abi() {
 	std::unique_ptr<ReadWrite> fifo = std::make_unique<FIFO>();
 	ReadOnly& reader = *fifo;
 	WriteOnly& writer = *fifo;
-	DataType copy {std::byte{'A'}};
-	DataType moved {std::byte{'B'}};
+	Data copy {std::byte{'A'}};
+	Data moved {std::byte{'B'}};
 	FIFO source;
 	ASSERT_TRUE("write source", source.Write("CD"));
 	ASSERT_TRUE("write copy", writer.Write(0, copy));
@@ -265,19 +266,19 @@ int test_fifo_polymorphic_interface_abi() {
 	ASSERT_EQUAL("available", reader.AvailableBytes(), StormByte::Size{6});
 	ASSERT_FALSE("empty", reader.Empty());
 	ASSERT_TRUE("readable", reader.IsReadable());
-	DataType peek;
+	Data peek;
 	ASSERT_TRUE("peek", reader.Peek(1, peek));
-	DataType read;
+	Data read;
 	ASSERT_TRUE("read", reader.Read(1, read));
 	reader.Seek(0, Position::Absolute);
 	ASSERT_TRUE("drop", reader.Drop(1));
-	DataType extracted;
+	Data extracted;
 	ASSERT_TRUE("extract", reader.Extract(1, extracted));
 	reader.Clean();
 	reader.Clear();
 	writer.Close();
 	ASSERT_TRUE("eof after close", reader.EoF());
-	DataType until_eof;
+	Data until_eof;
 	reader.ReadUntilEoF(until_eof);
 	reader.ExtractUntilEoF(until_eof);
 	fifo.reset();
@@ -291,7 +292,7 @@ int test_fifo_polymorphic_interface_abi() {
 int test_fifo_hexdump() {
 	FIFO fifo;
 	(void)fifo.Write("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd");
-	std::string dump = fifo.HexDump(8, 0);
+	const std::string dump = std::string(fifo.HexDump(8, 0));
 	std::string expected;
 	expected += "Size: 40 bytes\n";
 	expected += "Read Position: 0\n";
@@ -319,7 +320,7 @@ int test_fifo_hexdump_mixed() {
 	v.push_back(std::byte{0xFF});
 	v.push_back(std::byte{0x30});
 	(void)fifo.Write(std::move(v));
-	std::string dump = fifo.HexDump(8, 0);
+	const std::string dump = std::string(fifo.HexDump(8, 0));
 	std::string expected;
 	expected += "Size: 10 bytes\n";
 	expected += "Read Position: 0\n";
@@ -334,7 +335,7 @@ int test_fifo_hexdump_offset() {
 	FIFO fifo;
 	(void)fifo.Write("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd");
 	fifo.Seek(5, Position::Absolute);
-	std::string dump = fifo.HexDump(8, 0);
+	const std::string dump = std::string(fifo.HexDump(8, 0));
 	std::string expected;
 	expected += "Size: 40 bytes\n";
 	expected += "Read Position: 5\n";
@@ -352,7 +353,7 @@ int test_fifo_hexdump_status_closed() {
 	FIFO fifo;
 	(void)fifo.Write("AB");
 	fifo.Close();
-	std::string dump = fifo.HexDump(8, 0);
+	const std::string dump = std::string(fifo.HexDump(8, 0));
 	ASSERT_TRUE("hexdump mentions closed", dump.find("closed") != std::string::npos);
 	ASSERT_TRUE("hexdump mentions ok (no error)", dump.find("ok") != std::string::npos);
 	RETURN_TEST("test_fifo_hexdump_status_closed", 0);
@@ -362,7 +363,7 @@ int test_fifo_hexdump_status_error() {
 	FIFO fifo;
 	(void)fifo.Write("AB");
 	fifo.SetError();
-	std::string dump = fifo.HexDump(8, 0);
+	const std::string dump = std::string(fifo.HexDump(8, 0));
 	ASSERT_TRUE("hexdump mentions error", dump.find("error") != std::string::npos);
 	RETURN_TEST("test_fifo_hexdump_status_error", 0);
 }
@@ -375,10 +376,10 @@ int test_fifo_peek_after_seek() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("0123456789"));
 	fifo.Seek(5, Position::Absolute);
-	DataType peek;
+	Data peek;
 	ASSERT_TRUE("peek after seek returned", fifo.Peek(3, peek));
 	ASSERT_EQUAL("peek after seek content", BytesToText(peek), std::string("567"));
-	DataType read;
+	Data read;
 	ASSERT_TRUE("read after peek returned", fifo.Read(3, read));
 	ASSERT_EQUAL("read after peek content", BytesToText(read), std::string("567"));
 	RETURN_TEST("test_fifo_peek_after_seek", 0);
@@ -387,12 +388,12 @@ int test_fifo_peek_after_seek() {
 int test_fifo_peek_all_available() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("WORLD"));
-	DataType peek_all;
+	Data peek_all;
 	ASSERT_TRUE("peek all returned", fifo.Peek(0, peek_all));
 	ASSERT_EQUAL("peek all content", BytesToText(peek_all), std::string("WORLD"));
-	DataType read1;
+	Data read1;
 	ASSERT_TRUE("read returned", fifo.Read(2, read1));
-	DataType peek_remaining;
+	Data peek_remaining;
 	ASSERT_TRUE("peek remaining returned", fifo.Peek(0, peek_remaining));
 	ASSERT_EQUAL("peek remaining content", BytesToText(peek_remaining), std::string("RLD"));
 	RETURN_TEST("test_fifo_peek_all_available", 0);
@@ -401,16 +402,16 @@ int test_fifo_peek_all_available() {
 int test_fifo_peek_basic() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("HELLO"));
-	DataType peek1;
+	Data peek1;
 	ASSERT_TRUE("peek returned", fifo.Peek(3, peek1));
 	ASSERT_EQUAL("peek content", BytesToText(peek1), std::string("HEL"));
-	DataType peek2;
+	Data peek2;
 	ASSERT_TRUE("peek2 returned", fifo.Peek(3, peek2));
 	ASSERT_EQUAL("peek2 content", BytesToText(peek2), std::string("HEL"));
-	DataType read1;
+	Data read1;
 	ASSERT_TRUE("read returned", fifo.Read(3, read1));
 	ASSERT_EQUAL("read content matches peek", BytesToText(read1), std::string("HEL"));
-	DataType peek3;
+	Data peek3;
 	ASSERT_TRUE("peek3 returned", fifo.Peek(2, peek3));
 	ASSERT_EQUAL("peek3 content", BytesToText(peek3), std::string("LO"));
 	RETURN_TEST("test_fifo_peek_basic", 0);
@@ -419,7 +420,7 @@ int test_fifo_peek_basic() {
 int test_fifo_peek_insufficient_data() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABC"));
-	DataType peek;
+	Data peek;
 	ASSERT_FALSE("peek insufficient returned error", fifo.Peek(10, peek));
 	RETURN_TEST("test_fifo_peek_insufficient_data", 0);
 }
@@ -429,7 +430,7 @@ int test_fifo_skip_basic() {
 	(void)fifo.Write(std::string("ABCDEFG"));
 	(void)fifo.Drop(3);
 	ASSERT_EQUAL("skip basic size", fifo.Size(), StormByte::Size{4});
-	DataType out;
+	Data out;
 	(void)fifo.Extract(0, out);
 	ASSERT_EQUAL("extract after skip content", BytesToText(out), std::string("DEFG"));
 	RETURN_TEST("test_fifo_skip_basic", 0);
@@ -438,11 +439,11 @@ int test_fifo_skip_basic() {
 int test_fifo_skip_with_readpos() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("0123456789"));
-	DataType r;
+	Data r;
 	ASSERT_TRUE("read before skip", fifo.Read(3, r));
 	(void)fifo.Drop(4);
 	ASSERT_EQUAL("size after skip with readpos", fifo.Size(), StormByte::Size{3});
-	DataType out;
+	Data out;
 	(void)fifo.Extract(0, out);
 	ASSERT_EQUAL("content after skip with readpos", BytesToText(out), std::string("789"));
 	RETURN_TEST("test_fifo_skip_with_readpos", 0);
@@ -465,12 +466,12 @@ int test_fifo_buffer_stress() {
 		(void)fifo.Write(chunk);
 		expected.append(chunk);
 		if (i % 10 == 0) {
-			DataType out;
+			Data out;
 			(void)fifo.Extract(len / 2, out);
 			std::string got = BytesToText(out);
-			std::string exp = expected.substr(0, out.size());
+			std::string exp = expected.substr(0, static_cast<std::size_t>(out.size()));
 			ASSERT_EQUAL("stress phase1", exp, got);
-			expected.erase(0, out.size());
+			expected.erase(0, static_cast<std::size_t>(out.size()));
 		}
 	}
 	for (int i = 0; i < 200; ++i) {
@@ -479,15 +480,15 @@ int test_fifo_buffer_stress() {
 		(void)fifo.Write(chunk);
 		expected.append(chunk);
 		if (i % 5 == 0) {
-			DataType out;
+			Data out;
 			(void)fifo.Extract(len, out);
 			std::string got = BytesToText(out);
-			std::string exp = expected.substr(0, out.size());
+			std::string exp = expected.substr(0, static_cast<std::size_t>(out.size()));
 			ASSERT_EQUAL("stress phase2", exp, got);
-			expected.erase(0, out.size());
+			expected.erase(0, static_cast<std::size_t>(out.size()));
 		}
 	}
-	DataType out;
+	Data out;
 	(void)fifo.Extract(0, out);
 	ASSERT_EQUAL("stress final drain", expected, BytesToText(out));
 	ASSERT_TRUE("stress empty", fifo.Empty());
@@ -516,14 +517,14 @@ int test_fifo_clear_with_data() {
 int test_fifo_extract_adjusts_read_position() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("0123456789"));
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(5, r1);
 	ASSERT_EQUAL("read 5", BytesToText(r1), std::string("01234"));
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(3, e1);
 	ASSERT_EQUAL("extract 3", BytesToText(e1), std::string("567"));
 	ASSERT_EQUAL("size after extract", fifo.Size(), StormByte::Size{7});
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(2, r2);
 	ASSERT_EQUAL("read after extract", BytesToText(r2), std::string("89"));
 	RETURN_TEST("test_fifo_extract_adjusts_read_position", 0);
@@ -532,11 +533,11 @@ int test_fifo_extract_adjusts_read_position() {
 int test_fifo_extract_insufficient_data_error() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("HELLO"));
-	DataType result;
+	Data result;
 	ASSERT_FALSE("extract insufficient returns error", fifo.Extract(20, result));
-	DataType result2;
+	Data result2;
 	ASSERT_TRUE("extract with 0 succeeds", fifo.Extract(0, result2));
-	ASSERT_EQUAL("extract returns available", result2.size(), static_cast<std::size_t>(5));
+	ASSERT_EQUAL("extract returns available", result2.size(), StormByte::Size{5});
 	ASSERT_TRUE("buffer empty after extract all", fifo.Empty());
 	RETURN_TEST("test_fifo_extract_insufficient_data_error", 0);
 }
@@ -544,12 +545,12 @@ int test_fifo_extract_insufficient_data_error() {
 int test_fifo_read_after_position_beyond_size() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("1234"));
-	DataType r1;
+	Data r1;
 	ASSERT_TRUE("read all data", fifo.Read(4, r1));
 	ASSERT_EQUAL("read all data", BytesToText(r1), std::string("1234"));
-	DataType result;
+	Data result;
 	ASSERT_FALSE("read beyond position returns error", fifo.Read(1, result));
-	DataType result2;
+	Data result2;
 	ASSERT_FALSE("read 0 at end returns error", fifo.Read(0, result2));
 	RETURN_TEST("test_fifo_read_after_position_beyond_size", 0);
 }
@@ -557,12 +558,12 @@ int test_fifo_read_after_position_beyond_size() {
 int test_fifo_read_all_nondestructive() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("HELLO"));
-	DataType out1;
+	Data out1;
 	(void)fifo.Read(0, out1);
 	ASSERT_EQUAL("read all content", BytesToText(out1), std::string("HELLO"));
 	ASSERT_EQUAL("size unchanged", fifo.Size(), StormByte::Size{5});
 	ASSERT_FALSE("not empty after read", fifo.Empty());
-	DataType tmp;
+	Data tmp;
 	ASSERT_FALSE("second read all empty", fifo.Read(0, tmp));
 	RETURN_TEST("test_fifo_read_all_nondestructive", 0);
 }
@@ -570,7 +571,7 @@ int test_fifo_read_all_nondestructive() {
 int test_fifo_read_default_all() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("DATA"));
-	DataType out;
+	Data out;
 	(void)fifo.Extract(0, out);
 	ASSERT_EQUAL("read default all", BytesToText(out), std::string("DATA"));
 	ASSERT_TRUE("read default all empty", fifo.Empty());
@@ -580,26 +581,26 @@ int test_fifo_read_default_all() {
 int test_fifo_read_insufficient_data_error() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABC"));
-	DataType result;
+	Data result;
 	ASSERT_FALSE("read insufficient returns error", fifo.Read(10, result));
-	DataType result2;
+	Data result2;
 	ASSERT_TRUE("read with 0 succeeds", fifo.Read(0, result2));
-	ASSERT_EQUAL("read returns available", result2.size(), static_cast<std::size_t>(3));
+	ASSERT_EQUAL("read returns available", result2.size(), StormByte::Size{3});
 	RETURN_TEST("test_fifo_read_insufficient_data_error", 0);
 }
 
 int test_fifo_read_nondestructive() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABCDEF"));
-	DataType out1;
+	Data out1;
 	(void)fifo.Read(3, out1);
 	ASSERT_EQUAL("first read content", BytesToText(out1), std::string("ABC"));
 	ASSERT_EQUAL("size unchanged after read", fifo.Size(), StormByte::Size{6});
-	DataType out2;
+	Data out2;
 	(void)fifo.Read(3, out2);
 	ASSERT_EQUAL("second read content", BytesToText(out2), std::string("DEF"));
 	ASSERT_EQUAL("size still unchanged", fifo.Size(), StormByte::Size{6});
-	DataType out3;
+	Data out3;
 	ASSERT_FALSE("third read error", fifo.Read(0, out3));
 	RETURN_TEST("test_fifo_read_nondestructive", 0);
 }
@@ -607,9 +608,9 @@ int test_fifo_read_nondestructive() {
 int test_fifo_read_span_all_available() {
 	FIFO fifo;
 	(void)fifo.Write("HelloWorld");
-	DataType out;
+	Data out;
 	ASSERT_TRUE("read_span_all returned", fifo.Read(0, out));
-	ASSERT_EQUAL("read_span_all size", out.size(), static_cast<std::size_t>(10));
+	ASSERT_EQUAL("read_span_all size", out.size(), StormByte::Size{10});
 	ASSERT_EQUAL("read_span_all content", BytesToText(out), std::string("HelloWorld"));
 	ASSERT_EQUAL("read_span_all no available", fifo.AvailableBytes(), StormByte::Size{0});
 	RETURN_TEST("test_fifo_read_span_all_available", 0);
@@ -618,13 +619,13 @@ int test_fifo_read_span_all_available() {
 int test_fifo_read_span_basic() {
 	FIFO fifo;
 	(void)fifo.Write("ABCDEF");
-	DataType out;
+	Data out;
 	ASSERT_TRUE("read_span returned", fifo.Read(3, out));
-	ASSERT_EQUAL("read_span size", out.size(), static_cast<std::size_t>(3));
+	ASSERT_EQUAL("read_span size", out.size(), StormByte::Size{3});
 	ASSERT_EQUAL("read_span first byte", static_cast<char>(out[0]), 'A');
 	ASSERT_EQUAL("read_span second byte", static_cast<char>(out[1]), 'B');
 	ASSERT_EQUAL("read_span third byte", static_cast<char>(out[2]), 'C');
-	DataType read;
+	Data read;
 	ASSERT_TRUE("read after span returned", fifo.Read(3, read));
 	ASSERT_EQUAL("read after span content", BytesToText(read), std::string("DEF"));
 	RETURN_TEST("test_fifo_read_span_basic", 0);
@@ -633,9 +634,9 @@ int test_fifo_read_span_basic() {
 int test_fifo_read_span_insufficient_data() {
 	FIFO fifo;
 	(void)fifo.Write("ABC");
-	DataType span;
+	Data span;
 	ASSERT_FALSE("read_span_insufficient error", fifo.Read(10, span));
-	DataType read;
+	Data read;
 	ASSERT_TRUE("read after failed span returned", fifo.Read(3, read));
 	ASSERT_EQUAL("read after failed span", BytesToText(read), std::string("ABC"));
 	RETURN_TEST("test_fifo_read_span_insufficient_data", 0);
@@ -646,7 +647,7 @@ int test_fifo_read_span_vs_read() {
 	const std::string data = "ComparisonTest";
 	(void)fifo1.Write(data);
 	(void)fifo2.Write(data);
-	DataType r1, r2;
+	Data r1, r2;
 	ASSERT_TRUE("span_vs_read first read ok", fifo1.Read(4, r1));
 	ASSERT_TRUE("span_vs_read second read ok", fifo2.Read(4, r2));
 	ASSERT_EQUAL("span_vs_read content", BytesToText(r1), BytesToText(r2));
@@ -658,15 +659,15 @@ int test_fifo_read_span_vs_read() {
 int test_fifo_read_vs_extract() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("123456"));
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(2, r1);
 	ASSERT_EQUAL("read content", BytesToText(r1), std::string("12"));
 	ASSERT_EQUAL("size after read", fifo.Size(), StormByte::Size{6});
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(2, e1);
 	ASSERT_EQUAL("extract content", BytesToText(e1), std::string("34"));
 	ASSERT_EQUAL("size after extract", fifo.Size(), StormByte::Size{4});
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(2, r2);
 	ASSERT_EQUAL("read after extract", BytesToText(r2), std::string("56"));
 	RETURN_TEST("test_fifo_read_vs_extract", 0);
@@ -675,10 +676,10 @@ int test_fifo_read_vs_extract() {
 int test_fifo_read_with_wrap() {
 	FIFO fifo;
 	(void)fifo.Write("ABCDE");
-	DataType temp;
+	Data temp;
 	(void)fifo.Extract(2, temp);
 	(void)fifo.Write("12");
-	DataType out;
+	Data out;
 	(void)fifo.Read(0, out);
 	ASSERT_EQUAL("read wrap content", BytesToText(out), std::string("CDE12"));
 	ASSERT_EQUAL("size unchanged wrap", fifo.Size(), StormByte::Size{5});
@@ -689,8 +690,8 @@ int test_fifo_write_read_vector() {
 	FIFO fifo;
 	const std::string s = "Hello";
 	(void)fifo.Write(s);
-	DataType data;
-	(void)fifo.Extract(s.size(), data);
+	Data data;
+	(void)fifo.Extract(StormByte::Size{s.size()}, data);
 	ASSERT_EQUAL("test_fifo_write_read_vector", s, BytesToText(data));
 	ASSERT_TRUE("test_fifo_write_read_vector", fifo.Empty());
 	RETURN_TEST("test_fifo_write_read_vector", 0);
@@ -699,12 +700,12 @@ int test_fifo_write_read_vector() {
 int test_fifo_wrap_around() {
 	FIFO fifo;
 	(void)fifo.Write("ABCDE");
-	DataType r1, all;
+	Data r1, all;
 	(void)fifo.Extract(2, r1);
 	ASSERT_EQUAL("test_fifo_wrap_around r1", std::string("AB"), BytesToText(r1));
 	(void)fifo.Write("1234");
 	(void)fifo.Extract(7, all);
-	ASSERT_EQUAL("test_fifo_wrap_around size", static_cast<std::size_t>(7), all.size());
+	ASSERT_EQUAL("test_fifo_wrap_around size", StormByte::Size{7}, all.size());
 	ASSERT_EQUAL("test_fifo_wrap_around content", std::string("CDE1234"), BytesToText(all));
 	ASSERT_TRUE("test_fifo_wrap_around empty", fifo.Empty());
 	RETURN_TEST("test_fifo_wrap_around", 0);
@@ -717,20 +718,20 @@ int test_fifo_wrap_around() {
 int test_fifo_seek_absolute() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGHIJ"));
-	DataType r1;
+	Data r1;
 	fifo.Seek(3, Position::Absolute);
 	(void)fifo.Read(3, r1);
 	ASSERT_EQUAL("seek absolute 3", BytesToText(r1), std::string("DEF"));
 	fifo.Seek(0, Position::Absolute);
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(2, r2);
 	ASSERT_EQUAL("seek absolute 0", BytesToText(r2), std::string("AB"));
 	fifo.Seek(7, Position::Absolute);
-	DataType r3;
+	Data r3;
 	(void)fifo.Read(3, r3);
 	ASSERT_EQUAL("seek absolute 7", BytesToText(r3), std::string("HIJ"));
 	fifo.Seek(100, Position::Absolute);
-	DataType tmp;
+	Data tmp;
 	ASSERT_FALSE("seek beyond size", fifo.Read(0, tmp));
 	RETURN_TEST("test_fifo_seek_absolute", 0);
 }
@@ -738,19 +739,19 @@ int test_fifo_seek_absolute() {
 int test_fifo_seek_after_extract() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGHIJKLMNO"));
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(5, r1);
 	ASSERT_EQUAL("read before extract", BytesToText(r1), std::string("ABCDE"));
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(3, e1);
 	ASSERT_EQUAL("extract 3", BytesToText(e1), std::string("FGH"));
 	ASSERT_EQUAL("size after extract", fifo.Size(), StormByte::Size{12});
 	fifo.Seek(0, Position::Absolute);
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(3, r2);
 	ASSERT_EQUAL("seek absolute after extract", BytesToText(r2), std::string("ABC"));
 	fifo.Seek(5, Position::Absolute);
-	DataType r3;
+	Data r3;
 	(void)fifo.Read(3, r3);
 	ASSERT_EQUAL("seek to middle after extract", BytesToText(r3), std::string("IJK"));
 	RETURN_TEST("test_fifo_seek_after_extract", 0);
@@ -759,19 +760,19 @@ int test_fifo_seek_after_extract() {
 int test_fifo_seek_relative() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("0123456789"));
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(2, r1);
 	ASSERT_EQUAL("initial read", BytesToText(r1), std::string("01"));
 	fifo.Seek(3, Position::Relative);
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(2, r2);
 	ASSERT_EQUAL("seek relative +3", BytesToText(r2), std::string("56"));
 	fifo.Seek(2, Position::Relative);
-	DataType r3;
+	Data r3;
 	(void)fifo.Read(1, r3);
 	ASSERT_EQUAL("seek relative +2", BytesToText(r3), std::string("9"));
 	fifo.Seek(100, Position::Relative);
-	DataType tmp;
+	Data tmp;
 	ASSERT_FALSE("seek relative beyond", fifo.Read(0, tmp));
 	RETURN_TEST("test_fifo_seek_relative", 0);
 }
@@ -779,15 +780,15 @@ int test_fifo_seek_relative() {
 int test_fifo_seek_relative_from_current() {
 	FIFO fifo;
 	(void)fifo.Write(std::string("ABCDEFGHIJ"));
-	DataType r1;
+	Data r1;
 	ASSERT_TRUE("initial read", fifo.Read(2, r1));
 	ASSERT_EQUAL("initial read", BytesToText(r1), std::string("AB"));
 	fifo.Seek(0, Position::Relative);
-	DataType r2;
+	Data r2;
 	ASSERT_TRUE("seek relative 0", fifo.Read(2, r2));
 	ASSERT_EQUAL("seek relative 0", BytesToText(r2), std::string("CD"));
 	fifo.Seek(1, Position::Absolute);
-	DataType r3;
+	Data r3;
 	ASSERT_TRUE("seek back to 1", fifo.Read(3, r3));
 	ASSERT_EQUAL("seek back to 1", BytesToText(r3), std::string("BCD"));
 	RETURN_TEST("test_fifo_seek_relative_from_current", 0);
@@ -796,17 +797,17 @@ int test_fifo_seek_relative_from_current() {
 int test_fifo_seek_with_wrap() {
 	FIFO fifo;
 	(void)fifo.Write("ABCDEFGHIJ");
-	DataType e1;
+	Data e1;
 	(void)fifo.Extract(5, e1);
 	ASSERT_EQUAL("size after first extract", fifo.Size(), StormByte::Size{5});
 	(void)fifo.Write("12345");
 	ASSERT_EQUAL("size after wrap write", fifo.Size(), StormByte::Size{10});
 	fifo.Seek(0, Position::Absolute);
-	DataType r1;
+	Data r1;
 	(void)fifo.Read(5, r1);
 	ASSERT_EQUAL("seek 0 after wrap", BytesToText(r1), std::string("FGHIJ"));
 	fifo.Seek(5, Position::Absolute);
-	DataType r2;
+	Data r2;
 	(void)fifo.Read(5, r2);
 	ASSERT_EQUAL("seek 5 after wrap", BytesToText(r2), std::string("12345"));
 	RETURN_TEST("test_fifo_seek_with_wrap", 0);
@@ -821,7 +822,7 @@ int test_fifo_adopt_storage_move_write() {
 	auto v = TextToBytes("MOVE");
 	(void)fifo.Write(std::move(v));
 	ASSERT_EQUAL("test_fifo_adopt_storage_move_write size", fifo.Size(), StormByte::Size{4});
-	DataType out;
+	Data out;
 	(void)fifo.Extract(4, out);
 	ASSERT_EQUAL("test_fifo_adopt_storage_move_write content", BytesToText(out), std::string("MOVE"));
 	ASSERT_TRUE("test_fifo_adopt_storage_move_write empty", fifo.Empty());
@@ -831,11 +832,11 @@ int test_fifo_adopt_storage_move_write() {
 int test_fifo_move_steal_preserves_read_position() {
 	FIFO src;
 	(void)src.Write(std::string("ABCDE"));
-	DataType r;
+	Data r;
 	ASSERT_TRUE("advance read returned", src.Read(2, r));
 	FIFO dst;
 	ASSERT_TRUE("move write returned true", dst.Write(std::move(src)));
-	DataType out;
+	Data out;
 	ASSERT_TRUE("dst read returned", dst.Read(0, out));
 	ASSERT_EQUAL("dst remaining after move preserves position", BytesToText(out), std::string("CDE"));
 	RETURN_TEST("test_fifo_move_steal_preserves_read_position", 0);
@@ -850,7 +851,7 @@ int test_fifo_write_basic() {
 
 int test_fifo_write_full_telling_zero() {
 	FIFO fifo;
-	DataType data(10, std::byte{0xFF});
+	Data data(StormByte::Size{10}, std::byte{0xFF});
 	ASSERT_TRUE("write zero bytes returned", fifo.Write(0, data));
 	ASSERT_EQUAL("size after write zero", fifo.Size(), StormByte::Size{10});
 	RETURN_TEST("test_fifo_write_full_telling_zero", 0);
@@ -870,7 +871,7 @@ int test_fifo_write_partial_count() {
 	auto data = TextToBytes("PARTIAL");
 	ASSERT_TRUE("partial write ok", fifo.Write(3, data));
 	ASSERT_EQUAL("partial write size", StormByte::Size{3}, fifo.Size());
-	DataType out;
+	Data out;
 	(void)fifo.Extract(0, out);
 	ASSERT_EQUAL("partial write content", std::string("PAR"), BytesToText(out));
 	RETURN_TEST("test_fifo_write_partial_count", 0);
@@ -879,7 +880,7 @@ int test_fifo_write_partial_count() {
 int test_fifo_write_remaining_fifo() {
 	FIFO src;
 	(void)src.Write(std::string("HELLO"));
-	DataType r;
+	Data r;
 	(void)src.Read(2, r);
 	FIFO dst;
 	(void)dst.Write(std::string("START"));
@@ -887,13 +888,13 @@ int test_fifo_write_remaining_fifo() {
 	const auto src_remaining = src.AvailableBytes();
 	ASSERT_TRUE("fifo write whole returned", dst.Write(src));
 	ASSERT_EQUAL("fifo write remaining size", dst.Size(), before + src_remaining);
-	DataType all;
+	Data all;
 	(void)dst.Extract(0, all);
 	ASSERT_EQUAL("fifo write remaining content", BytesToText(all), std::string("STARTLLO"));
 	FIFO src2;
 	(void)src2.Write(std::string("WORLD"));
 	ASSERT_TRUE("fifo write whole rvalue returned", dst.Write(std::move(src2)));
-	DataType tail;
+	Data tail;
 	(void)dst.Extract(0, tail);
 	ASSERT_EQUAL("fifo write whole rvalue content", BytesToText(tail), std::string("WORLD"));
 	RETURN_TEST("test_fifo_write_remaining_fifo", 0);
@@ -911,7 +912,7 @@ int test_fifo_write_vector_and_rvalue() {
 	w[1] = std::byte{'E'};
 	w[2] = std::byte{'F'};
 	(void)fifo.Write(std::move(w));
-	DataType out;
+	Data out;
 	(void)fifo.Extract(6, out);
 	ASSERT_EQUAL("write vector+rvalue", std::string("ABCDEF"), BytesToText(out));
 	RETURN_TEST("test_fifo_write_vector_and_rvalue", 0);

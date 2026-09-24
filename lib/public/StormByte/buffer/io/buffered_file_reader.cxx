@@ -174,7 +174,8 @@ Result BufferedFileReader::OriginPull(const StormByte::Size n, FIFO& dest) {
 
 	m_file.clear();
 
-	DataType chunk(static_cast<std::size_t>(n));
+	Data chunk;
+	chunk.resize(n);
 	m_file.read(reinterpret_cast<char*>(chunk.data()),
 		static_cast<std::streamsize>(static_cast<std::size_t>(n)));
 	const StormByte::Size got{static_cast<std::size_t>(m_file.gcount())};
@@ -183,7 +184,7 @@ Result BufferedFileReader::OriginPull(const StormByte::Size n, FIFO& dest) {
 		return { IO::Status::Error, 0 };
 	}
 
-	chunk.resize(static_cast<std::size_t>(got));
+	chunk.resize(got);
 	if (got > StormByte::Size{0} && !dest.Write(got, std::move(chunk))) {
 		SetState(State::Fault);
 		return { IO::Status::Error, 0 };

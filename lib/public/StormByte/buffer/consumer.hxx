@@ -177,10 +177,10 @@ namespace StormByte {
 
 				/**
 				 * @brief Access a snapshot of the underlying data (implementation-defined).
-				 * @return Constant reference to the Ring’s data view.
+				 * @return Constant reference to the Ring’s @ref StormByte::Buffer::Data view.
 				 * @warning Not intended for concurrent mutation; prefer Read / Extract.
 				 */
-				const DataType& Data() const noexcept override;
+				const class Data& Data() const noexcept override;
 
 				/**
 				 * @brief Whether the shared Ring holds no stored bytes.
@@ -284,12 +284,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Extract bytes into a @ref DataType (consumes data from the Ring).
+				 * @brief Extract bytes into a @ref StormByte::Buffer::Data (consumes data from the Ring).
 				 * @param count Number of bytes to extract; 0 extracts all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Extract(const StormByte::Size& count, DataType& out) noexcept override;
+				bool Extract(const StormByte::Size& count, class Data& out) noexcept override;
 
 				/**
 				 * @brief Extract bytes into a @ref WriteOnly store.
@@ -300,10 +300,10 @@ namespace StormByte {
 				bool Extract(const StormByte::Size& count, WriteOnly& out) noexcept override;
 
 				/**
-				 * @brief Extract until EoF into a @ref DataType.
+				 * @brief Extract until EoF into a @ref StormByte::Buffer::Data.
 				 * @param out Destination.
 				 */
-				void ExtractUntilEoF(DataType& out) noexcept override;
+				void ExtractUntilEoF(class Data& out) noexcept override;
 
 				/**
 				 * @brief Extract until EoF into a @ref WriteOnly store.
@@ -319,12 +319,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Read bytes into a @ref DataType. Advances the cursor.
+				 * @brief Read bytes into a @ref StormByte::Buffer::Data. Advances the cursor.
 				 * @param count Number of bytes to read; 0 reads all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Read(const StormByte::Size& count, DataType& out) const noexcept override;
+				bool Read(const StormByte::Size& count, class Data& out) const noexcept override;
 
 				/**
 				 * @brief Read bytes into a @ref WriteOnly store. Advances the cursor.
@@ -335,10 +335,10 @@ namespace StormByte {
 				bool Read(const StormByte::Size& count, WriteOnly& out) const noexcept override;
 
 				/**
-				 * @brief Read until EoF into a @ref DataType.
+				 * @brief Read until EoF into a @ref StormByte::Buffer::Data.
 				 * @param out Destination.
 				 */
-				void ReadUntilEoF(DataType& out) const noexcept override;
+				void ReadUntilEoF(class Data& out) const noexcept override;
 
 				/**
 				 * @brief Read until EoF into a @ref WriteOnly store.
@@ -354,12 +354,12 @@ namespace StormByte {
 				 */
 
 				/**
-				 * @brief Peek bytes into a @ref DataType. Does not advance the cursor.
+				 * @brief Peek bytes into a @ref StormByte::Buffer::Data. Does not advance the cursor.
 				 * @param count Number of bytes to peek; 0 peeks all available.
 				 * @param out Destination (appended to).
 				 * @return @c true on success.
 				 */
-				bool Peek(const StormByte::Size& count, DataType& out) const noexcept override;
+				bool Peek(const StormByte::Size& count, class Data& out) const noexcept override;
 
 				/**
 				 * @brief Peek bytes into a @ref WriteOnly store. Does not advance the cursor.

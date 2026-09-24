@@ -60,7 +60,7 @@
 
 using StormByte::Buffer::Bridge;
 using StormByte::Buffer::Consumer;
-using StormByte::Buffer::DataType;
+using StormByte::Buffer::Data;
 using StormByte::Buffer::ExternalBufferReader;
 using StormByte::Buffer::ExternalBufferWriter;
 using StormByte::Buffer::ExternalWriter;
@@ -76,10 +76,11 @@ using StormByte::Buffer::IO::Drainer::Operation;
 using StormByte::Buffer::IO::Drainer::Status;
 
 namespace {
-	std::string BytesToText(const DataType& data) {
+	std::string BytesToText(const Data& data) {
 		if (data.empty())
 			return {};
-		return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+		return std::string(reinterpret_cast<const char*>(data.data()),
+			static_cast<std::size_t>(data.size()));
 	}
 
 	std::filesystem::path File(const char* name) {
@@ -101,15 +102,15 @@ namespace {
 
 	FIFO FromText(const std::string& text) {
 		FIFO fifo;
-		DataType data(text.size());
+		Data data(StormByte::Size{text.size()});
 		for (std::size_t i = 0; i < text.size(); ++i)
 			data[i] = static_cast<std::byte>(text[i]);
-		static_cast<void>(fifo.Write(StormByte::Size{data.size()}, std::move(data)));
+		static_cast<void>(fifo.Write(data.size(), std::move(data)));
 		return fifo;
 	}
 
-	DataType Pattern(const std::size_t n) {
-		DataType data(n);
+	Data Pattern(const std::size_t n) {
+		Data data(StormByte::Size{n});
 		for (std::size_t i = 0; i < n; ++i)
 			data[i] = static_cast<std::byte>(i & 0xFF);
 		return data;
@@ -120,21 +121,23 @@ namespace {
 	}
 
 	bool WaitFifoSize(const FIFO& fifo, const std::size_t n) {
+		const StormByte::Size want{n};
 		for (int i = 0; i < 500; ++i) {
-			if (fifo.Size() >= n)
+			if (fifo.Size() >= want)
 				return true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return fifo.Size() >= n;
+		return fifo.Size() >= want;
 	}
 
 	bool WaitSize(const StormByte::Buffer::Generic& buf, const std::size_t n) {
+		const StormByte::Size want{n};
 		for (int i = 0; i < 500; ++i) {
-			if (buf.Size() >= n)
+			if (buf.Size() >= want)
 				return true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return buf.Size() >= n;
+		return buf.Size() >= want;
 	}
 
 	bool WaitFile(const std::filesystem::path& path, const std::size_t n) {
@@ -148,11 +151,11 @@ namespace {
 
 	bool WaitDirtyZero(BufferedFileWriter& out) {
 		for (int i = 0; i < 200; ++i) {
-			if (out.Dirty() == 0)
+			if (out.Dirty() == StormByte::Size{0})
 				return true;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return out.Dirty() == 0;
+		return out.Dirty() == StormByte::Size{0};
 	}
 
 	bool WaitConsumerEof(const Consumer& consumer) {
@@ -177,12 +180,12 @@ namespace {
 				return m_target.Size();
 			}
 
-			bool Write(const DataType& data) noexcept override {
-				DataType copy = data;
+			bool Write(const Data& data) noexcept override {
+				Data copy = data;
 				return Write(std::move(copy));
 			}
 
-			bool Write(DataType&& in) noexcept override {
+			bool Write(Data&& in) noexcept override {
 				if (m_closed || m_error)
 					return false;
 				if (m_calls < m_succeed) {
@@ -192,19 +195,19 @@ namespace {
 				return false;
 			}
 
-			bool Write(const StormByte::Size& count, const DataType& data) noexcept override {
-				if (count == 0)
+			bool Write(const StormByte::Size& count, const Data& data) noexcept override {
+				if (count == StormByte::Size{0})
 					return Write(data);
-				const auto n = std::min(count, StormByte::Size{data.size()});
-				DataType tmp(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(n));
+				const StormByte::Size n = std::min(count, data.size());
+				Data tmp(data.data(), n);
 				return Write(std::move(tmp));
 			}
 
-			bool Write(const StormByte::Size& count, DataType&& data) noexcept override {
-				if (count == 0)
+			bool Write(const StormByte::Size& count, Data&& data) noexcept override {
+				if (count == StormByte::Size{0})
 					return Write(std::move(data));
 				if (count < data.size())
-					data.resize(static_cast<std::size_t>(count));
+					data.resize(count);
 				return Write(std::move(data));
 			}
 
@@ -306,21 +309,21 @@ int test_backpressure_shared_fifo() {
 	Bridge bridge(in, out, 4);
 
 	std::atomic<bool> stop {false};
-	DataType collected;
+	Data collected;
 	std::thread consumer([&] {
-		while (!stop.load() || dst.AvailableBytes() > 0) {
-			if (dst.AvailableBytes() == 0) {
+		while (!stop.load() || dst.AvailableBytes() > StormByte::Size{0}) {
+			if (dst.AvailableBytes() == StormByte::Size{0}) {
 				std::this_thread::yield();
 				continue;
 			}
-			DataType chunk;
+			Data chunk;
 			const StormByte::Size n = std::min(StormByte::Size{2}, dst.AvailableBytes());
 			if (dst.Extract(n, chunk))
 				collected.insert(collected.end(), chunk.begin(), chunk.end());
 		}
 	});
 
-	for (int i = 0; i < 500 && collected.size() < text.size(); ++i)
+	for (int i = 0; i < 500 && collected.size() < StormByte::Size{text.size()}; ++i)
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	stop.store(true);
 	consumer.join();
@@ -792,8 +795,8 @@ int test_demuxer_file_to_producer() {
 	Bridge bridge(in, out, 512);
 	ASSERT_TRUE(fn, WaitSize(consumer, 256));
 	ASSERT_TRUE(fn, bridge.Flush());
-	DataType got;
-	ASSERT_TRUE(fn, consumer.Extract(256, got));
+	Data got;
+	ASSERT_TRUE(fn, consumer.Extract(StormByte::Size{256}, got));
 	ASSERT_EQUAL(fn, Slurp(File("pattern_256.bin")), BytesToText(got));
 	ASSERT_TRUE(fn, in.EoF());
 	in.Close();
@@ -804,13 +807,13 @@ int test_demuxer_file_to_producer() {
 int test_demuxer_file_to_producer_high_water() {
 	const std::string fn = "test_demuxer_file_to_producer_high_water";
 	const std::size_t total = 1024 * 1024;
-	const DataType payload = Pattern(total);
+	const Data payload = Pattern(total);
 	const auto src_path = Scratch("demux_src");
 	std::filesystem::remove(src_path);
 	{
 		std::ofstream seed(src_path, std::ios::out | std::ios::binary | std::ios::trunc);
 		seed.write(reinterpret_cast<const char*>(payload.data()),
-			static_cast<std::streamsize>(payload.size()));
+			static_cast<std::streamsize>(static_cast<std::size_t>(payload.size())));
 	}
 
 	Producer producer;
@@ -820,28 +823,28 @@ int test_demuxer_file_to_producer_high_water() {
 	ASSERT_TRUE(fn, in.Open());
 	Bridge bridge(in, out, 4096);
 
-	DataType collected;
-	collected.reserve(total);
-	for (int i = 0; i < 4000 && collected.size() < total; ++i) {
-		if (consumer.Size() == 0) {
+	Data collected;
+	collected.reserve(StormByte::Size{total});
+	for (int i = 0; i < 4000 && collected.size() < StormByte::Size{total}; ++i) {
+		if (consumer.Size() == StormByte::Size{0}) {
 			if (in.EoF())
 				break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			continue;
 		}
-		DataType chunk;
+		Data chunk;
 		const StormByte::Size n = std::min(StormByte::Size{4096}, consumer.Size());
 		if (consumer.Extract(n, chunk))
 			collected.insert(collected.end(), chunk.begin(), chunk.end());
 	}
 	ASSERT_TRUE(fn, bridge.Flush());
-	while (consumer.Size() > 0) {
-		DataType chunk;
+	while (consumer.Size() > StormByte::Size{0}) {
+		Data chunk;
 		if (!consumer.Extract(consumer.Size(), chunk))
 			break;
 		collected.insert(collected.end(), chunk.begin(), chunk.end());
 	}
-	ASSERT_EQUAL(fn, total, collected.size());
+	ASSERT_EQUAL(fn, StormByte::Size{total}, collected.size());
 	ASSERT_EQUAL(fn, BytesToText(payload), BytesToText(collected));
 	in.Close();
 	producer.Close();
@@ -857,7 +860,7 @@ int test_muxer_producer_to_file_high_water() {
 
 	Producer producer;
 	Consumer consumer = producer.Consumer();
-	const DataType payload = Pattern(total);
+	const Data payload = Pattern(total);
 	ASSERT_TRUE(fn, producer.Write(payload));
 	producer.Close();
 
@@ -909,8 +912,8 @@ int test_muxer_then_demuxer_roundtrip() {
 		Bridge demux(in, out, 4096);
 		ASSERT_TRUE(fn, WaitSize(consumer, text.size()));
 		ASSERT_TRUE(fn, demux.Flush());
-		DataType got;
-		ASSERT_TRUE(fn, consumer.Extract(text.size(), got));
+		Data got;
+		ASSERT_TRUE(fn, consumer.Extract(StormByte::Size{text.size()}, got));
 		ASSERT_EQUAL(fn, text, BytesToText(got));
 		in.Close();
 		producer.Close();

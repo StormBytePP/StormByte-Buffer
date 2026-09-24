@@ -40,7 +40,6 @@
  */
 
 #include <StormByte/buffer/fifo.hxx>
-#include <StormByte/helpers.hxx>
 #include <StormByte/string/string.hxx>
 
 #include <algorithm>
@@ -48,6 +47,9 @@
 #include <cstring>
 #include <iomanip>
 #include <iterator>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace StormByte::Buffer;
 
@@ -104,7 +106,7 @@ StormByte::Size FIFO::AvailableBytes() const noexcept {
 	return AvailableBytesInternal();
 }
 
-const DataType& FIFO::Data() const noexcept {
+const class Data& FIFO::Data() const noexcept {
 	return m_buffer;
 }
 
@@ -125,24 +127,24 @@ bool FIFO::IsWritable() const noexcept {
 }
 
 StormByte::Size FIFO::Size() const noexcept {
-	return StormByte::Size{m_buffer.size()};
+	return m_buffer.size();
 }
 
 void FIFO::Clean() noexcept {
-	const StormByte::Size stored{m_buffer.size()};
+	const StormByte::Size stored = m_buffer.size();
 	if (m_position_offset > StormByte::Size{0} && m_position_offset <= stored) {
 		const StormByte::Size remaining = stored - m_position_offset;
 		if (remaining > StormByte::Size{0}) {
 			const std::size_t off = static_cast<std::size_t>(m_position_offset);
 			const std::size_t rest = static_cast<std::size_t>(remaining);
 			std::memmove(m_buffer.data(), m_buffer.data() + off, rest);
-			m_buffer.resize(rest);
-			if (m_buffer.capacity() > rest * 4 && m_buffer.capacity() > 4096)
+			m_buffer.resize(remaining);
+			if (m_buffer.capacity() > remaining * 4 && m_buffer.capacity() > StormByte::Size{4096})
 				m_buffer.shrink_to_fit();
 		}
 		else {
 			m_buffer.clear();
-			if (m_buffer.capacity() > 4096)
+			if (m_buffer.capacity() > StormByte::Size{4096})
 				m_buffer.shrink_to_fit();
 		}
 	}
@@ -166,14 +168,14 @@ bool FIFO::Drop(const StormByte::Size& count) noexcept {
 	const StormByte::Size avail = AvailableBytesInternal();
 	if (avail == StormByte::Size{0} || count > avail)
 		return false;
-	const StormByte::Size stored{m_buffer.size()};
+	const StormByte::Size stored = m_buffer.size();
 	m_position_offset = std::min(m_position_offset + count, stored);
 	FIFO::Clean();
 	return true;
 }
 
 void FIFO::Seek(const std::ptrdiff_t& offset, const Position& mode) const noexcept {
-	const StormByte::Size stored{m_buffer.size()};
+	const StormByte::Size stored = m_buffer.size();
 	switch (mode) {
 		case Position::Absolute:
 			if (offset < 0)
@@ -197,9 +199,9 @@ void FIFO::SetError() noexcept {
 	m_error = true;
 }
 
-std::string FIFO::HexDump(const StormByte::Size& columns, const StormByte::Size& byte_limit) const noexcept {
+StormByte::String::String FIFO::HexDump(const StormByte::Size& columns, const StormByte::Size& byte_limit) const noexcept {
 	const StormByte::Size cols = (columns == StormByte::Size{0}) ? StormByte::Size{16} : columns;
-	const StormByte::Size stored{m_buffer.size()};
+	const StormByte::Size stored = m_buffer.size();
 	const StormByte::Size end = (byte_limit > StormByte::Size{0})
 		? std::min(stored, m_position_offset + byte_limit)
 		: stored;
@@ -209,14 +211,13 @@ std::string FIFO::HexDump(const StormByte::Size& columns, const StormByte::Size&
 		const std::size_t off = static_cast<std::size_t>(m_position_offset);
 		const std::size_t len = static_cast<std::size_t>(end - m_position_offset);
 		std::span<const std::byte> view(m_buffer.data() + off, len);
-		const std::string lines = FormatHexLines(view, m_position_offset, cols);
-		oss << lines;
+		oss << static_cast<const char*>(FormatHexLines(view, m_position_offset, cols));
 	}
 
-	return oss.str();
+	return StormByte::String::String{oss.str()};
 }
 
-std::string FIFO::FormatHexLines(std::span<const std::byte>& data, StormByte::Size start_offset, StormByte::Size columns) noexcept {
+StormByte::String::String FIFO::FormatHexLines(std::span<const std::byte>& data, StormByte::Size start_offset, StormByte::Size columns) noexcept {
 	const std::size_t cols = static_cast<std::size_t>((columns == StormByte::Size{0}) ? StormByte::Size{16} : columns);
 	const int offset_width = 8;
 	std::vector<std::string> lines;
@@ -254,12 +255,12 @@ std::string FIFO::FormatHexLines(std::span<const std::byte>& data, StormByte::Si
 			oss << '\n';
 	}
 
-	return oss.str();
+	return StormByte::String::String{oss.str()};
 }
 
 std::ostringstream FIFO::HexDumpHeader() const noexcept {
 	std::ostringstream oss;
-	oss << "Size: " << m_buffer.size() << " bytes\n";
+	oss << "Size: " << static_cast<std::size_t>(m_buffer.size()) << " bytes\n";
 	oss << "Read Position: " << static_cast<std::size_t>(m_position_offset) << '\n';
 	oss << "Status: " << (m_closed ? "closed" : "open")
 		<< " / " << (m_error ? "error" : "ok");
@@ -267,11 +268,11 @@ std::ostringstream FIFO::HexDumpHeader() const noexcept {
 }
 
 StormByte::Size FIFO::AvailableBytesInternal() const noexcept {
-	const StormByte::Size stored{m_buffer.size()};
+	const StormByte::Size stored = m_buffer.size();
 	return (m_position_offset <= stored) ? (stored - m_position_offset) : StormByte::Size{0};
 }
 
-bool FIFO::Extract(const StormByte::Size& count, DataType& outBuffer) noexcept {
+bool FIFO::Extract(const StormByte::Size& count, class Data& outBuffer) noexcept {
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
@@ -279,7 +280,7 @@ bool FIFO::Extract(const StormByte::Size& count, WriteOnly& outBuffer) noexcept 
 	return ReadInternal(count, outBuffer, Operation::Extract);
 }
 
-void FIFO::ExtractUntilEoF(DataType& outBuffer) noexcept {
+void FIFO::ExtractUntilEoF(class Data& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
@@ -287,7 +288,7 @@ void FIFO::ExtractUntilEoF(WriteOnly& outBuffer) noexcept {
 	ReadUntilEoFInternal(outBuffer, Operation::Extract);
 }
 
-bool FIFO::Read(const StormByte::Size& count, DataType& outBuffer) const noexcept {
+bool FIFO::Read(const StormByte::Size& count, class Data& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
@@ -295,7 +296,7 @@ bool FIFO::Read(const StormByte::Size& count, WriteOnly& outBuffer) const noexce
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Read);
 }
 
-void FIFO::ReadUntilEoF(DataType& outBuffer) const noexcept {
+void FIFO::ReadUntilEoF(class Data& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
@@ -303,7 +304,7 @@ void FIFO::ReadUntilEoF(WriteOnly& outBuffer) const noexcept {
 	const_cast<FIFO*>(this)->ReadUntilEoFInternal(outBuffer, Operation::Read);
 }
 
-bool FIFO::Peek(const StormByte::Size& count, DataType& outBuffer) const noexcept {
+bool FIFO::Peek(const StormByte::Size& count, class Data& outBuffer) const noexcept {
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
@@ -311,11 +312,11 @@ bool FIFO::Peek(const StormByte::Size& count, WriteOnly& outBuffer) const noexce
 	return const_cast<FIFO*>(this)->ReadInternal(count, outBuffer, Operation::Peek);
 }
 
-bool FIFO::Write(const StormByte::Size& count, const DataType& data) noexcept {
+bool FIFO::Write(const StormByte::Size& count, const class Data& data) noexcept {
 	return WriteInternal(count, data);
 }
 
-bool FIFO::Write(const StormByte::Size& count, DataType&& data) noexcept {
+bool FIFO::Write(const StormByte::Size& count, class Data&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
 
@@ -327,7 +328,7 @@ bool FIFO::Write(const StormByte::Size& count, ReadOnly&& data) noexcept {
 	return WriteInternal(count, std::move(data));
 }
 
-bool FIFO::ReadInternal(const StormByte::Size& count, DataType& outBuffer, const Operation& flag) noexcept {
+bool FIFO::ReadInternal(const StormByte::Size& count, class Data& outBuffer, const Operation& flag) noexcept {
 	if (m_error)
 		return false;
 	const StormByte::Size available_bytes = AvailableBytesInternal();
@@ -335,7 +336,7 @@ bool FIFO::ReadInternal(const StormByte::Size& count, DataType& outBuffer, const
 	if ((available_bytes == StormByte::Size{0} && count == StormByte::Size{0}) || real_count > available_bytes)
 		return false;
 	const std::size_t n = static_cast<std::size_t>(real_count);
-	outBuffer.reserve(outBuffer.size() + n);
+	outBuffer.reserve(outBuffer.size() + StormByte::Size{n});
 	const auto start_it = m_buffer.begin() + static_cast<std::ptrdiff_t>(m_position_offset);
 	switch (flag) {
 		case Operation::Read: {
@@ -352,7 +353,7 @@ bool FIFO::ReadInternal(const StormByte::Size& count, DataType& outBuffer, const
 				std::make_move_iterator(start_it),
 				std::make_move_iterator(start_it + static_cast<std::ptrdiff_t>(n)));
 			m_buffer.erase(start_it, start_it + static_cast<std::ptrdiff_t>(n));
-			const StormByte::Size stored{m_buffer.size()};
+			const StormByte::Size stored = m_buffer.size();
 			if (m_position_offset > stored)
 				m_position_offset = stored;
 			break;
@@ -371,14 +372,14 @@ bool FIFO::ReadInternal(const StormByte::Size& count, WriteOnly& outBuffer, cons
 	const StormByte::Size real_count = (count == StormByte::Size{0}) ? available_bytes : count;
 	if ((count == StormByte::Size{0} && available_bytes == StormByte::Size{0}) || real_count > available_bytes)
 		return false;
-	DataType temp;
-	temp.reserve(static_cast<std::size_t>(real_count));
+	class Data temp;
+	temp.reserve(real_count);
 	if (!FIFO::ReadInternal(count, temp, flag))
 		return false;
 	return outBuffer.Write(std::move(temp));
 }
 
-void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noexcept {
+void FIFO::ReadUntilEoFInternal(class Data& outBuffer, const Operation& flag) noexcept {
 	while (true) {
 		switch (flag) {
 			case Operation::Read:
@@ -391,7 +392,7 @@ void FIFO::ReadUntilEoFInternal(DataType& outBuffer, const Operation& flag) noex
 				return;
 		}
 
-		DataType unused;
+		class Data unused;
 		if (!Peek(StormByte::Size{1}, unused))
 			return;
 	}
@@ -410,44 +411,38 @@ void FIFO::ReadUntilEoFInternal(WriteOnly& outBuffer, const Operation& flag) noe
 				return;
 		}
 
-		DataType unused;
+		class Data unused;
 		if (!Peek(StormByte::Size{1}, unused))
 			return;
 	}
 }
 
-bool FIFO::WriteInternal(const StormByte::Size& count, const DataType& src) noexcept {
+bool FIFO::WriteInternal(const StormByte::Size& count, const class Data& src) noexcept {
 	if (m_closed || m_error)
 		return false;
-	const StormByte::Size src_size{src.size()};
+	const StormByte::Size src_size = src.size();
 	if (count > StormByte::Size{0} && src_size < count)
 		return false;
 	const StormByte::Size real_count = (count == StormByte::Size{0}) ? src_size : count;
-	const std::size_t n = static_cast<std::size_t>(real_count);
-	m_buffer.reserve(m_buffer.size() + n);
 	if (real_count == src_size)
-		append_vector(m_buffer, src);
+		m_buffer.append(src);
 	else
-		m_buffer.insert(m_buffer.end(), src.begin(), src.begin() + static_cast<std::ptrdiff_t>(n));
+		m_buffer.append(src.data(), real_count);
 	return true;
 }
 
-bool FIFO::WriteInternal(const StormByte::Size& count, DataType&& src) noexcept {
+bool FIFO::WriteInternal(const StormByte::Size& count, class Data&& src) noexcept {
 	if (m_closed || m_error)
 		return false;
-	const StormByte::Size src_size{src.size()};
+	const StormByte::Size src_size = src.size();
 	if (count > StormByte::Size{0} && src_size < count)
 		return false;
 	const StormByte::Size real_count = (count == StormByte::Size{0}) ? src_size : count;
-	const std::size_t n = static_cast<std::size_t>(real_count);
-	m_buffer.reserve(m_buffer.size() + n);
 	if (real_count == src_size)
-		append_vector(m_buffer, std::move(src));
+		m_buffer.append(std::move(src));
 	else {
-		m_buffer.insert(m_buffer.end(),
-			std::make_move_iterator(src.begin()),
-			std::make_move_iterator(src.begin() + static_cast<std::ptrdiff_t>(n)));
-		src.erase(src.begin(), src.begin() + static_cast<std::ptrdiff_t>(n));
+		m_buffer.append(src.data(), real_count);
+		src.erase(src.begin(), src.begin() + static_cast<std::ptrdiff_t>(real_count));
 	}
 	return true;
 }

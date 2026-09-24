@@ -206,7 +206,7 @@ bool IO::Backend::Bridge::Pull(const StormByte::Size n, FIFO& dest) noexcept {
 		return true;
 
 	if (m_ext_in) {
-		DataType chunk;
+		Data chunk;
 		if (!m_ext_in->Extract(n, chunk)) {
 			if (!m_ext_in->Read(n, chunk))
 				return m_ext_in->EoF();
@@ -231,7 +231,7 @@ bool IO::Backend::Bridge::Push(FIFO& src) noexcept {
 		return true;
 
 	if (m_ext_out) {
-		DataType chunk;
+		Data chunk;
 		if (!src.Extract(StormByte::Size{0}, chunk))
 			return false;
 		if (chunk.empty())
