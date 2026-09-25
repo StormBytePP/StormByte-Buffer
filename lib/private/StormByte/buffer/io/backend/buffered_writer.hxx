@@ -261,6 +261,21 @@ namespace StormByte {
 						StormByte::Size Dirty() const noexcept;
 
 						/**
+						 * @name Telemetry
+						 * @{
+						 */
+
+						/**
+						 * @brief Copy current telemetry under @c m_mutex.
+						 * @return Snapshot. Does not push.
+						 */
+						struct IO::BufferedWriter::Telemetry Telemetry() const noexcept;
+
+						/**
+						 * @}
+						 */
+
+						/**
 						 * @brief Configured origin push unit.
 						 * @return Bytes. 0 disables the ring.
 						 */
@@ -357,6 +372,17 @@ namespace StormByte {
 						 */
 						Result WriteSpan(std::span<const std::byte> src);
 
+						/**
+						 * @brief Record a wait sample. Caller holds @c m_mutex.
+						 * @param elapsed Duration of the Write that worked or waited on OriginPush.
+						 */
+						void NoteWait(std::chrono::nanoseconds elapsed) const noexcept;
+
+						/**
+						 * @brief Raise DirtyPeak and Saturated if the cap is hit. Caller holds @c m_mutex.
+						 */
+						void NoteDirty() const noexcept;
+
 						IO::BufferedWriter* m_owner;				///< Public leaf (hooks).
 
 						mutable std::mutex m_mutex;					///< Session + knobs.
@@ -372,6 +398,17 @@ namespace StormByte {
 						mutable StormByte::Size m_tell {0};			///< Accepted bytes.
 
 						std::unique_ptr<LockFreeRing> m_ring;		///< SPSC dirty bytes. Null in direct mode.
+
+						mutable StormByte::Size m_accepted {0};		///< Telemetry.Accepted.
+						mutable StormByte::Size m_behind {0};		///< Telemetry.Behind.
+						mutable StormByte::Size m_direct {0};		///< Telemetry.Direct.
+						mutable StormByte::Size m_dirty_peak {0};	///< Telemetry.DirtyPeak.
+						mutable std::size_t m_try_again {0};		///< Telemetry.TryAgain.
+						mutable std::size_t m_saturated {0};		///< Telemetry.Saturated.
+						mutable std::chrono::nanoseconds m_wait_min {0};	///< Telemetry.WaitMin.
+						mutable std::chrono::nanoseconds m_wait_max {0};	///< Telemetry.WaitMax.
+						mutable std::chrono::nanoseconds m_wait_total {0};	///< Telemetry.WaitTotal.
+						mutable std::size_t m_wait_samples {0};		///< Telemetry.WaitSamples.
 
 						mutable std::atomic<bool> m_stop {false};	///< Worker teardown.
 						mutable std::atomic<bool> m_flush {false};	///< Drain entire ring.

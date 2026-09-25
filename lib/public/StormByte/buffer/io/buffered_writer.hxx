@@ -155,6 +155,10 @@ namespace StormByte {
 			 * The answer is indicative: another process, quotas or a
 			 * network filesystem can still make the later @c Write fail.
 			 *
+			 * @par Telemetry
+			 * @ref Telemetry copies counters under the coordinator lock.
+			 * Accumulators start at construction and do not reset on Close.
+			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
 			 * is Unavailable.
@@ -166,6 +170,80 @@ namespace StormByte {
 				friend class Backend::Bridge;
 
 				public:
+					/**
+					 * @struct Telemetry
+					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
+					 *
+					 * Byte fields are @ref StormByte::Size. Event counts are
+					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
+					 * Accumulators start at construction and do not reset on
+					 * Close / Rewind / Open / Truncate.
+					 *
+					 * @c Accepted == @c Behind + @c Direct.
+					 * Mean wait is @c WaitTotal / @c WaitSamples when samples > 0.
+					 */
+					struct Telemetry {
+						/**
+						 * @brief Octets accepted by a successful @ref Write.
+						 */
+						StormByte::Size Accepted {};
+
+						/**
+						 * @brief Of @ref Accepted, octets that entered the ring.
+						 */
+						StormByte::Size Behind {};
+
+						/**
+						 * @brief Of @ref Accepted, octets pushed on the caller thread.
+						 */
+						StormByte::Size Direct {};
+
+						/**
+						 * @brief Ring occupancy now. 0 in direct mode.
+						 */
+						StormByte::Size Dirty {};
+
+						/**
+						 * @brief Maximum @ref Dirty since construction.
+						 */
+						StormByte::Size DirtyPeak {};
+
+						/**
+						 * @brief Ring cap in bytes at this snapshot, or 0 if the ring is off.
+						 */
+						StormByte::Size Cap {};
+
+						/**
+						 * @brief Times @ref Write returned TryAgain.
+						 */
+						std::size_t TryAgain {0};
+
+						/**
+						 * @brief Times Dirty reached @ref Cap while Cap > 0.
+						 */
+						std::size_t Saturated {0};
+
+						/**
+						 * @brief Shortest sampled Write wait. 0 if WaitSamples == 0.
+						 */
+						std::chrono::nanoseconds WaitMin {};
+
+						/**
+						 * @brief Longest sampled Write wait. 0 if WaitSamples == 0.
+						 */
+						std::chrono::nanoseconds WaitMax {};
+
+						/**
+						 * @brief Sum of sampled waits.
+						 */
+						std::chrono::nanoseconds WaitTotal {};
+
+						/**
+						 * @brief Sampled waits (accepted Write or timed OriginPush). Not instant TryAgain.
+						 */
+						std::size_t WaitSamples {0};
+					};
+
 					/**
 					 * @name Lifecycle
 					 * @{
@@ -342,6 +420,21 @@ namespace StormByte {
 					 * @ref Tell.
 					 */
 					virtual Result Seek(std::ptrdiff_t offset, Position mode);
+
+					/**
+					 * @}
+					 */
+
+					/**
+					 * @name Telemetry
+					 * @{
+					 */
+
+					/**
+					 * @brief Copy current telemetry.
+					 * @return Snapshot. Does not push to the origin.
+					 */
+					virtual const struct Telemetry Telemetry() const noexcept final;
 
 					/**
 					 * @}

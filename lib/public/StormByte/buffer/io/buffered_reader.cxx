@@ -191,6 +191,12 @@ std::optional<StormByte::Size> BufferedReader::Size() const noexcept {
 	return m_io->Size();
 }
 
+const struct BufferedReader::Telemetry BufferedReader::Telemetry() const noexcept {
+	if (!m_io)
+		return {};
+	return m_io->Telemetry();
+}
+
 StormByte::Size BufferedReader::ReadAhead() const noexcept {
 	return m_io ? m_io->ReadAhead() : StormByte::Size{0};
 }

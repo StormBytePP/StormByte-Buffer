@@ -163,6 +163,12 @@ Result BufferedWriter::OriginSeek(const StormByte::Size) {
 	return { Status::Failed, 0 };
 }
 
+const struct BufferedWriter::Telemetry BufferedWriter::Telemetry() const noexcept {
+	if (!m_io)
+		return {};
+	return m_io->Telemetry();
+}
+
 StormByte::Size BufferedWriter::WriteChunk() const noexcept {
 	return m_io ? m_io->WriteChunk() : StormByte::Size{0};
 }

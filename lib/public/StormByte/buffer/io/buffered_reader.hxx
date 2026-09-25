@@ -47,6 +47,7 @@
 #include <StormByte/buffer/visibility.h>
 
 #include <chrono>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
@@ -124,8 +125,8 @@ namespace StormByte {
 			 * @ref IO::Status::TryAgain, or End with count 0.
 			 *
 			 * @par Read vs Peek vs cache
-			 * @c Read advances @ref Tell and removes served bytes from the cache.
-			 * @c Peek does not.
+			 * @c Read advances @ref Tell. Served bytes stay in the map until
+			 * @ref MaxMemory eviction. @c Peek does not move @ref Tell.
 			 *
 			 * @par Cache map
 			 * A seekable origin stores owned spans keyed by stream offset.
@@ -135,23 +136,39 @@ namespace StormByte {
 			 * @ref MaxMemory of 0 stores no cache. A non-seekable origin
 			 * keeps a single forward span.
 			 *
-			 * @par Seek
-			 * Moves the logical cursor. When the origin is seekable the
-			 * device is realigned with @ref OriginSeek even on a cache hit,
-			 * so a later pull is not silent corruption. Cached spans are
-			 * not discarded solely because of Seek. A hit only avoids
-			 * re-pulling those bytes. A non-seekable origin rejects Seek
-			 * without calling the hook.
+			 * @par Delayed seek
+			 * @ref Seek moves only @ref Tell. The device cursor is unchanged.
+			 * @ref Tell after Seek(x) is x; callers (AVIO included) must be
+			 * able to trust that. Bytes delivered by the next @ref Read are
+			 * always stream[Tell, Tell+n), from the map and/or the origin.
 			 *
-			 * Seek is not guaranteed to be O(1) or to return immediately.
-			 * The call may wait for an in-flight prefetch to cancel, run
-			 * @ref OriginSeek (local file, remote origin, or a leaf that
-			 * does CPU work first), and update the cache map. Immediate
-			 * return is not part of the contract.
+			 * Prefetch is suspended while Tell differs from the device
+			 * cursor (a "fake seek"). The worker must not pull or
+			 * @ref OriginSeek in that window: that would either move the
+			 * device (so a later catch-up is no longer sequential) or
+			 * commit bytes at the wrong stream offset. Prefetch resumes
+			 * when Tell meets the device again (the catch-up read is a
+			 * plain @ref OriginPull, not a seek) or when a hole forces a
+			 * real @ref OriginSeek.
+			 *
+			 * A jump back into resident pages, then one or many Reads
+			 * that stay in those pages, never seeks the origin. Reading
+			 * past that window onto the old device position is still
+			 * not a seek. Reading past a page whose hole is not the
+			 * device cursor performs one @ref OriginSeek to that hole.
+			 *
+			 * @c SeekSavedFull / @c SeekSavedPartial close on the next
+			 * @ref Seek or @ref Close. Full: the epoch started on a cache
+			 * hit and never called @ref OriginSeek. Partial: it did.
+			 * Small Reads do not decide; the epoch does.
+			 *
+			 * A non-seekable origin rejects Seek without the hook.
+			 * Seek may block on prefetch cancellation.
 			 *
 			 * @par ReadAhead
-			 * Applied after the synchronous request. Prefetch uses @ref OriginPull.
-			 * Leaves must not buffer inside the hook.
+			 * Applied after the synchronous request, and only while
+			 * prefetch is not held by a fake seek. Prefetch uses
+			 * @ref OriginPull. Leaves must not buffer inside the hook.
 			 *
 			 * @par Policy setters
 			 * @ref ReadAhead, @ref MaxMemory and @ref MaxWait take effect
@@ -160,6 +177,10 @@ namespace StormByte {
 			 * The setter does not return until prefetch is cancelled and the
 			 * cache is trimmed. That wait is blocking even though it is not
 			 * an origin pull.
+			 *
+			 * @par Telemetry
+			 * @ref Telemetry copies counters under the coordinator lock.
+			 * Accumulators start at construction and do not reset on Close.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. Moved-from is Unavailable.
@@ -170,6 +191,129 @@ namespace StormByte {
 				friend class Backend::BufferedReader;
 
 				public:
+					/**
+					 * @struct Telemetry
+					 * @brief Session telemetry. One @ref Telemetry() call, one coherent copy.
+					 *
+					 * Byte fields are @ref StormByte::Size. Event counts are
+					 * @c std::size_t. Waits are @c std::chrono::nanoseconds.
+					 * Accumulators start at construction and do not reset on
+					 * Close / Rewind / Open. Prefetch is not @ref Delivered.
+					 * @c Peek does not move @ref Delivered, @ref HitAhead,
+					 * @ref HitBack, @ref Miss, @ref Origin or the Seek* counts.
+					 *
+					 * On consuming @ref Read:
+					 * @c Delivered == @c HitAhead + @c HitBack + @c Miss.
+					 * @c Origin counts every @ref OriginPull (Serve and worker).
+					 * @c Origin >= @c Miss. Mean wait is
+					 * @c WaitTotal / @c WaitSamples when samples > 0.
+					 *
+					 * @c SeekLogical is each successful public @ref Seek.
+					 * @c SeekOrigin is each @ref OriginSeek that ran.
+					 * @c SeekSavedFull / @c SeekSavedPartial close when the
+					 * next @ref Seek or @ref Close ends the epoch.
+					 */
+					struct Telemetry {
+						/**
+						 * @brief Octets @ref Read delivered to the caller.
+						 */
+						StormByte::Size Delivered {};
+
+						/**
+						 * @brief Of @ref Delivered, cache octets never consumed before
+						 *        (read-ahead / first touch of that offset).
+						 */
+						StormByte::Size HitAhead {};
+
+						/**
+						 * @brief Of @ref Delivered, cache octets at an offset already
+						 *        passed by @ref Tell (page-cache replay after Seek).
+						 */
+						StormByte::Size HitBack {};
+
+						/**
+						 * @brief Of @ref Delivered, octets pulled from the origin in that Read.
+						 */
+						StormByte::Size Miss {};
+
+						/**
+						 * @brief Octets transferred by @ref OriginPull this session.
+						 */
+						StormByte::Size Origin {};
+
+						/**
+						 * @brief Resident cache octets now.
+						 */
+						StormByte::Size Cached {};
+
+						/**
+						 * @brief Maximum @ref Cached since construction.
+						 */
+						StormByte::Size CachedPeak {};
+
+						/**
+						 * @brief @ref MaxMemory at this snapshot.
+						 */
+						StormByte::Size Cap {};
+
+						/**
+						 * @brief Successful public @ref Seek calls.
+						 */
+						std::size_t SeekLogical {0};
+
+						/**
+						 * @brief @ref OriginSeek calls that reached the device.
+						 */
+						std::size_t SeekOrigin {0};
+
+						/**
+						 * @brief Closed Seek epochs that never called @ref OriginSeek
+						 *        after a cache hit at the target.
+						 */
+						std::size_t SeekSavedFull {0};
+
+						/**
+						 * @brief Closed Seek epochs that called @ref OriginSeek
+						 *        after a cache hit at the target.
+						 */
+						std::size_t SeekSavedPartial {0};
+
+						/**
+						 * @brief Times @ref Read / @ref Peek returned TryAgain.
+						 */
+						std::size_t TryAgain {0};
+
+						/**
+						 * @brief Times resident cache reached @ref Cap while Cap > 0.
+						 */
+						std::size_t Saturated {0};
+
+						/**
+						 * @brief Cache spans dropped by MaxMemory eviction.
+						 */
+						std::size_t Evicted {0};
+
+						/**
+						 * @brief Shortest sampled Read/Peek wait. 0 if WaitSamples == 0.
+						 */
+						std::chrono::nanoseconds WaitMin {};
+
+						/**
+						 * @brief Longest sampled Read/Peek wait. 0 if WaitSamples == 0.
+						 */
+						std::chrono::nanoseconds WaitMax {};
+
+						/**
+						 * @brief Sum of sampled waits.
+						 */
+						std::chrono::nanoseconds WaitTotal {};
+
+						/**
+						 * @brief Sampled waits (work or timed-out TryAgain). Not empty no-ops.
+						 */
+						std::size_t WaitSamples {0};
+					};
+
 					/**
 					 * @name Lifecycle
 					 * @{
@@ -333,17 +477,16 @@ namespace StormByte {
 					 * @param mode @ref Position::Absolute or @ref Position::Relative.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
 					 *
-					 * Seekable origins call @ref OriginSeek for the resolved
-					 * target whether or not that offset is already cached.
-					 * The cache map is kept. Non-seekable origins return
+					 * Does not call @ref OriginSeek. The device is realigned
+					 * on a later pull only if that pull's offset is not the
+					 * current device cursor. Non-seekable origins return
 					 * Failed without invoking the hook. Negative absolute
 					 * offsets and relative steps before offset 0 fail.
 					 * Not currently armed also fails.
 					 *
 					 * @par Latency
-					 * Not O(1). May block on prefetch cancellation,
-					 * @ref OriginSeek, and cache bookkeeping. Immediate
-					 * return is not part of the contract.
+					 * Not O(1). May block on prefetch cancellation.
+					 * Immediate return is not part of the contract.
 					 */
 					virtual Result Seek(std::ptrdiff_t offset, Position mode) const final;
 
@@ -379,6 +522,21 @@ namespace StormByte {
 					 * @return Length, or empty if @ref IsSized is false.
 					 */
 					virtual std::optional<StormByte::Size> Size() const noexcept final;
+
+					/**
+					 * @}
+					 */
+
+					/**
+					 * @name Telemetry
+					 * @{
+					 */
+
+					/**
+					 * @brief Copy current telemetry.
+					 * @return Snapshot. Does not pull from the origin.
+					 */
+					virtual const struct Telemetry Telemetry() const noexcept final;
 
 					/**
 					 * @}
@@ -507,9 +665,8 @@ namespace StormByte {
 					 * @param mode Absolute or relative to the device cursor.
 					 * @return @ref IO::Status::Ok or @ref IO::Status::Failed.
 					 *
-					 * May be slow (remote origin, or a leaf that
-					 * does CPU work first). The public
-					 * @ref Seek path assumes this can block.
+					 * May be slow. Called from a pull when the device
+					 * cursor is not already at the requested offset.
 					 */
 					virtual Result OriginSeek(std::ptrdiff_t offset, Position mode) = 0;
 

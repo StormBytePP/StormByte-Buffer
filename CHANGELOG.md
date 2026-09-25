@@ -22,13 +22,22 @@ If you landed here from a release link and have not read the tree:
 
 ## [Unreleased]
 
+### Added
+
+- `BufferedReader::Telemetry` snapshot (`Telemetry()`): delivered bytes, cache hits (ahead / back), misses, origin pulls, resident cache and peak, cap, logical vs origin seeks, full and partial seek elisions, try-again / saturated / evicted counts, and wait min / max / total.
+- Page-resident cache on `BufferedReader`: consumed ranges stay in the map until `MaxMemory` and garbage collection evict the spans farthest from `Tell`. Sequential re-reads and backward seeks inside resident pages do not pull the origin again.
+- Delayed seek on `BufferedReader`: `Seek` moves only the logical cursor (`Tell`). `OriginSeek` runs later, and only when a read or peek must pull a hole the map does not cover. Prefetch is gated while `Tell` and the device cursor differ; it resumes when they meet again.
+- Seek-elision counters: a logical seek that stays inside resident pages for the whole epoch counts as a full elision; a logical seek that starts in cache and later needs `OriginSeek` counts as a partial elision. Epochs close on the next `Seek` or on `Close`.
+
 ### Changed
 
 - **License:** original Buffer sources are dual-licensed LGPL-3.0-or-later or commercial. Third-party trees under `thirdparty/` keep their own licenses. Neither license grants patent rights.
 - **Breaking:** public byte-length APIs use `StormByte::Size` instead of `std::size_t`. That covers occupancy, available bytes, `Read` / `Peek` / `Extract` / `Write` counts, `Tell`, `Dirty`, `Size` when it is a file or buffer length, `WriteChunk`, `ReadAhead`, `MaxMemory`, `Result::count`, `ExternalWriter::Occupied`, Bridge high-water when it is a byte cap, and the matching test helpers. Implicit construction and mixed comparison / arithmetic with integer literals are part of the `Size` contract in Base.
-- Quantities that are not a byte length stay `std::size_t` (or `std::ptrdiff_t` for signed offsets): Hopper / Sink item counts, `BackPressure` as a chunk count, HexDump column count, and device rate fields until they become a byte length.
+- Quantities that are not a byte length stay `std::size_t` (or `std::ptrdiff_t` for signed offsets): Hopper / Sink item counts, `BackPressure` as a chunk count, HexDump column count, seek-elision and try-again / saturated / evicted counters, and device rate fields until they become a byte length.
 - **Dependency:** Buffer now requires [StormByte-System 2.0.0](https://github.com/StormBytePP/StormByte-System/releases/tag/2.0.0) or newer (`Device`, `File::Temporary`). The library PUBLIC-links System (and String). Path-only `BufferedFileReader` / `BufferedFileWriter` take `ReadAhead` / `WriteChunk` from `CreateDevice()` + `Device::Window`. A derived File overrides `CreateDevice` and returns `unique_ptr<Device>` (no slicing). Failed probe leaves the chunk/prefetch at zero. Path-only writer `BackPressure` stays 4. Private Buffer device-throughput probe is gone.
 - **Breaking:** `StormByte::Buffer::Data` replaces `DataType` (`std::vector<std::byte>`). Byte payloads that cross a DLL boundary on Windows are no longer a CRT-owned `std::vector`. `Data` is a contiguous, vector-like container with a private `Storage` PIMPL so allocate and free stay in Buffer’s translation unit. Public names follow `std::vector` in lowercase (`size`, `data`, `span`, `begin`/`end`, `insert`, `push_back`, `reserve`, …), lengths are `StormByte::Size`, and construction is pointer+`Size`, `span`, initializer list or a range (no iterator-pair constructor). `using DataType` is gone: `Read` / `Peek` / `Extract` / `*UntilEoF`, `Write`, External, Bridge, Pipeline, `LockFreeRing` and IO now take or return `Data`. Do not pass `std::vector<std::byte>` or `std::string` across the Buffer DLL; text from the module (`HexDump`) is `StormByte::String::String`.
+- **Breaking:** seekable `BufferedReader::Seek` no longer calls `OriginSeek` on every request. A cache-covered jump updates `Tell` only. The origin moves when a later `Read` / `Peek` misses. `Tell` stays the public cursor (AVIO / libav).
+- `BufferedReader` wait samples include the time spent serving a read or peek. Prefetch bytes are not delivered and do not increment `Delivered`, hits, or misses.
 
 ### Removed
 
@@ -38,6 +47,9 @@ If you landed here from a release link and have not read the tree:
 
 - Buffer tests rewritten to the current suite format (section banners, alphabetical names in body and `main`, local `BytesToText` instead of removed String helpers). Scratch files use `StormByte::System::File::Temporary` instead of Base `TempFileName`.
 - Tests ported from `DataType` to `Data` (`size()` is `StormByte::Size`; `HexDump` is converted with `static_cast<std::string>`).
+- `BufferedFileReaderTests`: repeating hex fixture (0-9a-f), `Tell` checked before and after every reliability `Read`, delayed-seek coverage (in-page, catch-up, relative, cold miss, disjoint-span partial elision, fixed-offset stress), and `Telemetry()` dumps. Asserts on bytes, `Tell`, and `Delivered == HitAhead + HitBack + Miss`. Full / partial elision counters are printed; partial elision is asserted on the disjoint-span case.
+
+[Unreleased]: https://github.com/StormBytePP/StormByte-Buffer/compare/1.4.0...HEAD
 
 ## [1.4.0] - 2026-09-23
 

@@ -91,6 +91,24 @@ namespace {
 		}
 		return out.Dirty() == StormByte::Size{0};
 	}
+
+	void DumpTelemetry(const char* tag, const BufferedFileWriter& out) {
+		const struct BufferedFileWriter::Telemetry t = out.Telemetry();
+		std::cout << "[telemetry " << tag << "]"
+			<< " Accepted=" << static_cast<std::size_t>(t.Accepted)
+			<< " Behind=" << static_cast<std::size_t>(t.Behind)
+			<< " Direct=" << static_cast<std::size_t>(t.Direct)
+			<< " Dirty=" << static_cast<std::size_t>(t.Dirty)
+			<< " DirtyPeak=" << static_cast<std::size_t>(t.DirtyPeak)
+			<< " Cap=" << static_cast<std::size_t>(t.Cap)
+			<< " TryAgain=" << t.TryAgain
+			<< " Saturated=" << t.Saturated
+			<< " WaitMin_ns=" << t.WaitMin.count()
+			<< " WaitMax_ns=" << t.WaitMax.count()
+			<< " WaitTotal_ns=" << t.WaitTotal.count()
+			<< " WaitSamples=" << t.WaitSamples
+			<< std::endl;
+	}
 }
 
 // -------------------
@@ -623,6 +641,149 @@ int test_write_before_open_leaves_src() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// Telemetry
+// -------------------
+
+int test_telemetry_ctor_is_zero() {
+	const std::string fn = "test_telemetry_ctor_is_zero";
+	const auto path = Scratch("tzero");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	DumpTelemetry("ctor", out);
+	ASSERT_EQUAL(fn, StormByte::Size{0}, out.Telemetry().Accepted);
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_direct_write_counts_accepted() {
+	const std::string fn = "test_telemetry_direct_write_counts_accepted";
+	const auto path = Scratch("tdir");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	FIFO src = FromText("HELLO");
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
+	DumpTelemetry("direct", out);
+	ASSERT_EQUAL(fn, StormByte::Size{5}, out.Telemetry().Accepted);
+	ASSERT_EQUAL(fn, StormByte::Size{5}, out.Telemetry().Direct);
+	ASSERT_TRUE(fn, out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_pressure_mixed_seeks() {
+	const std::string fn = "test_telemetry_pressure_mixed_seeks";
+	const auto path = Scratch("tmix");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 4096, 8);
+	ASSERT_TRUE(fn, out.Open());
+
+	constexpr std::size_t kBytes = 512u * 1024u;
+	std::string blob(kBytes, '\0');
+	for (std::size_t i = 0; i < kBytes; ++i)
+		blob[i] = static_cast<char>(i & 0xFF);
+
+	std::size_t off = 0;
+	while (off < kBytes) {
+		const std::size_t n = (kBytes - off) < 3072u ? (kBytes - off) : 3072u;
+		FIFO piece = FromText(blob.substr(off, n));
+		auto written = out.Write(piece);
+		if (written.status == Status::TryAgain) {
+			ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
+			written = out.Write(piece);
+		}
+		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(written.status));
+		off += n;
+	}
+	DumpTelemetry("seq-512k", out);
+
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Seek(0, Position::Absolute).status));
+	FIFO head = FromText(std::string(8192, 'H'));
+	{
+		auto written = out.Write(head);
+		if (written.status == Status::TryAgain) {
+			ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
+			written = out.Write(head);
+		}
+		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(written.status));
+	}
+	DumpTelemetry("seek0-8k", out);
+
+	ASSERT_EQUAL(fn, ToString(Status::Ok),
+		ToString(out.Seek(static_cast<std::ptrdiff_t>(kBytes / 2), Position::Absolute).status));
+	FIFO mid = FromText(std::string(8192, 'M'));
+	{
+		auto written = out.Write(mid);
+		if (written.status == Status::TryAgain) {
+			ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
+			written = out.Write(mid);
+		}
+		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(written.status));
+	}
+	DumpTelemetry("seek-mid-8k", out);
+
+	ASSERT_EQUAL(fn, ToString(Status::Ok),
+		ToString(out.Seek(-4096, Position::Relative).status));
+	FIFO back = FromText(std::string(4096, 'B'));
+	{
+		auto written = out.Write(back);
+		if (written.status == Status::TryAgain) {
+			ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
+			written = out.Write(back);
+		}
+		ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(written.status));
+	}
+	DumpTelemetry("seek-rel-4k", out);
+
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Flush().status));
+	DumpTelemetry("after-flush", out);
+
+	const struct BufferedFileWriter::Telemetry t = out.Telemetry();
+	ASSERT_EQUAL(fn, t.Accepted, t.Behind + t.Direct);
+	ASSERT_TRUE(fn, t.Accepted >= StormByte::Size{kBytes});
+	ASSERT_EQUAL(fn, StormByte::Size{4096u * 8u}, t.Cap);
+	ASSERT_TRUE(fn, out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_ring_counts_behind_and_tryagain() {
+	const std::string fn = "test_telemetry_ring_counts_behind_and_tryagain";
+	const auto path = Scratch("tring");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 4, 1);
+	ASSERT_TRUE(fn, out.Open());
+	FIFO first = FromText("AB");
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(first).status));
+	FIFO second = FromText("CDEFGH");
+	ASSERT_EQUAL(fn, ToString(Status::TryAgain), ToString(out.Write(second).status));
+	DumpTelemetry("ring-bp", out);
+	ASSERT_EQUAL(fn, StormByte::Size{2}, out.Telemetry().Accepted);
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(1), out.Telemetry().TryAgain);
+	ASSERT_TRUE(fn, out.Close());
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_survives_close_and_truncate() {
+	const std::string fn = "test_telemetry_survives_close_and_truncate";
+	const auto path = Scratch("tkeep");
+	std::filesystem::remove(path);
+	BufferedFileWriter out(path, 0, 0);
+	ASSERT_TRUE(fn, out.Open());
+	FIFO src = FromText("XYZ");
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Write(src).status));
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(out.Truncate().status));
+	DumpTelemetry("after-truncate", out);
+	ASSERT_EQUAL(fn, StormByte::Size{3}, out.Telemetry().Accepted);
+	ASSERT_TRUE(fn, out.Close());
+	DumpTelemetry("after-close", out);
+	ASSERT_EQUAL(fn, StormByte::Size{3}, out.Telemetry().Accepted);
+	std::filesystem::remove(path);
+	RETURN_TEST(fn, 0);
+}
+
 int main() {
 	int result = 0;
 
@@ -678,6 +839,15 @@ int main() {
 	result += test_open_missing_parent();
 	result += test_rewind_without_open_fails();
 	result += test_write_before_open_leaves_src();
+
+	// -------------------
+	// Telemetry
+	// -------------------
+	result += test_telemetry_ctor_is_zero();
+	result += test_telemetry_direct_write_counts_accepted();
+	result += test_telemetry_pressure_mixed_seeks();
+	result += test_telemetry_ring_counts_behind_and_tryagain();
+	result += test_telemetry_survives_close_and_truncate();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

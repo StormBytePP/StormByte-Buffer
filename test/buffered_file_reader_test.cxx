@@ -47,10 +47,12 @@
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <span>
 #include <string>
 #include <thread>
+#include <vector>
 
 using StormByte::Buffer::Data;
 using StormByte::Buffer::FIFO;
@@ -61,26 +63,110 @@ using StormByte::Buffer::IO::Status;
 using StormByte::Buffer::IO::ToString;
 
 namespace {
+	constexpr char kHex[] = "0123456789abcdef";
+	constexpr std::size_t kHexLen = 16;
+	constexpr std::size_t kHexFile = 4 * 1024 * 1024;
+
 	std::filesystem::path File(const char* name) {
 		return CurrentFileDirectory / "files" / name;
 	}
 
 	std::string Text(FIFO& fifo) {
 		Data data;
-		static_cast<void>(fifo.Peek(StormByte::Size{0}, data));
+		static_cast<void>(fifo.Peek(0, data));
 		return std::string(reinterpret_cast<const char*>(data.data()),
 			static_cast<std::size_t>(data.size()));
 	}
 
 	Data Bytes(FIFO& fifo) {
 		Data data;
-		static_cast<void>(fifo.Peek(StormByte::Size{0}, data));
+		static_cast<void>(fifo.Peek(0, data));
 		return data;
 	}
 
 	void Fill(std::span<std::byte> dest, const std::byte value) {
 		for (auto& b : dest)
 			b = value;
+	}
+
+	unsigned char HexAt(const std::size_t offset) {
+		return static_cast<unsigned char>(kHex[offset % kHexLen]);
+	}
+
+	std::filesystem::path HexPath() {
+		return std::filesystem::temp_directory_path() / "stormbyte_buffer_hex_4m.bin";
+	}
+
+	bool WriteHexFile(const std::filesystem::path& path) {
+		std::ofstream out(path, std::ios::binary | std::ios::trunc);
+		if (!out)
+			return false;
+		std::vector<char> block(64 * 1024);
+		std::size_t off = 0;
+		while (off < kHexFile) {
+			const std::size_t n = (kHexFile - off) < block.size() ? (kHexFile - off) : block.size();
+			for (std::size_t i = 0; i < n; ++i)
+				block[i] = static_cast<char>(HexAt(off + i));
+			out.write(block.data(), static_cast<std::streamsize>(n));
+			off += n;
+		}
+		return static_cast<bool>(out);
+	}
+
+	int CheckTell(const std::string& fn, const BufferedFileReader& in, const std::size_t expect) {
+		ASSERT_EQUAL(fn, StormByte::Size{expect}, in.Tell());
+		return 0;
+	}
+
+	int ReadExpect(const std::string& fn, BufferedFileReader& in,
+			const std::size_t from, const std::size_t n) {
+		if (CheckTell(fn, in, from) != 0)
+			return 1;
+		FIFO dest;
+		const auto got = in.Read(StormByte::Size{n}, dest);
+		if (got.status != Status::Ok && got.status != Status::End)
+			return 1;
+		ASSERT_EQUAL(fn, StormByte::Size{n}, got.count);
+		if (CheckTell(fn, in, from + n) != 0)
+			return 1;
+		const auto bytes = Bytes(dest);
+		ASSERT_EQUAL(fn, n, static_cast<std::size_t>(bytes.size()));
+		for (std::size_t i = 0; i < n; ++i)
+			ASSERT_EQUAL(fn, static_cast<unsigned>(HexAt(from + i)),
+				static_cast<unsigned>(bytes[i]));
+		return 0;
+	}
+
+	int SeekExpectTell(const std::string& fn, BufferedFileReader& in, const std::size_t target) {
+		ASSERT_EQUAL(fn, ToString(Status::Ok),
+			ToString(in.Seek(static_cast<std::ptrdiff_t>(target), Position::Absolute).status));
+		return CheckTell(fn, in, target);
+	}
+
+	void DumpTelemetry(const char* tag, const BufferedFileReader& in) {
+		const struct BufferedFileReader::Telemetry t = in.Telemetry();
+		std::cout
+			<< "[telemetry " << tag << "]"
+			<< " Delivered=" << static_cast<std::size_t>(t.Delivered)
+			<< " HitAhead=" << static_cast<std::size_t>(t.HitAhead)
+			<< " HitBack=" << static_cast<std::size_t>(t.HitBack)
+			<< " Miss=" << static_cast<std::size_t>(t.Miss)
+			<< " Origin=" << static_cast<std::size_t>(t.Origin)
+			<< " Cached=" << static_cast<std::size_t>(t.Cached)
+			<< " CachedPeak=" << static_cast<std::size_t>(t.CachedPeak)
+			<< " Cap=" << static_cast<std::size_t>(t.Cap)
+			<< " SeekLogical=" << t.SeekLogical
+			<< " SeekOrigin=" << t.SeekOrigin
+			<< " SeekSavedFull=" << t.SeekSavedFull
+			<< " SeekSavedPartial=" << t.SeekSavedPartial
+			<< " TryAgain=" << t.TryAgain
+			<< " Saturated=" << t.Saturated
+			<< " Evicted=" << t.Evicted
+			<< " WaitMin_ns=" << t.WaitMin.count()
+			<< " WaitMax_ns=" << t.WaitMax.count()
+			<< " WaitTotal_ns=" << t.WaitTotal.count()
+			<< " WaitSamples=" << t.WaitSamples
+			<< std::endl;
 	}
 }
 
@@ -113,7 +199,7 @@ int test_no_nl_and_nul() {
 	FIFO n;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(raw.Read(5, n).status));
 	const auto bytes = Bytes(n);
-	ASSERT_EQUAL(fn, StormByte::Size{5}, bytes.size());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(5), static_cast<std::size_t>(bytes.size()));
 	ASSERT_EQUAL(fn, std::byte{'A'}, bytes[0]);
 	ASSERT_EQUAL(fn, std::byte{0}, bytes[1]);
 	RETURN_TEST(fn, 0);
@@ -127,7 +213,7 @@ int test_pattern_256() {
 	const auto read = in.Read(256, dest);
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(read.status));
 	const auto bytes = Bytes(dest);
-	ASSERT_EQUAL(fn, StormByte::Size{256}, bytes.size());
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(256), static_cast<std::size_t>(bytes.size()));
 	for (std::size_t i = 0; i < 256; ++i)
 		ASSERT_EQUAL(fn, static_cast<std::byte>(i), bytes[i]);
 	ASSERT_EQUAL(fn, StormByte::Size{256}, in.Tell());
@@ -187,7 +273,7 @@ int test_path_only_setup_sets_readahead() {
 	const std::string fn = "test_path_only_setup_sets_readahead";
 	BufferedFileReader in(File("five.bin"));
 	ASSERT_TRUE(fn, in.Open());
-	ASSERT_TRUE(fn, in.ReadAhead() > StormByte::Size{0});
+	ASSERT_TRUE(fn, in.ReadAhead() > 0);
 	FIFO dest;
 	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Read(5, dest).status));
 	ASSERT_EQUAL(fn, std::string("ABCDE"), Text(dest));
@@ -687,6 +773,286 @@ int test_seek_zero_rereads() {
 }
 
 // -------------------
+// Hex seek reliability
+// -------------------
+
+int test_hex_seq_matches_pattern() {
+	const std::string fn = "test_hex_seq_matches_pattern";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 64 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (CheckTell(fn, in, 0) != 0)
+		return 1;
+	constexpr std::size_t chunk = 4096;
+	std::size_t off = 0;
+	while (off < kHexFile) {
+		const std::size_t n = (kHexFile - off) < chunk ? (kHexFile - off) : chunk;
+		if (ReadExpect(fn, in, off, n) != 0)
+			return 1;
+		off += n;
+	}
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_fake_seek_tell_before_read() {
+	const std::string fn = "test_hex_fake_seek_tell_before_read";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 32 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
+		return 1;
+	DumpTelemetry("after-fill-64k", in);
+	if (SeekExpectTell(fn, in, 8 * 1024) != 0)
+		return 1;
+	DumpTelemetry("fake-seek-8k-before-read", in);
+	if (ReadExpect(fn, in, 8 * 1024, 16) != 0)
+		return 1;
+	DumpTelemetry("fake-seek-8k-after-read16", in);
+	if (SeekExpectTell(fn, in, 16 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 16 * 1024, 1) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 16 * 1024 + 1, 15) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 16 * 1024 + 16, 32) != 0)
+		return 1;
+	DumpTelemetry("fake-seek-16k-three-small-reads", in);
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 0, 32) != 0)
+		return 1;
+	DumpTelemetry("fake-seek-0-after-read32", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_fake_seek_in_page() {
+	const std::string fn = "test_hex_fake_seek_in_page";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 32 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-fake-after-fill", in);
+	if (SeekExpectTell(fn, in, 8 * 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-fake-seek-8k", in);
+	if (ReadExpect(fn, in, 8 * 1024, 16) != 0)
+		return 1;
+	DumpTelemetry("hex-fake-read-16", in);
+	if (SeekExpectTell(fn, in, 16 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 16 * 1024, 32) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 0, 64) != 0)
+		return 1;
+	DumpTelemetry("hex-fake-seek0-done", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_fake_seek_small_reads_then_catchup() {
+	const std::string fn = "test_hex_fake_seek_small_reads_then_catchup";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 48 * 1024) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 40 * 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-catchup-seek-40k", in);
+	if (ReadExpect(fn, in, 40 * 1024, 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 41 * 1024, 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 42 * 1024, 6 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 48 * 1024, 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-catchup-past-old-tell", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_fake_seek_peek_does_not_move_tell() {
+	const std::string fn = "test_hex_fake_seek_peek_does_not_move_tell";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 32 * 1024) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 1024) != 0)
+		return 1;
+	FIFO peek;
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Peek(8, peek).status));
+	if (CheckTell(fn, in, 1024) != 0)
+		return 1;
+	const auto bytes = Bytes(peek);
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(8), static_cast<std::size_t>(bytes.size()));
+	for (std::size_t i = 0; i < 8; ++i)
+		ASSERT_EQUAL(fn, static_cast<unsigned>(HexAt(1024 + i)),
+			static_cast<unsigned>(bytes[i]));
+	if (ReadExpect(fn, in, 1024, 8) != 0)
+		return 1;
+	DumpTelemetry("peek-then-read-fake-seek", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_cold_tell_then_bytes() {
+	const std::string fn = "test_hex_seek_cold_tell_then_bytes";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 4096) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 2 * 1024 * 1024) != 0)
+		return 1;
+	DumpTelemetry("cold-2m-before-read", in);
+	if (ReadExpect(fn, in, 2 * 1024 * 1024, 64) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 3 * 1024 * 1024 + 7) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 3 * 1024 * 1024 + 7, 33) != 0)
+		return 1;
+	DumpTelemetry("cold-3m-after-read", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_miss_cold() {
+	const std::string fn = "test_hex_seek_miss_cold";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 4096) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 2 * 1024 * 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-cold-seek-2m", in);
+	if (ReadExpect(fn, in, 2 * 1024 * 1024, 64) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 3 * 1024 * 1024 + 7) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 3 * 1024 * 1024 + 7, 33) != 0)
+		return 1;
+	DumpTelemetry("hex-cold-done", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_partial_hole() {
+	const std::string fn = "test_hex_seek_partial_hole";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 4 * 1024, 16 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 4096) != 0)
+		return 1;
+	DumpTelemetry("hex-partial-seek-4k", in);
+	if (ReadExpect(fn, in, 4096, 32 * 1024) != 0)
+		return 1;
+	DumpTelemetry("hex-partial-after-hole", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_partial_hole_tell() {
+	const std::string fn = "test_hex_seek_partial_hole_tell";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 4 * 1024, 16 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 4096) != 0)
+		return 1;
+	DumpTelemetry("partial-before-overread", in);
+	if (ReadExpect(fn, in, 4096, 32 * 1024) != 0)
+		return 1;
+	DumpTelemetry("partial-after-overread", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_saved_partial_disjoint_spans() {
+	const std::string fn = "test_hex_seek_saved_partial_disjoint_spans";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 4 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 1024 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 1024 * 1024, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 1024) != 0)
+		return 1;
+	DumpTelemetry("partial-island-before-overread", in);
+	if (ReadExpect(fn, in, 1024, 32 * 1024) != 0)
+		return 1;
+	DumpTelemetry("partial-island-after-overread", in);
+	ASSERT_EQUAL(fn, ToString(Status::Ok),
+		ToString(in.Seek(0, Position::Absolute).status));
+	DumpTelemetry("partial-island-epoch-closed", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	ASSERT_TRUE(fn, t.SeekOrigin > 0);
+	ASSERT_TRUE(fn, t.SeekSavedPartial > 0);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_relative_fake_seek() {
+	const std::string fn = "test_hex_relative_fake_seek";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 20 * 1024) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, ToString(Status::Ok),
+		ToString(in.Seek(-4 * 1024, Position::Relative).status));
+	if (CheckTell(fn, in, 16 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 16 * 1024, 64) != 0)
+		return 1;
+	DumpTelemetry("relative-fake-back", in);
+	RETURN_TEST(fn, 0);
+}
+
+int test_hex_seek_stress_fixed_offsets() {
+	const std::string fn = "test_hex_seek_stress_fixed_offsets";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 128 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	const std::size_t offs[] = {
+		0, 1, 15, 16, 17,
+		4095, 4096, 4097,
+		64 * 1024 - 3, 64 * 1024, 64 * 1024 + 3,
+		100000, 1234567, 2000000, 3000001,
+		kHexFile - 32, kHexFile - 16
+	};
+	const std::size_t lens[] = { 1, 2, 16, 17, 256, 4096 };
+	for (const std::size_t off : offs) {
+		for (const std::size_t n : lens) {
+			if (off + n > kHexFile)
+				continue;
+			if (SeekExpectTell(fn, in, off) != 0)
+				return 1;
+			if (ReadExpect(fn, in, off, n) != 0)
+				return 1;
+		}
+	}
+	DumpTelemetry("hex-stress-done", in);
+	RETURN_TEST(fn, 0);
+}
+
+// -------------------
 // Session / errors
 // -------------------
 
@@ -907,6 +1273,121 @@ int test_tell_unchanged_on_peek_and_empty_span() {
 	RETURN_TEST(fn, 0);
 }
 
+// -------------------
+// Telemetry
+// -------------------
+
+int test_telemetry_ctor_is_zero() {
+	const std::string fn = "test_telemetry_ctor_is_zero";
+	BufferedFileReader in(File("five.bin"), 0, 0);
+	DumpTelemetry("ctor", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, StormByte::Size{0}, t.Delivered);
+	ASSERT_EQUAL(fn, StormByte::Size{0}, t.HitAhead + t.HitBack);
+	ASSERT_EQUAL(fn, StormByte::Size{0}, t.Miss);
+	ASSERT_EQUAL(fn, static_cast<std::size_t>(0), t.SeekLogical);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_fake_seek_epoch() {
+	const std::string fn = "test_telemetry_fake_seek_epoch";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	DumpTelemetry("tel-fake-open", in);
+	if (ReadExpect(fn, in, 0, 64 * 1024) != 0)
+		return 1;
+	DumpTelemetry("tel-fake-filled", in);
+	if (SeekExpectTell(fn, in, 8 * 1024) != 0)
+		return 1;
+	DumpTelemetry("tel-fake-seek-open-epoch", in);
+	if (ReadExpect(fn, in, 8 * 1024, 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 9 * 1024, 1024) != 0)
+		return 1;
+	DumpTelemetry("tel-fake-small-reads", in);
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	DumpTelemetry("tel-fake-epoch-closed", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_cold_seek_epoch() {
+	const std::string fn = "test_telemetry_cold_seek_epoch";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 8 * 1024, 32 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 4096) != 0)
+		return 1;
+	DumpTelemetry("tel-cold-warm", in);
+	if (SeekExpectTell(fn, in, 2 * 1024 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 2 * 1024 * 1024, 4096) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 0) != 0)
+		return 1;
+	DumpTelemetry("tel-cold-epoch-closed", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_hex_pressure() {
+	const std::string fn = "test_telemetry_hex_pressure";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 16 * 1024, 64 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	DumpTelemetry("open", in);
+	if (ReadExpect(fn, in, 0, 512 * 1024) != 0)
+		return 1;
+	DumpTelemetry("seq-512k", in);
+	if (SeekExpectTell(fn, in, 8 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 8 * 1024, 8192) != 0)
+		return 1;
+	DumpTelemetry("seek-back-8k", in);
+	if (SeekExpectTell(fn, in, 2 * 1024 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 2 * 1024 * 1024, 8192) != 0)
+		return 1;
+	DumpTelemetry("seek-cold-2m", in);
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Close().status));
+	DumpTelemetry("after-close", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	RETURN_TEST(fn, 0);
+}
+
+int test_telemetry_saved_partial_disjoint() {
+	const std::string fn = "test_telemetry_saved_partial_disjoint";
+	const auto path = HexPath();
+	ASSERT_TRUE(fn, WriteHexFile(path));
+	BufferedFileReader in(path, 4 * 1024, 256 * 1024);
+	ASSERT_TRUE(fn, in.Open());
+	if (ReadExpect(fn, in, 0, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 2 * 1024 * 1024) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 2 * 1024 * 1024, 8192) != 0)
+		return 1;
+	if (SeekExpectTell(fn, in, 2048) != 0)
+		return 1;
+	if (ReadExpect(fn, in, 2048, 16 * 1024) != 0)
+		return 1;
+	ASSERT_EQUAL(fn, ToString(Status::Ok), ToString(in.Close().status));
+	DumpTelemetry("tel-partial-closed", in);
+	const struct BufferedFileReader::Telemetry t = in.Telemetry();
+	ASSERT_EQUAL(fn, t.Delivered, t.HitAhead + t.HitBack + t.Miss);
+	ASSERT_TRUE(fn, t.SeekSavedPartial > 0);
+	ASSERT_TRUE(fn, t.SeekOrigin > 0);
+	RETURN_TEST(fn, 0);
+}
+
 int main() {
 	int result = 0;
 
@@ -971,6 +1452,22 @@ int main() {
 	result += test_seek_zero_rereads();
 
 	// -------------------
+	// Hex seek reliability
+	// -------------------
+	result += test_hex_seq_matches_pattern();
+	result += test_hex_fake_seek_tell_before_read();
+	result += test_hex_fake_seek_in_page();
+	result += test_hex_fake_seek_small_reads_then_catchup();
+	result += test_hex_fake_seek_peek_does_not_move_tell();
+	result += test_hex_seek_cold_tell_then_bytes();
+	result += test_hex_seek_miss_cold();
+	result += test_hex_seek_partial_hole();
+	result += test_hex_seek_partial_hole_tell();
+	result += test_hex_seek_saved_partial_disjoint_spans();
+	result += test_hex_relative_fake_seek();
+	result += test_hex_seek_stress_fixed_offsets();
+
+	// -------------------
 	// Session / errors
 	// -------------------
 	result += test_close_then_reopen();
@@ -992,6 +1489,15 @@ int main() {
 	result += test_tell_open_is_zero();
 	result += test_tell_tracks_each_read();
 	result += test_tell_unchanged_on_peek_and_empty_span();
+
+	// -------------------
+	// Telemetry
+	// -------------------
+	result += test_telemetry_ctor_is_zero();
+	result += test_telemetry_fake_seek_epoch();
+	result += test_telemetry_cold_seek_epoch();
+	result += test_telemetry_hex_pressure();
+	result += test_telemetry_saved_partial_disjoint();
 
 	if (result == 0)
 		std::cout << "All tests passed!" << std::endl;

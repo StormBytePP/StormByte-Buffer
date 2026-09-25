@@ -47,6 +47,8 @@
 using namespace StormByte::Buffer::IO::Backend;
 using Result = StormByte::Buffer::IO::Result;
 using State = StormByte::Buffer::IO::State;
+using Status = StormByte::Buffer::IO::Status;
+using Data = StormByte::Buffer::Data;
 
 BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, const StormByte::Size write_chunk,
 		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
@@ -108,6 +110,50 @@ bool BufferedWriter::WouldAccept(const StormByte::Size bytes) const noexcept {
 
 bool BufferedWriter::WillWrite(const StormByte::Size n) const noexcept {
 	return WouldAccept(n);
+}
+
+struct StormByte::Buffer::IO::BufferedWriter::Telemetry BufferedWriter::Telemetry() const noexcept {
+	std::lock_guard lock(m_mutex);
+	struct StormByte::Buffer::IO::BufferedWriter::Telemetry out;
+	out.Accepted = m_accepted;
+	out.Behind = m_behind;
+	out.Direct = m_direct;
+	out.Dirty = m_ring ? m_ring->AvailableBytes() : StormByte::Size{0};
+	out.DirtyPeak = m_dirty_peak;
+	out.Cap = PendingCap();
+	out.TryAgain = m_try_again;
+	out.Saturated = m_saturated;
+	out.WaitMin = m_wait_min;
+	out.WaitMax = m_wait_max;
+	out.WaitTotal = m_wait_total;
+	out.WaitSamples = m_wait_samples;
+	return out;
+}
+
+void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noexcept {
+	if (m_wait_samples == 0) {
+		m_wait_min = elapsed;
+		m_wait_max = elapsed;
+	}
+	else {
+		if (elapsed < m_wait_min)
+			m_wait_min = elapsed;
+		if (elapsed > m_wait_max)
+			m_wait_max = elapsed;
+	}
+	m_wait_total += elapsed;
+	++m_wait_samples;
+}
+
+void BufferedWriter::NoteDirty() const noexcept {
+	if (!m_ring)
+		return;
+	const StormByte::Size now = m_ring->AvailableBytes();
+	if (now > m_dirty_peak)
+		m_dirty_peak = now;
+	const StormByte::Size cap = PendingCap();
+	if (cap > StormByte::Size{0} && now >= cap)
+		++m_saturated;
 }
 
 bool BufferedWriter::Open() {
@@ -260,8 +306,10 @@ Result BufferedWriter::Write(const FIFO& src) {
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || m_state != State::Idle)
 			return { Status::Failed, 0 };
-		if (!WouldAccept(need))
+		if (!WouldAccept(need)) {
+			++m_try_again;
 			return { Status::TryAgain, 0 };
+		}
 	}
 	Data chunk;
 	if (!src.Read(need, chunk))
@@ -280,8 +328,10 @@ Result BufferedWriter::Write(const std::span<const std::byte> src) {
 			return { Status::Failed, 0 };
 		if (src.empty())
 			return { Status::Ok, 0 };
-		if (!WouldAccept(StormByte::Size{src.size()}))
+		if (!WouldAccept(StormByte::Size{src.size()})) {
+			++m_try_again;
 			return { Status::TryAgain, 0 };
+		}
 	}
 	return WriteSpan(src);
 }
@@ -290,6 +340,9 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	if (src.empty())
 		return { Status::Ok, 0 };
 
+	const auto started = std::chrono::steady_clock::now();
+	const StormByte::Size n{src.size()};
+
 	if (!BufferedMode()) {
 		const Result pushed = PushAll(src);
 		if (pushed.status != Status::Ok) {
@@ -297,6 +350,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			m_failed = true;
 			if (m_state == State::Idle)
 				m_state = State::Fault;
+			NoteWait(std::chrono::steady_clock::now() - started);
 			return pushed;
 		}
 		const Result visible = m_owner->OriginFlush();
@@ -305,11 +359,15 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			m_failed = true;
 			if (m_state == State::Idle)
 				m_state = State::Fault;
+			NoteWait(std::chrono::steady_clock::now() - started);
 			return visible;
 		}
 		std::lock_guard lock(m_mutex);
-		m_tell = m_tell + StormByte::Size{src.size()};
-		return { Status::Ok, StormByte::Size{src.size()} };
+		m_tell = m_tell + n;
+		m_accepted = m_accepted + n;
+		m_direct = m_direct + n;
+		NoteWait(std::chrono::steady_clock::now() - started);
+		return { Status::Ok, n };
 	}
 
 	if (!m_ring)
@@ -320,10 +378,14 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 
 	{
 		std::lock_guard lock(m_mutex);
-		m_tell = m_tell + StormByte::Size{src.size()};
+		m_tell = m_tell + n;
+		m_accepted = m_accepted + n;
+		m_behind = m_behind + n;
+		NoteDirty();
+		NoteWait(std::chrono::steady_clock::now() - started);
 	}
 	RequestDrain();
-	return { Status::Ok, StormByte::Size{src.size()} };
+	return { Status::Ok, n };
 }
 
 StormByte::Size BufferedWriter::Tell() const noexcept {

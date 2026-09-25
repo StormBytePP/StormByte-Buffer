@@ -84,11 +84,9 @@ namespace StormByte {
 				 * @c m_owner.
 				 *
 				 * A seekable origin keeps a map of owned spans keyed by stream
-				 * offset. Seek always realigns the device with @c OriginSeek.
-				 * A cache hit avoids a re-pull only. Overlapping or adjacent
-				 * spans merge. @ref MaxMemory evicts the spans farthest from
-				 * @ref Tell. A non-seekable origin keeps a single forward
-				 * span; @c Seek fails without calling the hook.
+				 * offset. Seek updates @c m_tell only. @c m_origin_pos is the
+				 * device. Prefetch only while those two match. PullAt at
+				 * @c m_origin_pos is sequential; anywhere else is OriginSeek.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedReader {
 					public:
@@ -252,13 +250,10 @@ namespace StormByte {
 						 */
 
 						/**
-						 * @brief Move the logical cursor and realign a seekable origin.
+						 * @brief Move @c m_tell only. Does not call OriginSeek.
 						 * @param offset Byte offset.
 						 * @param mode Absolute or relative.
 						 * @return @ref Status::Ok or @ref Status::Failed.
-						 *
-						 * Seekable: @c OriginSeek to the target even on a cache hit.
-						 * Not seekable or not armed: Failed, hook not called.
 						 */
 						Result Seek(std::ptrdiff_t offset, Position mode) const;
 
@@ -294,6 +289,21 @@ namespace StormByte {
 						 * @return Length, or empty.
 						 */
 						std::optional<StormByte::Size> Size() const noexcept;
+
+						/**
+						 * @}
+						 */
+
+						/**
+						 * @name Telemetry
+						 * @{
+						 */
+
+						/**
+						 * @brief Copy current telemetry under @c m_mutex.
+						 * @return Snapshot. Does not pull.
+						 */
+						struct IO::BufferedReader::Telemetry Telemetry() const noexcept;
 
 						/**
 						 * @}
@@ -356,7 +366,7 @@ namespace StormByte {
 						void StopWorker();
 
 						/**
-						 * @brief Ask the worker to fill up to the current ahead target.
+						 * @brief Arm the worker only if Tell equals the device cursor.
 						 */
 						void RequestPrefetch() const;
 
@@ -426,11 +436,7 @@ namespace StormByte {
 						 * @param pos Desired origin offset.
 						 * @return @ref Status::Ok or @ref Status::Failed.
 						 *
-						 * Must not run under @c m_mutex. Seekable always
-						 * calls @c OriginSeek when @p pos differs from the
-						 * last device cursor or the origin reported End.
-						 * Not seekable only succeeds when the origin is
-						 * already at @p pos.
+						 * Must not run under @c m_mutex.
 						 */
 						Result EnsureOrigin(StormByte::Size pos) const;
 
@@ -454,6 +460,28 @@ namespace StormByte {
 						 */
 						Result Serve(StormByte::Size n, FIFO& dest, bool consume) const;
 
+						/**
+						 * @brief Record a wait sample. Caller holds @c m_mutex.
+						 * @param elapsed Duration of the Serve that worked or timed out.
+						 */
+						void NoteWait(std::chrono::nanoseconds elapsed) const noexcept;
+
+						/**
+						 * @brief Raise CachedPeak and Saturated if the cap is hit. Caller holds @c m_mutex.
+						 */
+						void NoteResident() const noexcept;
+
+						/**
+						 * @brief Tell equals a known device cursor. Caller holds @c m_mutex.
+						 * @return @c true if a pull at Tell needs no OriginSeek.
+						 */
+						bool DeviceSynced() const noexcept;
+
+						/**
+						 * @brief Fold the open epoch into SavedFull / SavedPartial. Caller holds @c m_mutex.
+						 */
+						void CloseSeekEpoch() const noexcept;
+
 						IO::BufferedReader* m_owner;					///< Public leaf (hooks).
 
 						mutable std::mutex m_mutex;						///< Session + map.
@@ -467,11 +495,34 @@ namespace StormByte {
 						bool m_open {false};							///< Session armed (Open until Close).
 						mutable bool m_failed {false};					///< Permanent failure.
 						mutable bool m_origin_exhausted {false};		///< Device EOF (not public EoF).
-						mutable StormByte::Size m_tell {0};				///< Logical stream cursor.
-						mutable StormByte::Size m_origin_pos {0};		///< Last known device cursor.
+						mutable StormByte::Size m_tell {0};				///< Logical cursor. AVIO contract.
+						mutable StormByte::Size m_max_tell {0};			///< High-water of consumed Tell.
+						mutable StormByte::Size m_origin_pos {0};		///< Device cursor. Not updated by Seek.
 						mutable bool m_origin_valid {false};			///< Whether @c m_origin_pos is known.
+						mutable bool m_hold_prefetch {false};			///< Fake seek: prefetch off until catch-up or OriginSeek.
 
 						mutable std::map<StormByte::Size, FIFO> m_spans;	///< [offset, offset+len) owned bytes.
+
+						mutable StormByte::Size m_delivered {0};		///< Telemetry.Delivered.
+						mutable StormByte::Size m_hit_ahead {0};		///< Telemetry.HitAhead.
+						mutable StormByte::Size m_hit_back {0};			///< Telemetry.HitBack.
+						mutable StormByte::Size m_miss {0};				///< Telemetry.Miss.
+						mutable StormByte::Size m_origin {0};			///< Telemetry.Origin.
+						mutable StormByte::Size m_cached_peak {0};		///< Telemetry.CachedPeak.
+						mutable std::size_t m_seek_logical {0};			///< Telemetry.SeekLogical.
+						mutable std::size_t m_seek_origin {0};			///< Telemetry.SeekOrigin.
+						mutable std::size_t m_seek_saved_full {0};		///< Telemetry.SeekSavedFull.
+						mutable std::size_t m_seek_saved_partial {0};	///< Telemetry.SeekSavedPartial.
+						mutable bool m_seek_epoch {false};				///< Epoch open until next Seek/Close.
+						mutable bool m_seek_had_cache {false};			///< CoverageFrom(target) at Seek.
+						mutable bool m_seek_did_origin {false};			///< OriginSeek hook ran in epoch.
+						mutable std::size_t m_try_again {0};			///< Telemetry.TryAgain.
+						mutable std::size_t m_saturated {0};			///< Telemetry.Saturated.
+						mutable std::size_t m_evicted {0};				///< Telemetry.Evicted.
+						mutable std::chrono::nanoseconds m_wait_min {0};	///< Telemetry.WaitMin.
+						mutable std::chrono::nanoseconds m_wait_max {0};	///< Telemetry.WaitMax.
+						mutable std::chrono::nanoseconds m_wait_total {0};	///< Telemetry.WaitTotal.
+						mutable std::size_t m_wait_samples {0};			///< Telemetry.WaitSamples.
 
 						mutable std::atomic<bool> m_stop {false};		///< Worker teardown.
 						mutable std::atomic<bool> m_cancel_prefetch {false}; ///< Flush in-flight pull.
