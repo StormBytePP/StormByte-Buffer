@@ -57,12 +57,6 @@
  */
 namespace StormByte::Buffer {
 	/**
-	 * @brief Forward declaration of the private SPSC ring used between stages.
-	 * @note @c LockFreeRing is not installed as a public header.
-	 */
-	class LockFreeRing;
-
-	/**
 	 * @class Pipeline
 	 * @brief High-performance multi-stage data-processing pipeline.
 	 *
@@ -73,8 +67,7 @@ namespace StormByte::Buffer {
 	 * implementation for every intermediate step without changing stage code.
 	 *
 	 * @par Buffer strategy
-	 * - **Intermediate stages** use the private high-performance
-	 *   @c LockFreeRing (SPSC lock-free circular buffer).
+	 * - **Intermediate stages** use a private SPSC ring.
 	 * - **Final stage** writes into a public @ref Producer (backed by @ref Ring),
 	 *   so the @ref Consumer returned to the caller keeps the full public API
 	 *   and can be shared safely.
@@ -117,7 +110,7 @@ namespace StormByte::Buffer {
 			 * @brief Signature of a pipeline stage.
 			 *
 			 * Stages receive abstract reader/writer interfaces so the Pipeline
-			 * can inject @c LockFreeRing for intermediates and @ref Ring for
+			 * can inject a private SPSC ring for intermediates and @ref Ring for
 			 * the final output without changing stage code.
 			 *
 			 * @param in Abstract reader for the stage input.
@@ -203,7 +196,7 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Propagate error state to all internal buffers.
-			 * @details Calls @c SetError() on every intermediate @c LockFreeRing
+			 * @details Calls @c SetError() on every intermediate SPSC ring
 			 *          and on the final @ref Producer. Waiting stages wake and
 			 *          observe the error condition.
 			 */
@@ -231,7 +224,7 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			struct Impl;					///< Private implementation (PIMPL)
-			std::unique_ptr<Impl> m_impl;	///< Opaque pointer to implementation
+			struct Backend;						///< Private coordinator.
+			std::unique_ptr<Backend> m_io;		///< Opaque coordinator.
 	};
 }

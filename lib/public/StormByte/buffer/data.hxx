@@ -66,12 +66,6 @@
  */
 namespace StormByte::Buffer {
 	/**
-	 * @class Storage
-	 * @brief Private byte store. Defined only in Buffer's translation unit.
-	 */
-	class Storage;
-
-	/**
 	 * @class Data
 	 * @brief DLL-boundary-safe owned byte sequence.
 	 *
@@ -87,8 +81,8 @@ namespace StormByte::Buffer {
 	 * different heaps. That is undefined behaviour (corruption,
 	 * double-free) whenever the two sides do not share one CRT.
 	 *
-	 * @c Data owns a @c Storage instance allocated by Buffer. Allocation,
-	 * growth and destruction run in Buffer. The header exposes contiguous
+	 * @c Data owns its bytes on Buffer's heap. Allocation, growth and
+	 * destruction run in Buffer. The header exposes contiguous
 	 * @c std::byte* iterators, @c std::span views and a vector-like API
 	 * so @c &lt;algorithm&gt; and @c std::ranges keep working without
 	 * inheriting @c std::vector.
@@ -241,7 +235,7 @@ namespace StormByte::Buffer {
 			Data(Data&& other) noexcept;
 
 			/**
-			 * @brief Destroy storage on Buffer's heap.
+			 * @brief Destroy the sequence on Buffer's heap.
 			 */
 			~Data() noexcept;
 
@@ -682,10 +676,10 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			/**
-			 * @brief Byte store allocated by Buffer.
-			 */
+			/// @cond
+			class Storage;
 			std::unique_ptr<Storage> m_storage;
+			/// @endcond
 
 			/**
 			 * @brief Byte offset of @p pos from @ref data().

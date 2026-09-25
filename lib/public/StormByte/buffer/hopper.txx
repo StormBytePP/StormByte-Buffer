@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -245,43 +245,43 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::Hopper() noexcept
-	: m_impl(std::make_unique<Implementation>()) {}
+	: m_io(std::make_unique<Implementation>()) {}
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::Hopper(std::size_t capacity) noexcept
-	: m_impl(std::make_unique<Implementation>(capacity)) {}
+	: m_io(std::make_unique<Implementation>(capacity)) {}
 
 	template<Type::MoveConstructible T>
 	Hopper<T>::~Hopper() noexcept = default;
 
 	template<Type::MoveConstructible T>
 	std::size_t Hopper<T>::Capacity() const noexcept {
-		return m_impl->Capacity();
+		return m_io->Capacity();
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Capacity(std::size_t capacity) noexcept {
-		m_impl->Capacity(capacity);
+		m_io->Capacity(capacity);
 	}
 
 	template<Type::MoveConstructible T>
 	std::size_t Hopper<T>::Size() const noexcept {
-		return m_impl->Size();
+		return m_io->Size();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Hopper<T>::Full() const noexcept {
-		return m_impl->Full();
+		return m_io->Full();
 	}
 
 	template<Type::MoveConstructible T>
 	unsigned Hopper<T>::Writers() const noexcept {
-		return m_impl->Writers();
+		return m_io->Writers();
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Push(T item) noexcept {
-		m_impl->Push(std::move(item));
+		m_io->Push(std::move(item));
 	}
 
 	template<Type::MoveConstructible T>
@@ -292,27 +292,27 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Eof() noexcept {
-		m_impl->Eof();
+		m_io->Eof();
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::AddWriter() noexcept {
-		m_impl->AddWriter();
+		m_io->AddWriter();
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::CloseWriter() noexcept {
-		m_impl->CloseWriter();
+		m_io->CloseWriter();
 	}
 
 	template<Type::MoveConstructible T>
 	T Hopper<T>::Pop() noexcept {
-		return m_impl->Pop();
+		return m_io->Pop();
 	}
 
 	template<Type::MoveConstructible T>
 	T Hopper<T>::Front() const noexcept requires std::copy_constructible<T> {
-		return m_impl->Front();
+		return m_io->Front();
 	}
 
 	template<Type::MoveConstructible T>
@@ -323,26 +323,26 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	bool Hopper<T>::EoF() const noexcept {
-		return m_impl->EoF();
+		return m_io->EoF();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Hopper<T>::Empty() const noexcept {
-		return m_impl->Empty();
+		return m_io->Empty();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Hopper<T>::Ready() const noexcept {
-		return m_impl->Ready();
+		return m_io->Ready();
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Notify(std::condition_variable& wake) noexcept {
-		m_impl->Notify(wake);
+		m_io->Notify(wake);
 	}
 
 	template<Type::MoveConstructible T>
 	void Hopper<T>::Unnotify() noexcept {
-		m_impl->Unnotify();
+		m_io->Unnotify();
 	}
 }

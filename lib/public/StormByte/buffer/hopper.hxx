@@ -310,7 +310,7 @@ namespace StormByte::Buffer {
 			 */
 			class Implementation;
 
-			std::unique_ptr<Implementation> m_impl;	///< Pointer to private implementation.
+			std::unique_ptr<Implementation> m_io;	///< Private coordinator.
 	};
 }
 

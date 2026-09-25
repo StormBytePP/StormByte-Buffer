@@ -49,7 +49,7 @@
 
 using namespace StormByte::Buffer;
 
-struct Pipeline::Impl {
+struct Pipeline::Backend {
 	std::vector<PipeFunction>                          pipes;
 	mutable std::vector<std::unique_ptr<LockFreeRing>> intermediates;
 	mutable Producer                                   final_producer;
@@ -69,32 +69,32 @@ struct Pipeline::Impl {
 };
 
 Pipeline::Pipeline() noexcept
-	: m_impl(std::make_unique<Impl>())
+	: m_io(std::make_unique<Backend>())
 {
 }
 
 Pipeline::Pipeline(const Pipeline& other)
-	: m_impl(std::make_unique<Impl>())
+	: m_io(std::make_unique<Backend>())
 {
-	m_impl->pipes = other.m_impl->pipes;
+	m_io->pipes = other.m_io->pipes;
 }
 
 Pipeline::Pipeline(Pipeline&& other) noexcept
-	: m_impl(std::move(other.m_impl))
+	: m_io(std::move(other.m_io))
 {
 }
 
 Pipeline::~Pipeline() noexcept {
-	if (m_impl)
-		m_impl->WaitForCompletion();
+	if (m_io)
+		m_io->WaitForCompletion();
 }
 
 Pipeline& Pipeline::operator=(const Pipeline& other) {
 	if (this != &other) {
-		if (m_impl)
-			m_impl->WaitForCompletion();
-		m_impl = std::make_unique<Impl>();
-		m_impl->pipes = other.m_impl->pipes;
+		if (m_io)
+			m_io->WaitForCompletion();
+		m_io = std::make_unique<Backend>();
+		m_io->pipes = other.m_io->pipes;
 	}
 
 	return *this;
@@ -102,53 +102,53 @@ Pipeline& Pipeline::operator=(const Pipeline& other) {
 
 Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 	if (this != &other) {
-		if (m_impl)
-			m_impl->WaitForCompletion();
-		m_impl = std::move(other.m_impl);
+		if (m_io)
+			m_io->WaitForCompletion();
+		m_io = std::move(other.m_io);
 	}
 
 	return *this;
 }
 
 void Pipeline::AddPipe(const PipeFunction& pipe) {
-	m_impl->pipes.push_back(pipe);
+	m_io->pipes.push_back(pipe);
 }
 
 void Pipeline::AddPipe(PipeFunction&& pipe) {
-	m_impl->pipes.push_back(std::move(pipe));
+	m_io->pipes.push_back(std::move(pipe));
 }
 
 void Pipeline::SetError() const noexcept {
-	for (auto& buf : m_impl->intermediates) {
+	for (auto& buf : m_io->intermediates) {
 		if (buf)
 			buf->SetError();
 	}
 
-	m_impl->final_producer.SetError();
+	m_io->final_producer.SetError();
 }
 
 Consumer Pipeline::Process(Consumer buffer,
 						const ExecutionMode& mode,
 						std::shared_ptr<Logger::Log> log) const noexcept
 {
-	m_impl->WaitForCompletion();
+	m_io->WaitForCompletion();
 
-	if (m_impl->pipes.empty()) {
+	if (m_io->pipes.empty()) {
 		return buffer;
 	}
 
 	const std::shared_ptr<Logger::Log> stage_log =
 		log ? log->Scope("StormByte/Buffer/Pipeline") : log;
 
-	const std::size_t num_stages = m_impl->pipes.size();
+	const std::size_t num_stages = m_io->pipes.size();
 
-	m_impl->intermediates.clear();
-	m_impl->intermediates.reserve(num_stages > 1 ? num_stages - 1 : 0);
+	m_io->intermediates.clear();
+	m_io->intermediates.reserve(num_stages > 1 ? num_stages - 1 : 0);
 	for (std::size_t i = 0; i + 1 < num_stages; ++i)
-		m_impl->intermediates.emplace_back(std::make_unique<LockFreeRing>());
+		m_io->intermediates.emplace_back(std::make_unique<LockFreeRing>());
 
-	m_impl->final_producer = Producer();
-	m_impl->threads.clear();
+	m_io->final_producer = Producer();
+	m_io->threads.clear();
 
 	const bool parallel = HasExecutionFlag(mode, ExecutionMode::Parallel);
 	const bool async    = HasExecutionFlag(mode, ExecutionMode::Async);
@@ -162,14 +162,14 @@ Consumer Pipeline::Process(Consumer buffer,
 		ExternalBufferReader in_adapter =
 			(i == 0)
 				? ExternalBufferReader(static_cast<ReadOnly&>(input))
-				: ExternalBufferReader(*m_impl->intermediates[i - 1]);
+				: ExternalBufferReader(*m_io->intermediates[i - 1]);
 
 		if (i + 1 == num_stages) {
-			ExternalBufferWriter out_adapter(m_impl->final_producer);
-			m_impl->pipes[i](in_adapter, out_adapter, stage_log);
+			ExternalBufferWriter out_adapter(m_io->final_producer);
+			m_io->pipes[i](in_adapter, out_adapter, stage_log);
 		} else {
-			ExternalBufferWriter out_adapter(*m_impl->intermediates[i]);
-			m_impl->pipes[i](in_adapter, out_adapter, stage_log);
+			ExternalBufferWriter out_adapter(*m_io->intermediates[i]);
+			m_io->pipes[i](in_adapter, out_adapter, stage_log);
 		}
 	};
 
@@ -184,22 +184,22 @@ Consumer Pipeline::Process(Consumer buffer,
 
 	if (parallel) {
 		Consumer input = buffer;
-		m_impl->threads.reserve(num_stages);
+		m_io->threads.reserve(num_stages);
 		for (std::size_t i = 0; i < num_stages; ++i) {
-			m_impl->threads.emplace_back(
+			m_io->threads.emplace_back(
 				[run_one_stage, i, input]() mutable {
 					run_one_stage(i, input);
 				});
 		}
 
 		if (!async) {
-			m_impl->WaitForCompletion();
+			m_io->WaitForCompletion();
 		}
 	} else if (async) {
-		m_impl->threads.emplace_back(std::move(run_stages_sequential));
+		m_io->threads.emplace_back(std::move(run_stages_sequential));
 	} else {
 		run_stages_sequential();
 	}
 
-	return m_impl->final_producer.Consumer();
+	return m_io->final_producer.Consumer();
 }

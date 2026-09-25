@@ -47,7 +47,7 @@
 
 using namespace StormByte::Buffer;
 
-class StormByte::Buffer::Storage {
+class Data::Storage {
 	public:
 		std::vector<std::byte> bytes;
 };

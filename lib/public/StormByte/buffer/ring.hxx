@@ -70,8 +70,8 @@ namespace StormByte::Buffer {
 	 *
 	 * @par Thread safety
 	 * Fully thread-safe for concurrent producers and consumers (many-to-many).
-	 * Prefer @c LockFreeRing inside @ref Pipeline intermediates for SPSC
-	 * lock-free performance when applicable.
+	 * @ref Pipeline intermediates use a private SPSC ring; this type is the
+	 * public many-to-many ring.
 	 *
 	 * @par Lifecycle
 	 * @ref Close() stops further writes; remaining data can still be drained.

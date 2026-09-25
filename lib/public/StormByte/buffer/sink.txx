@@ -1,21 +1,21 @@
 /*
- * Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
- *
- * This file is part of StormByte-Buffer.
- *
- * StormByte-Buffer is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License version 3
- * or later, as published by the Free Software Foundation.
- *
- * StormByte-Buffer is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with StormByte-Buffer. If not, see
- * <https://www.gnu.org/licenses/lgpl-3.0.html>.
- */
+* Copyright (C) 2024-2026 David C. Manuelda (StormBytePP)
+*
+* This file is part of StormByte-Buffer.
+*
+* StormByte-Buffer is free software: you can redistribute it and/or modify
+* it under the terms of the GNU Lesser General Public License version 3
+* or later, as published by the Free Software Foundation.
+*
+* StormByte-Buffer is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public License
+* along with StormByte-Buffer. If not, see
+* <https://www.gnu.org/licenses/lgpl-3.0.html>.
+*/
 
 #pragma once
 
@@ -487,20 +487,20 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	Sink<T>::Sink() noexcept
-	: m_impl(std::make_unique<Implementation>()) {}
+	: m_io(std::make_unique<Implementation>()) {}
 
 	template<Type::MoveConstructible T>
 	Sink<T>::~Sink() noexcept = default;
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Push(int key, T item) noexcept {
-		m_impl->Push(key, std::move(item));
+		m_io->Push(key, std::move(item));
 	}
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Eof() noexcept {
 		std::condition_variable* cv = nullptr;
-		const auto writers = m_impl->Close(cv);
+		const auto writers = m_io->Close(cv);
 		for (const auto& hopper : writers)
 			hopper->CloseWriter();
 		if (cv)
@@ -518,14 +518,14 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	Sink<T>& Sink<T>::Lane::operator>>(Sink& dest) noexcept {
-		if (auto extra = m_from->m_impl->Bind(m_key, *dest.m_impl))
+		if (auto extra = m_from->m_io->Bind(m_key, *dest.m_io))
 			extra->AddWriter();
 		return dest;
 	}
 
 	template<Type::MoveConstructible T>
 	Sink<T>& Sink<T>::operator>>(Sink& dest) noexcept {
-		m_impl->Bind(*dest.m_impl);
+		m_io->Bind(*dest.m_io);
 		return dest;
 	}
 
@@ -543,101 +543,101 @@ namespace StormByte::Buffer {
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Drain() noexcept {
-		m_impl->Drain();
+		m_io->Drain();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Draining() const noexcept {
-		return m_impl->Draining();
+		return m_io->Draining();
 	}
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Notify(std::condition_variable& consumer) noexcept {
-		m_impl->Notify(consumer);
+		m_io->Notify(consumer);
 	}
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Unnotify() noexcept {
-		m_impl->Unnotify();
+		m_io->Unnotify();
 	}
 
 	template<Type::MoveConstructible T>
 	std::vector<int> Sink<T>::Keys() const noexcept {
-		return m_impl->Keys();
+		return m_io->Keys();
 	}
 
 	template<Type::MoveConstructible T>
 	std::size_t Sink<T>::Buckets() const noexcept {
-		return m_impl->Buckets();
+		return m_io->Buckets();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Contains(int key) const noexcept {
-		return m_impl->Contains(key);
+		return m_io->Contains(key);
 	}
 
 	template<Type::MoveConstructible T>
 	std::size_t Sink<T>::Capacity(int key) const noexcept {
-		return m_impl->Capacity(key);
+		return m_io->Capacity(key);
 	}
 
 	template<Type::MoveConstructible T>
 	void Sink<T>::Capacity(int key, std::size_t capacity) noexcept {
-		m_impl->Capacity(key, capacity);
+		m_io->Capacity(key, capacity);
 	}
 
 	template<Type::MoveConstructible T>
 	std::size_t Sink<T>::Size(int key) const noexcept {
-		return m_impl->Size(key);
+		return m_io->Size(key);
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Full(int key) const noexcept {
-		return m_impl->Full(key);
+		return m_io->Full(key);
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Empty(int key) const noexcept {
-		return m_impl->Empty(key);
+		return m_io->Empty(key);
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::EoF(int key) const noexcept {
-		return m_impl->EoF(key);
+		return m_io->EoF(key);
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Ready(int key) const noexcept {
-		return m_impl->Ready(key);
+		return m_io->Ready(key);
 	}
 
 	template<Type::MoveConstructible T>
 	T Sink<T>::Front(int key) const noexcept requires Type::CopyConstructible<T> {
-		return m_impl->Front(key);
+		return m_io->Front(key);
 	}
 
 	template<Type::MoveConstructible T>
 	T Sink<T>::Pop() noexcept {
-		return m_impl->Pop();
+		return m_io->Pop();
 	}
 
 	template<Type::MoveConstructible T>
 	T Sink<T>::Pop(const Select& select) noexcept {
-		return m_impl->Pop(select);
+		return m_io->Pop(select);
 	}
 
 	template<Type::MoveConstructible T>
 	T Sink<T>::Pop(int key) noexcept {
-		return m_impl->Pop(key);
+		return m_io->Pop(key);
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::EoF() const noexcept {
-		return m_impl->EoF();
+		return m_io->EoF();
 	}
 
 	template<Type::MoveConstructible T>
 	bool Sink<T>::Ready() const noexcept {
-		return m_impl->Ready();
+		return m_io->Ready();
 	}
 }
