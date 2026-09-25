@@ -1,7 +1,7 @@
 if(MSVC)
-	set(STORMBYTE_LOGGER_OPTSTR "TOOLCHAIN=clang-cl;ALIAS=StormByte::Logger;LINK=StormByte")
+	set(STORMBYTE_LOGGER_OPTSTR "TOOLCHAIN=clang-cl;ALIAS=StormByte::Logger")
 else()
-	set(STORMBYTE_LOGGER_OPTSTR "ALIAS=StormByte::Logger;LINK=StormByte")
+	set(STORMBYTE_LOGGER_OPTSTR "ALIAS=StormByte::Logger")
 endif()
 
 buildmaster_component(
