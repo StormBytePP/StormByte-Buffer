@@ -43,18 +43,23 @@
 #include <StormByte/buffer/lockfree_ring.hxx>
 
 #include <algorithm>
+#include <mutex>
+#include <vector>
 
 using namespace StormByte::Buffer::IO::Backend;
 using Result = StormByte::Buffer::IO::Result;
 using State = StormByte::Buffer::IO::State;
 using Status = StormByte::Buffer::IO::Status;
 using Data = StormByte::Buffer::Data;
+using Position = StormByte::Buffer::Position;
 
 BufferedWriter::BufferedWriter(IO::BufferedWriter& owner, const StormByte::Size write_chunk,
-		const std::size_t back_pressure, const std::chrono::milliseconds max_wait):
+		const std::size_t back_pressure, const std::chrono::milliseconds max_wait,
+		const StormByte::Size max_memory):
 	m_owner(&owner),
 	m_write_chunk(write_chunk),
 	m_back_pressure(back_pressure),
+	m_max_memory(max_memory),
 	m_max_wait(max_wait),
 	m_state(State::Unavailable) {
 	if (BufferedMode())
@@ -88,10 +93,16 @@ void BufferedWriter::SetState(const enum State state) noexcept {
 void BufferedWriter::SetTell(const StormByte::Size offset) noexcept {
 	std::lock_guard lock(m_mutex);
 	m_tell = offset;
+	if (m_tell > m_high_water)
+		m_high_water = m_tell;
 }
 
 bool BufferedWriter::BufferedMode() const noexcept {
 	return m_write_chunk > StormByte::Size{0} && m_back_pressure > 0;
+}
+
+bool BufferedWriter::PageMode() const noexcept {
+	return m_max_memory > StormByte::Size{0};
 }
 
 StormByte::Size BufferedWriter::PendingCap() const noexcept {
@@ -100,7 +111,23 @@ StormByte::Size BufferedWriter::PendingCap() const noexcept {
 	return m_back_pressure * m_write_chunk;
 }
 
+StormByte::Size BufferedWriter::PageDirty() const noexcept {
+	StormByte::Size n{0};
+	for (const auto& item : m_pages)
+		n = n + StormByte::Size{item.second.bytes.size()};
+	return n;
+}
+
+StormByte::Size BufferedWriter::TotalDirty() const noexcept {
+	StormByte::Size n = PageDirty();
+	if (m_ring)
+		n = n + m_ring->AvailableBytes();
+	return n;
+}
+
 bool BufferedWriter::WouldAccept(const StormByte::Size bytes) const noexcept {
+	if (PageMode())
+		return true;
 	if (!BufferedMode())
 		return true;
 	if (!m_ring)
@@ -109,7 +136,24 @@ bool BufferedWriter::WouldAccept(const StormByte::Size bytes) const noexcept {
 }
 
 bool BufferedWriter::WillWrite(const StormByte::Size n) const noexcept {
+	std::lock_guard lock(m_mutex);
 	return WouldAccept(n);
+}
+
+void BufferedWriter::ClearPages() noexcept {
+	m_pages.clear();
+}
+
+void BufferedWriter::CloseSeekEpoch() noexcept {
+	if (!m_epoch_open)
+		return;
+	if (m_epoch_hit && !m_epoch_origin)
+		++m_seek_saved_full;
+	else if (m_epoch_hit && m_epoch_origin)
+		++m_seek_saved_partial;
+	m_epoch_open = false;
+	m_epoch_hit = false;
+	m_epoch_origin = false;
 }
 
 struct StormByte::Buffer::IO::BufferedWriter::Telemetry BufferedWriter::Telemetry() const noexcept {
@@ -118,11 +162,22 @@ struct StormByte::Buffer::IO::BufferedWriter::Telemetry BufferedWriter::Telemetr
 	out.Accepted = m_accepted;
 	out.Behind = m_behind;
 	out.Direct = m_direct;
-	out.Dirty = m_ring ? m_ring->AvailableBytes() : StormByte::Size{0};
+	out.Origin = m_origin_bytes;
+	out.Materialized = m_materialized;
+	out.HighWater = m_high_water;
+	out.HitAhead = m_hit_ahead;
+	out.HitBack = m_hit_back;
+	out.Miss = m_miss;
+	out.Dirty = TotalDirty();
 	out.DirtyPeak = m_dirty_peak;
 	out.Cap = PendingCap();
+	out.SeekLogical = m_seek_logical;
+	out.SeekOrigin = m_seek_origin;
+	out.SeekSavedFull = m_seek_saved_full;
+	out.SeekSavedPartial = m_seek_saved_partial;
 	out.TryAgain = m_try_again;
 	out.Saturated = m_saturated;
+	out.Evicted = m_evicted;
 	out.WaitMin = m_wait_min;
 	out.WaitMax = m_wait_max;
 	out.WaitTotal = m_wait_total;
@@ -146,13 +201,11 @@ void BufferedWriter::NoteWait(const std::chrono::nanoseconds elapsed) const noex
 }
 
 void BufferedWriter::NoteDirty() const noexcept {
-	if (!m_ring)
-		return;
-	const StormByte::Size now = m_ring->AvailableBytes();
+	const StormByte::Size now = TotalDirty();
 	if (now > m_dirty_peak)
 		m_dirty_peak = now;
 	const StormByte::Size cap = PendingCap();
-	if (cap > StormByte::Size{0} && now >= cap)
+	if (cap > StormByte::Size{0} && m_ring && m_ring->AvailableBytes() >= cap)
 		++m_saturated;
 }
 
@@ -181,6 +234,13 @@ bool BufferedWriter::Open() {
 	m_open = true;
 	m_failed = false;
 	m_tell = StormByte::Size{0};
+	m_high_water = StormByte::Size{0};
+	m_origin_pos = StormByte::Size{0};
+	m_materialized = StormByte::Size{0};
+	ClearPages();
+	m_epoch_open = false;
+	m_epoch_hit = false;
+	m_epoch_origin = false;
 	if (m_ring)
 		m_ring->Clear();
 	return m_state == State::Idle;
@@ -193,6 +253,7 @@ bool BufferedWriter::Close() {
 	{
 		std::lock_guard lock(m_mutex);
 		was_open = m_open;
+		CloseSeekEpoch();
 	}
 
 	if (was_open && m_owner)
@@ -212,6 +273,7 @@ bool BufferedWriter::Close() {
 	}
 	m_failed = false;
 	m_state = State::Unavailable;
+	ClearPages();
 	if (m_ring)
 		m_ring->Clear();
 	return true;
@@ -242,7 +304,207 @@ bool BufferedWriter::IsOpen() const noexcept {
 	return m_open;
 }
 
+Result BufferedWriter::EnsureOrigin(const StormByte::Size absolute) {
+	if (!m_owner)
+		return { Status::Failed, 0 };
+	if (m_origin_pos == absolute)
+		return { Status::Ok, 0 };
+
+	const Result moved = m_owner->OriginSeek(absolute);
+	if (moved.status != Status::Ok)
+		return moved;
+
+	std::lock_guard lock(m_mutex);
+	m_origin_pos = absolute;
+	++m_seek_origin;
+	if (m_epoch_open)
+		m_epoch_origin = true;
+	return { Status::Ok, 0 };
+}
+
+void BufferedWriter::Coalesce(const StormByte::Size offset) {
+	auto it = m_pages.find(static_cast<std::size_t>(offset));
+	if (it == m_pages.end())
+		return;
+
+	for (;;) {
+		auto next = std::next(it);
+		if (next == m_pages.end())
+			break;
+		const StormByte::Size end = it->second.offset + StormByte::Size{it->second.bytes.size()};
+		if (next->second.offset > end)
+			break;
+		const StormByte::Size overlap = end - next->second.offset;
+		const StormByte::Size keep = StormByte::Size{next->second.bytes.size()} > overlap
+			? StormByte::Size{next->second.bytes.size()} - overlap
+			: StormByte::Size{0};
+		if (keep > StormByte::Size{0}) {
+			const std::byte* src = next->second.bytes.data() + static_cast<std::size_t>(overlap);
+			it->second.bytes.insert(it->second.bytes.end(),
+				std::span<const std::byte>(src, static_cast<std::size_t>(keep)));
+		}
+		m_pages.erase(next);
+	}
+}
+
+Result BufferedWriter::StorePages(const std::span<const std::byte> src) {
+	const StormByte::Size at = m_tell;
+	const StormByte::Size n{src.size()};
+	const StormByte::Size range_end = at + n;
+
+	bool hit = false;
+	bool behind = false;
+	for (const auto& item : m_pages) {
+		const StormByte::Size p0 = item.second.offset;
+		const StormByte::Size p1 = p0 + StormByte::Size{item.second.bytes.size()};
+		if (p1 <= at || p0 >= range_end)
+			continue;
+		hit = true;
+		if (p1 <= m_high_water)
+			behind = true;
+	}
+
+	if (hit) {
+		if (behind)
+			m_hit_back = m_hit_back + n;
+		else
+			m_hit_ahead = m_hit_ahead + n;
+		if (m_epoch_open)
+			m_epoch_hit = true;
+	}
+	else {
+		m_miss = m_miss + n;
+	}
+
+	auto it = m_pages.upper_bound(static_cast<std::size_t>(at));
+	if (it != m_pages.begin()) {
+		auto prev = std::prev(it);
+		const StormByte::Size p1 = prev->second.offset + StormByte::Size{prev->second.bytes.size()};
+		if (p1 >= at)
+			it = prev;
+	}
+
+	if (it != m_pages.end()) {
+		Page& page = it->second;
+		const StormByte::Size p0 = page.offset;
+		const StormByte::Size p1 = p0 + StormByte::Size{page.bytes.size()};
+		if (p1 >= at && p0 <= range_end) {
+			if (at < p0) {
+				Data grown;
+				grown.reserve(n + StormByte::Size{page.bytes.size()});
+				grown.insert(grown.end(), src);
+				if (range_end < p1) {
+					const std::byte* tail = page.bytes.data() + static_cast<std::size_t>(range_end - p0);
+					grown.insert(grown.end(), std::span<const std::byte>(tail,
+						static_cast<std::size_t>(p1 - range_end)));
+				}
+				page.offset = at;
+				page.bytes = std::move(grown);
+			}
+			else {
+				const StormByte::Size off = at - p0;
+				if (off + n > StormByte::Size{page.bytes.size()})
+					page.bytes.resize(static_cast<std::size_t>(off + n));
+				std::copy(src.begin(), src.end(), page.bytes.data() + static_cast<std::size_t>(off));
+			}
+			Coalesce(page.offset);
+			return { Status::Ok, n };
+		}
+	}
+
+	Page fresh;
+	fresh.offset = at;
+	fresh.bytes = Data(src.data(), n);
+	m_pages.emplace(static_cast<std::size_t>(at), std::move(fresh));
+	Coalesce(at);
+	return { Status::Ok, n };
+}
+
+Result BufferedWriter::MaterializeFrom(std::unique_lock<std::mutex>& lock,
+		std::map<std::size_t, Page>::iterator it) {
+	if (it == m_pages.end() || !m_owner)
+		return { Status::Failed, 0 };
+
+	Page page = std::move(it->second);
+	m_pages.erase(it);
+
+	const StormByte::Size start = page.offset;
+	Data payload = std::move(page.bytes);
+	lock.unlock();
+
+	Result ensured = EnsureOrigin(start);
+	if (ensured.status != Status::Ok) {
+		lock.lock();
+		Page back;
+		back.offset = start;
+		back.bytes = std::move(payload);
+		m_pages.emplace(static_cast<std::size_t>(start), std::move(back));
+		return ensured;
+	}
+
+	const auto view = std::span<const std::byte>(payload.data(), static_cast<std::size_t>(payload.size()));
+	const Result pushed = PushAll(view);
+	lock.lock();
+	if (pushed.status != Status::Ok) {
+		Page back;
+		back.offset = start;
+		back.bytes = std::move(payload);
+		m_pages.emplace(static_cast<std::size_t>(start), std::move(back));
+		m_failed = true;
+		if (m_state == State::Idle)
+			m_state = State::Fault;
+		return pushed;
+	}
+
+	const StormByte::Size n{payload.size()};
+	m_origin_pos = start + n;
+	m_origin_bytes = m_origin_bytes + n;
+	const StormByte::Size end = start + n;
+	if (end > m_materialized)
+		m_materialized = end;
+	return { Status::Ok, n };
+}
+
+Result BufferedWriter::CollectGarbage() {
+	std::unique_lock lock(m_mutex);
+	while (PageDirty() > m_max_memory) {
+		if (m_pages.empty())
+			break;
+
+		auto victim = m_pages.end();
+		for (auto it = m_pages.begin(); it != m_pages.end(); ++it) {
+			const StormByte::Size end = it->second.offset + StormByte::Size{it->second.bytes.size()};
+			if (end <= m_high_water) {
+				victim = it;
+				break;
+			}
+		}
+		if (victim == m_pages.end())
+			victim = std::prev(m_pages.end());
+
+		++m_evicted;
+		const Result evicted = MaterializeFrom(lock, victim);
+		if (evicted.status != Status::Ok)
+			return evicted;
+	}
+	return { Status::Ok, 0 };
+}
+
+Result BufferedWriter::MaterializeAll() {
+	std::unique_lock lock(m_mutex);
+	while (!m_pages.empty()) {
+		const Result pushed = MaterializeFrom(lock, m_pages.begin());
+		if (pushed.status != Status::Ok)
+			return pushed;
+	}
+	return { Status::Ok, 0 };
+}
+
 Result BufferedWriter::Flush() {
+	const Result pages = MaterializeAll();
+	if (pages.status != Status::Ok)
+		return pages;
+
 	std::unique_lock lock(m_mutex);
 	if (!m_open || m_failed || !m_owner)
 		return { Status::Failed, 0 };
@@ -283,8 +545,10 @@ Result BufferedWriter::Truncate() {
 		std::lock_guard lock(m_mutex);
 		if (!m_open || m_failed || !m_owner)
 			return { Status::Failed, 0 };
+		ClearPages();
 		if (m_ring)
 			m_ring->Clear();
+		CloseSeekEpoch();
 	}
 
 	const Result truncated = m_owner->OriginTruncate();
@@ -295,6 +559,38 @@ Result BufferedWriter::Truncate() {
 		return { Status::Failed, 0 };
 	}
 	m_tell = StormByte::Size{0};
+	m_high_water = StormByte::Size{0};
+	m_origin_pos = StormByte::Size{0};
+	m_materialized = StormByte::Size{0};
+	return { Status::Ok, 0 };
+}
+
+Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
+	std::lock_guard lock(m_mutex);
+	if (!m_open || m_failed || m_state != State::Idle || !m_owner)
+		return { Status::Failed, 0 };
+
+	StormByte::Size abs = m_tell;
+	if (mode == Position::Absolute) {
+		if (offset < 0)
+			return { Status::Failed, 0 };
+		abs = StormByte::Size{static_cast<std::size_t>(offset)};
+	}
+	else {
+		if (offset < 0 && StormByte::Size{static_cast<std::size_t>(-offset)} > abs)
+			return { Status::Failed, 0 };
+		abs = StormByte::Size{static_cast<std::size_t>(
+			static_cast<std::ptrdiff_t>(static_cast<std::size_t>(abs)) + offset)};
+	}
+
+	CloseSeekEpoch();
+	m_tell = abs;
+	if (m_tell > m_high_water)
+		m_high_water = m_tell;
+	m_epoch_open = true;
+	m_epoch_hit = false;
+	m_epoch_origin = false;
+	++m_seek_logical;
 	return { Status::Ok, 0 };
 }
 
@@ -343,7 +639,31 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	const auto started = std::chrono::steady_clock::now();
 	const StormByte::Size n{src.size()};
 
+	if (PageMode()) {
+		Result stored;
+		{
+			std::lock_guard lock(m_mutex);
+			stored = StorePages(src);
+			if (stored.status != Status::Ok)
+				return stored;
+			m_tell = m_tell + n;
+			if (m_tell > m_high_water)
+				m_high_water = m_tell;
+			m_accepted = m_accepted + n;
+			m_behind = m_behind + n;
+			NoteDirty();
+			NoteWait(std::chrono::steady_clock::now() - started);
+		}
+		const Result gc = CollectGarbage();
+		if (gc.status != Status::Ok)
+			return gc;
+		return { Status::Ok, n };
+	}
+
 	if (!BufferedMode()) {
+		const Result aligned = EnsureOrigin(m_tell);
+		if (aligned.status != Status::Ok)
+			return aligned;
 		const Result pushed = PushAll(src);
 		if (pushed.status != Status::Ok) {
 			std::lock_guard lock(m_mutex);
@@ -364,6 +684,12 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		}
 		std::lock_guard lock(m_mutex);
 		m_tell = m_tell + n;
+		if (m_tell > m_high_water)
+			m_high_water = m_tell;
+		m_origin_pos = m_tell;
+		m_origin_bytes = m_origin_bytes + n;
+		if (m_tell > m_materialized)
+			m_materialized = m_tell;
 		m_accepted = m_accepted + n;
 		m_direct = m_direct + n;
 		NoteWait(std::chrono::steady_clock::now() - started);
@@ -373,12 +699,25 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	if (!m_ring)
 		return { Status::Failed, 0 };
 
+	const StormByte::Size pending = m_ring->AvailableBytes();
+	const StormByte::Size tail = m_origin_pos + pending;
+	if (m_tell != tail) {
+		const Result drained = Flush();
+		if (drained.status != Status::Ok)
+			return drained;
+		const Result aligned = EnsureOrigin(m_tell);
+		if (aligned.status != Status::Ok)
+			return aligned;
+	}
+
 	if (!m_ring->Write(src))
 		return { Status::Failed, 0 };
 
 	{
 		std::lock_guard lock(m_mutex);
 		m_tell = m_tell + n;
+		if (m_tell > m_high_water)
+			m_high_water = m_tell;
 		m_accepted = m_accepted + n;
 		m_behind = m_behind + n;
 		NoteDirty();
@@ -394,9 +733,8 @@ StormByte::Size BufferedWriter::Tell() const noexcept {
 }
 
 StormByte::Size BufferedWriter::Dirty() const noexcept {
-	if (!m_ring)
-		return StormByte::Size{0};
-	return m_ring->AvailableBytes();
+	std::lock_guard lock(m_mutex);
+	return TotalDirty();
 }
 
 StormByte::Size BufferedWriter::WriteChunk() const noexcept {
@@ -446,6 +784,22 @@ void BufferedWriter::BackPressure(const std::size_t chunks) {
 			m_ring = std::make_unique<LockFreeRing>(PendingCap());
 	}
 	RequestDrain();
+}
+
+StormByte::Size BufferedWriter::MaxMemory() const noexcept {
+	std::lock_guard lock(m_mutex);
+	return m_max_memory;
+}
+
+void BufferedWriter::MaxMemory(const StormByte::Size bytes) {
+	{
+		std::lock_guard lock(m_mutex);
+		m_max_memory = bytes;
+	}
+	if (bytes == StormByte::Size{0})
+		static_cast<void>(Flush());
+	else
+		static_cast<void>(CollectGarbage());
 }
 
 std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {
@@ -525,6 +879,13 @@ void BufferedWriter::Worker() {
 				break;
 			}
 			static_cast<void>(m_ring->Consume(StormByte::Size{front.size()}));
+			{
+				std::lock_guard inner(m_mutex);
+				m_origin_pos = m_origin_pos + StormByte::Size{front.size()};
+				m_origin_bytes = m_origin_bytes + StormByte::Size{front.size()};
+				if (m_origin_pos > m_materialized)
+					m_materialized = m_origin_pos;
+			}
 		}
 
 		lock.lock();

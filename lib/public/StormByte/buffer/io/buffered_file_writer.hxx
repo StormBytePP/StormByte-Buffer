@@ -74,16 +74,23 @@ namespace StormByte {
 			 * @ref Truncate. Does not open in the constructor. Does
 			 * not create parent directories. Not sealed.
 			 *
-			 * The device does not change after construction: @ref WriteChunk
-			 * and @ref BackPressure are chosen once. @ref MaxWait stays
-			 * dynamic.
+			 * The device does not change after construction: @ref WriteChunk,
+			 * @ref BackPressure and @ref MaxMemory are chosen once.
+			 * @ref MaxWait stays dynamic.
 			 *
 			 * @par Constructors
 			 * @c BufferedFileWriter(path) defers chunk to @ref Setup
 			 * (`CreateDevice` + @ref StormByte::System::Device::Window).
-			 * Path-only @ref BackPressure is 4. @c BufferedFileWriter(path,
-			 * write_chunk, back_pressure, max_wait) stores those values.
-			 * A zero chunk or backpressure disables the ring.
+			 * Path-only @ref BackPressure is 4. Path-only @ref MaxMemory
+			 * is 1 MiB. @c BufferedFileWriter(path, write_chunk,
+			 * back_pressure, max_wait) stores those values and leaves
+			 * @ref MaxMemory at 0. @c BufferedFileWriter(path,
+			 * write_chunk, max_memory, back_pressure, max_wait) stores
+			 * the page budget too. A zero chunk or backpressure disables
+			 * the ring. A zero @ref MaxMemory stores no pages.
+			 *
+			 * @ref Seek is the base implementation: logical cursor only.
+			 * This leaf supplies @ref OriginSeek for GC / Flush / Close.
 			 *
 			 * A derived class may override any @c Origin* hook, @ref Seek,
 			 * @ref Size, @ref WillWrite, @ref Setup and @ref CreateDevice.
@@ -106,20 +113,35 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Store the path. Chunk and backpressure come from @ref Setup.
+					 * @brief Store the path. Chunk, backpressure and MaxMemory come from @ref Setup.
 					 * @param path Filesystem path.
 					 */
 					explicit BufferedFileWriter(std::filesystem::path path);
 
 					/**
-					 * @brief Store the path and explicit knobs. Does not open.
+					 * @brief Store the path and explicit ring knobs. Does not open.
 					 * @param path Filesystem path.
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunks.
 					 * @param max_wait Initial @ref MaxWait.
+					 *
+					 * @ref MaxMemory stays 0.
 					 */
 					BufferedFileWriter(std::filesystem::path path,
 						StormByte::Size write_chunk, std::size_t back_pressure,
+						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
+
+					/**
+					 * @brief Store the path, page budget and ring knobs. Does not open.
+					 * @param path Filesystem path.
+					 * @param write_chunk Initial @ref WriteChunk in bytes.
+					 * @param max_memory Initial @ref MaxMemory in bytes.
+					 * @param back_pressure Initial @ref BackPressure in chunks.
+					 * @param max_wait Initial @ref MaxWait.
+					 */
+					BufferedFileWriter(std::filesystem::path path,
+						StormByte::Size write_chunk, StormByte::Size max_memory,
+						std::size_t back_pressure,
 						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
 
 					/**
@@ -167,14 +189,6 @@ namespace StormByte {
 					 */
 					virtual StormByte::Size Size() const noexcept;
 
-					/**
-					 * @brief Move the write cursor after flushing dirty bytes.
-					 * @param offset Byte offset.
-					 * @param mode @ref Position::Absolute or @ref Position::Relative.
-					 * @return @ref Status::Ok or @ref Status::Failed.
-					 */
-					virtual Result Seek(std::ptrdiff_t offset, Position mode) override;
-
 				protected:
 					/**
 					 * @brief Device used for path-only @ref Setup knobs.
@@ -186,11 +200,12 @@ namespace StormByte {
 					virtual std::unique_ptr<StormByte::System::Device> CreateDevice() const;
 
 					/**
-					 * @brief Apply device chunk and backpressure for the path-only ctor.
+					 * @brief Apply device chunk, backpressure and MaxMemory for the path-only ctor.
 					 *
 					 * No-op when the explicit constructor already set those knobs
 					 * (including 0 = ring off). A failed Device probe leaves
 					 * @ref WriteChunk at zero. Path-only @ref BackPressure stays 4.
+					 * Path-only @ref MaxMemory stays 1 MiB.
 					 */
 					virtual void Setup() override;
 

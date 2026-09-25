@@ -45,8 +45,8 @@
 using namespace StormByte::Buffer::IO;
 
 BufferedWriter::BufferedWriter(const StormByte::Size write_chunk, const std::size_t back_pressure,
-		const std::chrono::milliseconds max_wait):
-	m_io(std::make_unique<Backend::BufferedWriter>(*this, write_chunk, back_pressure, max_wait)) {}
+		const std::chrono::milliseconds max_wait, const StormByte::Size max_memory):
+	m_io(std::make_unique<Backend::BufferedWriter>(*this, write_chunk, back_pressure, max_wait, max_memory)) {}
 
 BufferedWriter::BufferedWriter(BufferedWriter&& other) noexcept:
 	m_io(std::move(other.m_io)) {
@@ -155,8 +155,10 @@ StormByte::Size BufferedWriter::Size() const noexcept {
 	return Tell();
 }
 
-Result BufferedWriter::Seek(const std::ptrdiff_t, const Position) {
-	return { Status::Failed, 0 };
+Result BufferedWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
+	if (!m_io)
+		return { Status::Failed, 0 };
+	return m_io->Seek(offset, mode);
 }
 
 Result BufferedWriter::OriginSeek(const StormByte::Size) {
@@ -185,6 +187,15 @@ std::size_t BufferedWriter::BackPressure() const noexcept {
 void BufferedWriter::BackPressure(const std::size_t chunks) {
 	if (m_io)
 		m_io->BackPressure(chunks);
+}
+
+StormByte::Size BufferedWriter::MaxMemory() const noexcept {
+	return m_io ? m_io->MaxMemory() : StormByte::Size{0};
+}
+
+void BufferedWriter::MaxMemory(const StormByte::Size bytes) {
+	if (m_io)
+		m_io->MaxMemory(bytes);
 }
 
 std::chrono::milliseconds BufferedWriter::MaxWait() const noexcept {

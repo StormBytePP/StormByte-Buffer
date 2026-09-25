@@ -41,6 +41,7 @@
 
 #pragma once
 
+#include <StormByte/buffer/data.hxx>
 #include <StormByte/buffer/fifo.hxx>
 #include <StormByte/buffer/io/buffered_writer.hxx>
 #include <StormByte/buffer/io/typedefs.hxx>
@@ -50,6 +51,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -83,9 +85,27 @@ namespace StormByte {
 				 * @class BufferedWriter
 				 * @brief Private implementation of @ref StormByte::Buffer::IO::BufferedWriter.
 				 *
-				 * Owns session flags, the optional SPSC ring, the logical cursor
-				 * and the push worker. Invokes @c Origin* hooks on @c m_owner.
+				 * Owns session flags, the optional SPSC drain ring, the
+				 * dirty page map, the logical cursor and the push worker.
+				 * Invokes @c Origin* hooks on @c m_owner.
 				 * Origin hooks never run while @c m_mutex is held.
+				 *
+				 * @par Page map
+				 * When @c m_max_memory > 0, @c Write lands in @c m_pages
+				 * keyed by absolute offset. Overlap and abut merge.
+				 * Interior writes overwrite. The worker must not drain the
+				 * map just because the origin cursor is aligned.
+				 *
+				 * @par GC
+				 * Victim is the farthest-past span (lowest offset at or
+				 * behind the high-water). Contiguous following past spans
+				 * go in the same OriginSeek + push. Future islands wait
+				 * until no evictable past remains. Evict is Origin I/O.
+				 *
+				 * @par Seek epoch
+				 * @c Seek updates Tell only and opens/closes epochs for
+				 * SeekSavedFull / SeekSavedPartial. Prefetch analog: the
+				 * worker does not chase the logical cursor.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedWriter {
 					public:
@@ -100,11 +120,13 @@ namespace StormByte {
 						 * @param write_chunk Initial WriteChunk in bytes.
 						 * @param back_pressure Initial BackPressure in chunks.
 						 * @param max_wait Initial MaxWait.
+						 * @param max_memory Initial MaxMemory in bytes.
 						 *
 						 * Starts the worker thread. State is @ref State::Unavailable.
 						 */
 						BufferedWriter(IO::BufferedWriter& owner, StormByte::Size write_chunk,
-							std::size_t back_pressure, std::chrono::milliseconds max_wait);
+							std::size_t back_pressure, std::chrono::milliseconds max_wait,
+							StormByte::Size max_memory);
 
 						/**
 						 * @brief Copy constructor is deleted.
@@ -202,14 +224,14 @@ namespace StormByte {
 						bool IsOpen() const noexcept;
 
 						/**
-						 * @brief Drain the ring to the origin.
+						 * @brief Materialise every dirty page, drain the ring, OriginFlush.
 						 * @return @ref Status::Ok, @ref Status::Error or @ref Status::Failed.
 						 *         Never @ref Status::TryAgain.
 						 */
 						Result Flush();
 
 						/**
-						 * @brief Drop the ring without pushing and truncate the origin.
+						 * @brief Drop the map and the ring without pushing, truncate the origin.
 						 * @return @ref Status::Ok or @ref Status::Failed.
 						 */
 						Result Truncate();
@@ -249,16 +271,24 @@ namespace StormByte {
 						 */
 
 						/**
-						 * @brief Bytes accepted since Open or Truncate.
-						 * @return Logical write offset.
+						 * @brief Logical write offset.
+						 * @return Cursor including unflushed pages.
 						 */
 						StormByte::Size Tell() const noexcept;
 
 						/**
-						 * @brief Bytes in the ring not yet pushed.
-						 * @return 0 in direct mode or after a successful Flush.
+						 * @brief Bytes not yet on the origin.
+						 * @return Page map plus drain pipe.
 						 */
 						StormByte::Size Dirty() const noexcept;
+
+						/**
+						 * @brief Move only the logical cursor.
+						 * @param offset Byte offset.
+						 * @param mode Absolute or Relative.
+						 * @return Ok or Failed. Does not OriginSeek.
+						 */
+						Result Seek(std::ptrdiff_t offset, Position mode);
 
 						/**
 						 * @name Telemetry
@@ -300,6 +330,18 @@ namespace StormByte {
 						void BackPressure(std::size_t chunks);
 
 						/**
+						 * @brief Page-map budget.
+						 * @return Bytes. 0 stores no pages.
+						 */
+						StormByte::Size MaxMemory() const noexcept;
+
+						/**
+						 * @brief Set the page-map budget. May GC if below Dirty.
+						 * @param bytes 0 disables the page map.
+						 */
+						void MaxMemory(StormByte::Size bytes);
+
+						/**
 						 * @brief Wait cap for OriginPush.
 						 * @return @c 0ms waits without limit.
 						 */
@@ -314,25 +356,51 @@ namespace StormByte {
 						/**
 						 * @brief Whether @p n bytes fit under the current ring cap.
 						 * @param n Prospective Write size.
-						 * @return @c true in direct mode, or if Dirty + n <= cap.
+						 * @return @c true in direct mode, or if ring Dirty + n <= cap.
 						 */
 						bool WillWrite(StormByte::Size n) const noexcept;
 
 					private:
 						/**
-						 * @brief Whether both knobs enable the ring.
+						 * @brief Dirty page: absolute start and payload.
+						 */
+						struct Page {
+							StormByte::Size offset {0};	///< First byte of this span.
+							Data bytes;					///< Octets not yet on the origin.
+						};
+
+						/**
+						 * @brief Whether both ring knobs are on.
 						 * @return @c true if WriteChunk and BackPressure are non-zero.
 						 */
 						bool BufferedMode() const noexcept;
 
 						/**
-						 * @brief Dirty cap in bytes.
+						 * @brief Whether the page map is enabled.
+						 * @return @c true if MaxMemory > 0.
+						 */
+						bool PageMode() const noexcept;
+
+						/**
+						 * @brief Ring cap in bytes.
 						 * @return BackPressure * WriteChunk, or 0 if direct.
 						 */
 						StormByte::Size PendingCap() const noexcept;
 
 						/**
-						 * @brief Whether @p bytes fit under BackPressure.
+						 * @brief Occupancy of @c m_pages.
+						 * @return Sum of page sizes.
+						 */
+						StormByte::Size PageDirty() const noexcept;
+
+						/**
+						 * @brief Page map plus ring occupancy.
+						 * @return Bytes not on the origin.
+						 */
+						StormByte::Size TotalDirty() const noexcept;
+
+						/**
+						 * @brief Whether @p bytes fit under the ring cap.
 						 * @param bytes Payload size of the prospective Write.
 						 * @return @c true if the Write may proceed.
 						 */
@@ -349,12 +417,12 @@ namespace StormByte {
 						void StopWorker();
 
 						/**
-						 * @brief Wake the worker to drain chunks or a flush.
+						 * @brief Wake the worker to drain a materialised run.
 						 */
 						void RequestDrain() const;
 
 						/**
-						 * @brief Worker loop: wait, OriginPush spans, park.
+						 * @brief Worker loop: wait, OriginPush ring spans, park.
 						 */
 						void Worker();
 
@@ -373,13 +441,64 @@ namespace StormByte {
 						Result WriteSpan(std::span<const std::byte> src);
 
 						/**
+						 * @brief Place @p src into the page map at @c m_tell.
+						 * @param src Octets.
+						 * @return Ok or Failed.
+						 */
+						Result StorePages(std::span<const std::byte> src);
+
+						/**
+						 * @brief Merge overlap / abut around @p offset.
+						 * @param offset Page start to repair from.
+						 */
+						void Coalesce(StormByte::Size offset);
+
+						/**
+						 * @brief Materialise pages until PageDirty <= MaxMemory.
+						 * @return Ok, Error or Failed.
+						 */
+						Result CollectGarbage();
+
+						/**
+						 * @brief Materialise every page in offset order.
+						 * @return Ok, Error or Failed.
+						 */
+						Result MaterializeAll();
+
+						/**
+						 * @brief Push one page to the origin.
+						 * @param lock Coordinator lock held by the caller. Released during Origin*.
+						 * @param it Page to start from. Invalidated on success.
+						 * @return Ok, Error or Failed.
+						 */
+						Result MaterializeFrom(std::unique_lock<std::mutex>& lock,
+							std::map<std::size_t, Page>::iterator it);
+
+						/**
+						 * @brief OriginSeek if the device cursor is not @p absolute.
+						 * @param absolute Device offset.
+						 * @return Ok or Failed. Increments SeekOrigin on a real seek.
+						 */
+						Result EnsureOrigin(StormByte::Size absolute);
+
+						/**
+						 * @brief Close the current seek epoch if one is open.
+						 */
+						void CloseSeekEpoch() noexcept;
+
+						/**
+						 * @brief Drop every page. Caller holds @c m_mutex.
+						 */
+						void ClearPages() noexcept;
+
+						/**
 						 * @brief Record a wait sample. Caller holds @c m_mutex.
 						 * @param elapsed Duration of the Write that worked or waited on OriginPush.
 						 */
 						void NoteWait(std::chrono::nanoseconds elapsed) const noexcept;
 
 						/**
-						 * @brief Raise DirtyPeak and Saturated if the cap is hit. Caller holds @c m_mutex.
+						 * @brief Raise DirtyPeak and Saturated. Caller holds @c m_mutex.
 						 */
 						void NoteDirty() const noexcept;
 
@@ -390,21 +509,39 @@ namespace StormByte {
 
 						StormByte::Size m_write_chunk {0};			///< Origin push unit.
 						std::size_t m_back_pressure {0};			///< Cap in WriteChunk units.
+						StormByte::Size m_max_memory {0};			///< Page-map budget.
 						std::chrono::milliseconds m_max_wait {0};	///< OriginPush wait cap.
 
 						enum State m_state { State::Unavailable };	///< Session state.
 						bool m_open {false};						///< Session armed.
 						mutable bool m_failed {false};				///< Permanent failure.
-						mutable StormByte::Size m_tell {0};			///< Accepted bytes.
+						mutable StormByte::Size m_tell {0};			///< Logical cursor.
+						StormByte::Size m_high_water {0};			///< Max Tell seen this session.
+						StormByte::Size m_origin_pos {0};			///< Device cursor.
+						StormByte::Size m_materialized {0};			///< Durable origin length.
 
-						std::unique_ptr<LockFreeRing> m_ring;		///< SPSC dirty bytes. Null in direct mode.
+						std::map<std::size_t, Page> m_pages;		///< Dirty pages by offset.
+						std::unique_ptr<LockFreeRing> m_ring;		///< Drain pipe. Null if ring off.
+
+						bool m_epoch_open {false};					///< Logical seek pending close.
+						bool m_epoch_hit {false};					///< Epoch wrote into a resident page.
+						bool m_epoch_origin {false};				///< Epoch already OriginSeek'd.
 
 						mutable StormByte::Size m_accepted {0};		///< Telemetry.Accepted.
 						mutable StormByte::Size m_behind {0};		///< Telemetry.Behind.
 						mutable StormByte::Size m_direct {0};		///< Telemetry.Direct.
+						mutable StormByte::Size m_origin_bytes {0};	///< Telemetry.Origin.
+						mutable StormByte::Size m_hit_ahead {0};	///< Telemetry.HitAhead.
+						mutable StormByte::Size m_hit_back {0};		///< Telemetry.HitBack.
+						mutable StormByte::Size m_miss {0};			///< Telemetry.Miss.
 						mutable StormByte::Size m_dirty_peak {0};	///< Telemetry.DirtyPeak.
+						mutable std::size_t m_seek_logical {0};		///< Telemetry.SeekLogical.
+						mutable std::size_t m_seek_origin {0};		///< Telemetry.SeekOrigin.
+						mutable std::size_t m_seek_saved_full {0};	///< Telemetry.SeekSavedFull.
+						mutable std::size_t m_seek_saved_partial {0};	///< Telemetry.SeekSavedPartial.
 						mutable std::size_t m_try_again {0};		///< Telemetry.TryAgain.
 						mutable std::size_t m_saturated {0};		///< Telemetry.Saturated.
+						mutable std::size_t m_evicted {0};			///< Telemetry.Evicted.
 						mutable std::chrono::nanoseconds m_wait_min {0};	///< Telemetry.WaitMin.
 						mutable std::chrono::nanoseconds m_wait_max {0};	///< Telemetry.WaitMax.
 						mutable std::chrono::nanoseconds m_wait_total {0};	///< Telemetry.WaitTotal.

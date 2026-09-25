@@ -86,7 +86,8 @@ namespace StormByte {
 
 			/**
 			 * @class BufferedWriter
-			 * @brief Coordinated binary write sink with optional chunked write-behind.
+			 * @brief Coordinated binary write sink with optional chunked write-behind
+			 *        and a delayed-seek page map.
 			 *
 			 * Public base for byte destinations. Leaves implement the
 			 * @c Origin* hooks and may override @ref Setup, @ref Seek,
@@ -115,34 +116,74 @@ namespace StormByte {
 			 * / span is left untouched on @ref Status::TryAgain,
 			 * @ref Status::Failed and @ref Status::Error.
 			 *
+			 * @par Lazy write / MaxMemory
+			 * Every @c Write is lazy until @ref MaxMemory.
+			 * The origin is touched only when dirty pages exceed
+			 * @ref MaxMemory (GC), or on @ref Flush / @ref Close.
+			 * @c MaxMemory == 0 stores no pages: each @c Write goes to
+			 * the origin (and to the ring when both ring knobs are on).
+			 *
+			 * This is not magic RAM. Local seeks and seeks into a
+			 * still-dirty past stay in the map. Distant random writes
+			 * need a larger @ref MaxMemory or the farthest-past island
+			 * is evicted to the origin (that eviction is real I/O and
+			 * may block). A jump far ahead is supported only while it
+			 * fits; it is not the typical case. The typical case is a
+			 * correction near the write high-water and a seek back to
+			 * that front.
+			 *
+			 * GC evicts the farthest past first, in a contiguous run,
+			 * so one @ref OriginSeek covers a cheap sequential push.
+			 * Future islands are evicted only when no evictable past
+			 * remains.
+			 *
+			 * A durable-progress ratio is
+			 * @c Materialized / HighWater when @c HighWater > 0.
+			 * @c HighWater is the maximum logical cursor this session.
+			 * @c Tell is the cursor and may sit behind HighWater.
+			 * @c Materialized is what the origin already holds.
+			 * Do not use @c Accepted or @c Tell as the denominator.
+			 * After a sequential session Close,
+			 * @c Materialized equals HighWater.
+			 *
 			 * @par WriteChunk / BackPressure
-			 * Either knob @c 0 disables the ring: @c Write calls
-			 * @ref OriginPush on the caller thread and blocks until the
-			 * accepted bytes are pushed. Both knobs @c > 0 enable an
-			 * internal SPSC ring. Capacity is
+			 * Either ring knob @c 0 disables the drain pipe.
+			 * Both @c > 0 enable an internal SPSC ring used only to
+			 * push a GC / Flush / Close run. Capacity is
 			 * @c BackPressure * WriteChunk bytes. A @c Write that would
 			 * exceed that cap returns @ref Status::TryAgain.
-			 * The worker pushes full @c WriteChunk spans when possible;
-			 * short @ref OriginPush results are retried until complete
-			 * or @ref Status::Error.
+			 * The worker does not empty the page map just because the
+			 * origin cursor is aligned.
 			 *
-			 * Setters take effect immediately. They are not deferred to
-			 * the next @c Write. Turning the ring off or lowering the cap
-			 * below @ref Dirty flushes dirty bytes first and may block
-			 * on @ref OriginPush / @ref OriginFlush.
+			 * Setters take effect immediately. Turning the ring off or
+			 * lowering the cap below @ref Dirty flushes dirty bytes
+			 * first and may block. Setting @ref MaxMemory does not
+			 * Flush and does not resize the ring.
 			 *
 			 * @par Flush / Truncate
-			 * @ref Flush blocks, drains the ring including a short tail,
-			 * calls @ref OriginFlush, and never returns @ref Status::TryAgain.
-			 * @ref Truncate drops the ring without pushing and calls
-			 * @ref OriginTruncate. @ref Tell becomes 0.
+			 * @ref Flush blocks, materialises every dirty page in
+			 * offset order (with the @ref OriginSeek calls that need),
+			 * drains the ring, calls @ref OriginFlush, and never
+			 * returns @ref Status::TryAgain. Flush is not where seek
+			 * elision happens.
+			 * @ref Truncate drops the map and the ring without pushing
+			 * and calls @ref OriginTruncate. @ref Tell, HighWater and
+			 * Materialized become 0.
 			 *
 			 * @par Seek / Size
-			 * @ref Seek and @ref Size are virtual so a remote File-family
-			 * writer can override them. Default @ref Size is @ref Tell
-			 * (includes @ref Dirty). Default @ref Seek fails. A file
-			 * leaf flushes dirty bytes, seeks the origin and updates
-			 * @ref Tell.
+			 * @ref Seek moves only @ref Tell. It does not call
+			 * @ref OriginSeek and does not Flush. Default @ref Seek
+			 * fails when the leaf has no usable @ref OriginSeek
+			 * (the base hook fails). A file leaf uses the base
+			 * implementation.
+			 *
+			 * Typical correction inside resident dirty pages is O(1)
+			 * with respect to the device. A @c Write / @c Seek that
+			 * trips GC may block on origin I/O on purpose: random
+			 * access on a slow device is more expensive than that wait.
+			 *
+			 * Default @ref Size is @ref Tell (includes dirty pages).
+			 * A file leaf returns max(filesystem size, Tell).
 			 *
 			 * @par MaxWait
 			 * Applies to the next @ref OriginPush (direct @c Write or worker).
@@ -158,6 +199,7 @@ namespace StormByte {
 			 * @par Telemetry
 			 * @ref Telemetry copies counters under the coordinator lock.
 			 * Accumulators start at construction and do not reset on Close.
+			 * @c Materialized and @c HighWater are levels, not accumulators.
 			 *
 			 * @par Movable, not copyable
 			 * Move transfers @c m_io. The worker is not stopped. Moved-from
@@ -180,7 +222,15 @@ namespace StormByte {
 					 * Close / Rewind / Open / Truncate.
 					 *
 					 * @c Accepted == @c Behind + @c Direct.
-					 * Mean wait is @c WaitTotal / @c WaitSamples when samples > 0.
+					 * Durable progress is @c Materialized / HighWater when
+					 * HighWater > 0. Mean wait is @c WaitTotal / @c WaitSamples
+					 * when samples > 0.
+					 *
+					 * Seek elision uses the same names as
+					 * @ref StormByte::Buffer::IO::BufferedReader::Telemetry.
+					 * An epoch is one logical @ref Seek until the next
+					 * @ref Seek or @ref Close. @ref Flush does not close
+					 * an epoch.
 					 */
 					struct Telemetry {
 						/**
@@ -189,7 +239,7 @@ namespace StormByte {
 						StormByte::Size Accepted {};
 
 						/**
-						 * @brief Of @ref Accepted, octets that entered the ring.
+						 * @brief Of @ref Accepted, octets that did not hit the origin on the caller thread.
 						 */
 						StormByte::Size Behind {};
 
@@ -199,7 +249,44 @@ namespace StormByte {
 						StormByte::Size Direct {};
 
 						/**
-						 * @brief Ring occupancy now. 0 in direct mode.
+						 * @brief Octets pushed through @ref OriginPush since construction.
+						 */
+						StormByte::Size Origin {};
+
+						/**
+						 * @brief Durable origin length now. Not an accumulator.
+						 *
+						 * What the device already holds. Overwrites do not
+						 * inflate this. After Flush / Close of a sequential
+						 * session it equals HighWater.
+						 */
+						StormByte::Size Materialized {};
+
+						/**
+						 * @brief Maximum logical @ref Tell since Open / Truncate.
+						 *
+						 * Durable progress is Materialized / HighWater when
+						 * HighWater > 0. Do not divide by Tell.
+						 */
+						StormByte::Size HighWater {};
+
+						/**
+						 * @brief Writes that landed in a resident page at or after the previous high-water.
+						 */
+						StormByte::Size HitAhead {};
+
+						/**
+						 * @brief Writes that landed in a resident page behind the high-water.
+						 */
+						StormByte::Size HitBack {};
+
+						/**
+						 * @brief Writes that created or extended a page (origin hole).
+						 */
+						StormByte::Size Miss {};
+
+						/**
+						 * @brief Octets not yet on the origin (page map plus drain pipe).
 						 */
 						StormByte::Size Dirty {};
 
@@ -210,8 +297,30 @@ namespace StormByte {
 
 						/**
 						 * @brief Ring cap in bytes at this snapshot, or 0 if the ring is off.
+						 *
+						 * Not @ref MaxMemory.
 						 */
 						StormByte::Size Cap {};
+
+						/**
+						 * @brief Logical @ref Seek calls (Tell only).
+						 */
+						std::size_t SeekLogical {0};
+
+						/**
+						 * @brief @ref OriginSeek calls.
+						 */
+						std::size_t SeekOrigin {0};
+
+						/**
+						 * @brief Closed epochs with no @ref OriginSeek.
+						 */
+						std::size_t SeekSavedFull {0};
+
+						/**
+						 * @brief Closed epochs that hit dirty pages and later needed @ref OriginSeek.
+						 */
+						std::size_t SeekSavedPartial {0};
 
 						/**
 						 * @brief Times @ref Write returned TryAgain.
@@ -222,6 +331,11 @@ namespace StormByte {
 						 * @brief Times Dirty reached @ref Cap while Cap > 0.
 						 */
 						std::size_t Saturated {0};
+
+						/**
+						 * @brief Times GC materialised a page because Dirty exceeded MaxMemory.
+						 */
+						std::size_t Evicted {0};
 
 						/**
 						 * @brief Shortest sampled Write wait. 0 if WaitSamples == 0.
@@ -332,7 +446,7 @@ namespace StormByte {
 					virtual bool IsOpen() const noexcept final;
 
 					/**
-					 * @brief Push every dirty byte to the origin and @ref OriginFlush.
+					 * @brief Materialise every dirty page, drain the ring and @ref OriginFlush.
 					 * @return @ref Status::Ok, @ref Status::Error or
 					 *         @ref Status::Failed. Never @ref Status::TryAgain.
 					 *
@@ -341,10 +455,10 @@ namespace StormByte {
 					virtual Result Flush() final;
 
 					/**
-					 * @brief Drop dirty bytes and truncate the origin.
+					 * @brief Drop dirty pages and the ring, then truncate the origin.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 *
-					 * Does not push the ring. Sets @ref Tell to 0.
+					 * Does not push. Sets @ref Tell, HighWater and Materialized to 0.
 					 */
 					virtual Result Truncate() final;
 
@@ -388,20 +502,20 @@ namespace StormByte {
 					 */
 
 					/**
-					 * @brief Bytes accepted since Open or Truncate.
-					 * @return Logical write offset.
+					 * @brief Logical write offset.
+					 * @return Cursor published to the caller. Includes unflushed pages.
 					 */
 					virtual StormByte::Size Tell() const noexcept;
 
 					/**
-					 * @brief Bytes in the ring not yet pushed.
-					 * @return 0 in direct mode or after a successful Flush.
+					 * @brief Bytes not yet on the origin.
+					 * @return Page map plus drain pipe. 0 after a successful Flush.
 					 */
 					virtual StormByte::Size Dirty() const noexcept;
 
 					/**
 					 * @brief Logical sink length in bytes.
-					 * @return Length. Default is @ref Tell (includes @ref Dirty).
+					 * @return Length. Default is @ref Tell (includes dirty pages).
 					 *
 					 * Not optional. A file leaf returns
 					 * max(filesystem size, Tell). A remote leaf overrides
@@ -415,9 +529,11 @@ namespace StormByte {
 					 * @param mode @ref Position::Absolute or @ref Position::Relative.
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 *
-					 * Default fails. A file or remote leaf overrides this,
-					 * flushes dirty bytes, seeks the origin and updates
-					 * @ref Tell.
+					 * Updates @ref Tell only. Does not Flush. Does not call
+					 * @ref OriginSeek. Fails when the leaf @ref OriginSeek
+					 * cannot move the device (default hook). O(1) for a
+					 * typical in-cache correction; may block later when a
+					 * Write trips GC.
 					 */
 					virtual Result Seek(std::ptrdiff_t offset, Position mode);
 
@@ -477,6 +593,23 @@ namespace StormByte {
 					virtual void BackPressure(std::size_t chunks);
 
 					/**
+					 * @brief Byte budget for dirty pages that are not yet on the origin.
+					 * @return Bytes. 0 stores no page map (eager origin writes).
+					 *
+					 * Independent of @ref WriteChunk / @ref BackPressure.
+					 */
+					virtual StormByte::Size MaxMemory() const noexcept;
+
+					/**
+					 * @brief Set the dirty-page budget. Takes effect immediately.
+					 * @param bytes 0 disables the page map.
+					 *
+					 * Does not Flush. Does not resize the ring. A value below
+					 * current dirty pages trips GC and may block.
+					 */
+					virtual void MaxMemory(StormByte::Size bytes);
+
+					/**
 					 * @brief Wait cap for OriginPush.
 					 * @return @c 0ms waits without limit.
 					 */
@@ -500,9 +633,11 @@ namespace StormByte {
 					 * @param write_chunk Initial @ref WriteChunk in bytes.
 					 * @param back_pressure Initial @ref BackPressure in chunk units.
 					 * @param max_wait Initial @ref MaxWait.
+					 * @param max_memory Initial @ref MaxMemory in bytes.
 					 */
 					explicit BufferedWriter(StormByte::Size write_chunk = 0, std::size_t back_pressure = 0,
-						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0});
+						std::chrono::milliseconds max_wait = std::chrono::milliseconds{0},
+						StormByte::Size max_memory = 0);
 
 					/**
 					 * @brief Publish session state from a leaf hook.
@@ -581,6 +716,7 @@ namespace StormByte {
 					 * @return @ref Status::Ok or @ref Status::Failed.
 					 *
 					 * Default fails. File and remote leaves override this.
+					 * Public @ref Seek does not call this; GC / Flush / Close do.
 					 */
 					virtual Result OriginSeek(StormByte::Size absolute);
 

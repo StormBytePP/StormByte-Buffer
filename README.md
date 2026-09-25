@@ -15,13 +15,14 @@ The suite is split on purpose. Base, Config, Crypto, Database, Logger, Multimedi
 
 ## Designed to interconnect
 
-The point of this library is that its pieces plug into each other. A `Producer` is a `Consumer`. A `Bridge` pulls from any `ExternalReader` and pushes into any `ExternalWriter`. A `BufferedFileReader` *is* a `BufferedReader`; a `BufferedFileWriter` *is* a `BufferedWriter`. Leaves only implement origin hooks. Caches, prefetch, backpressure and `Seek` live in the bases.
+The point of this library is that its pieces plug into each other. A `Producer` is a `Consumer`. A `Bridge` pulls from any `ExternalReader` and pushes into any `ExternalWriter`. A `BufferedFileReader` *is* a `BufferedReader`; a `BufferedFileWriter` *is* a `BufferedWriter`. Leaves only implement origin hooks. Caches, prefetch, backpressure, delayed seek and `Telemetry` live in the bases.
 
 Typical wires:
 
 - `Producer` → `Consumer` (same ring).
 - `Bridge(Consumer, BufferedFileWriter)` — drain a ring to a file.
-- `BufferedFileReader` as a `BufferedReader` — sequential or seekable reads with a cache map.
+- `BufferedFileReader` as a `BufferedReader` — sequential or seekable reads with a page map and delayed seek.
+- `BufferedFileWriter` as a `BufferedWriter` — sequential or seekable writes with lazy pages and delayed seek.
 - Future leaves (remote file, socket) inherit the File leaves and override the same hooks.
 
 See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWriter](#iobufferedwriter) and [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
@@ -36,7 +37,7 @@ See [Bridge](#bridge), [IO::BufferedReader](#iobufferedreader), [IO::BufferedWri
 - **Hopper** — SPSC queue of typed items with optional capacity. See [Hopper](#hopper).
 - **Sink** — map of integer keys to Hopper buckets. See [Sink](#sink).
 - **Bridge** — chunked passthrough `ExternalReader` → `ExternalWriter`, with optional high-water. See [Bridge](#bridge).
-- **IO::BufferedReader / IO::BufferedWriter** — session bases (`Open` / `Close` / `Tell` / `EoF`). Leaves implement `Origin*`. See [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
+- **IO::BufferedReader / IO::BufferedWriter** — session bases (`Open` / `Close` / `Tell` / `Seek` / `Telemetry`). Leaves implement `Origin*`. Page cache + delayed seek live here. See [IO::BufferedReader](#iobufferedreader) and [IO::BufferedWriter](#iobufferedwriter).
 - **BufferedFileReader / BufferedFileWriter** — file leaves. Path-only constructors pick device-tuned windows at `Open` via System `Device`; explicit constructors keep the knobs you pass. See [BufferedFileReader / BufferedFileWriter](#bufferedfilereader--bufferedfilewriter).
 - **Pipeline** — stages chained with `ExecutionMode`. See [Pipeline](#pipeline).
 - **Lifecycle** — `Close()`, `SetError()`, `EoF()`, `IsReadable()`, `IsWritable()`.
@@ -266,42 +267,87 @@ int main() {
 
 ### IO::BufferedReader
 
-Session over a byte origin. The public type owns cache, prefetch, `Tell` and `Seek`. A leaf only implements `OriginOpen` / `OriginClose` / `OriginPull` and, if it can, `OriginCanSeek` / `OriginSeek` / `OriginHasSize` / `OriginSize`.
+Session over a byte origin. The public type owns the page map, prefetch, delayed seek, `Tell` and `Telemetry`. A leaf only implements `OriginOpen` / `OriginClose` / `OriginPull` and, if it can, `OriginCanSeek` / `OriginSeek` / `OriginHasSize` / `OriginSize`.
 
 - `Open` is not idempotent. It calls the leaf `Setup()` once, then the origin.
 - `Read` / `Peek` take a `FIFO` or a writable `std::span<std::byte>`.
-- `Seek` is valid only when the origin is seekable. It is **not** guaranteed O(1). Seekable origins keep a map of cached spans; a hit does not drop the window. A miss seeks the origin and adds a span. `MaxMemory` is a cap; GC drops spans farthest from `Tell`. `MaxMemory == 0` disables the cache. Not seekable: one forward span; `Seek` returns `Failed` and does not call the hook.
-- Prefetch is stopped before `Seek` and before a move. The next `Read` / `Peek` requests it again.
+- `Tell` is the public cursor. It never lies: after `Seek(off)` it is `off`, even when the device has not moved.
+- **Delayed seek.** `Seek` updates `Tell` only. `OriginSeek` runs later, and only when a `Read` / `Peek` must fill a hole the page map does not cover. If the whole epoch is served from resident pages, the device never sees that seek.
+- **Page cache.** Consumed ranges stay in the map until `MaxMemory` and GC evict the spans farthest from `Tell`. A later seek back into a resident page is a cache hit. `MaxMemory == 0` stores nothing; every miss hits the origin.
+- Prefetch is gated while the logical cursor and the device cursor differ. It resumes when they meet again. Prefetch bytes are not `Delivered`.
+- Seek is **not** guaranteed O(1). A jump inside resident pages is a map lookup. A cold miss is an origin seek plus a pull.
+- Not seekable: one forward span; `Seek` returns `Failed` and does not call the hook.
+
+`Telemetry()` returns a snapshot. Useful fields:
+
+| Field | Meaning |
+| --- | --- |
+| `Delivered` | Bytes given to the caller (`Read`, not `Peek`, not prefetch). |
+| `HitAhead` / `HitBack` | Delivered from the map, forward of / behind the previous origin cursor. |
+| `Miss` | Delivered from the origin. `Delivered == HitAhead + HitBack + Miss`. |
+| `Cached` / `CachedPeak` / `Cap` | Resident map and `MaxMemory`. |
+| `SeekLogical` / `SeekOrigin` | Public seeks vs device seeks. |
+| `SeekSavedFull` / `SeekSavedPartial` | Epoch closed with no origin seek / with a later origin seek. |
+| `Evicted` | Pages dropped by GC. |
+
+Give the reader enough `MaxMemory` for the working set you actually rewind into. Distant random seeks will miss; that is the contract, not a bug.
 
 ### IO::BufferedWriter
 
-Session over a byte sink. The public type owns write buffering, `Dirty`, `Flush` and `Truncate`. A leaf implements `OriginOpen` / `OriginClose` / `OriginPush` and optionally `OriginFlush` / `OriginTruncate`.
+Session over a byte sink. The public type owns the page map, the optional drain ring, delayed seek, `Dirty`, `Flush`, `Truncate` and `Telemetry`. A leaf implements `OriginOpen` / `OriginClose` / `OriginPush` / `OriginSeek` and optionally `OriginFlush` / `OriginTruncate`.
 
-- `WriteChunk == 0` is direct: each `Write` hits the origin and `Dirty()` stays `0`.
-- `WriteChunk > 0` holds bytes until a full chunk, `Flush`, or `Close`.
-- `BackPressure` is in **chunks**, not bytes. `0` disables that extra cap (the leaf may still refuse work).
-- Device speed knobs are fixed at construction. `MaxMemory` / `MaxWait` remain settable.
+- `Write` is atomic. `TryAgain` means backpressure; the source is left untouched.
+- `WriteChunk == 0` and `BackPressure == 0` is direct: each `Write` hits the origin and `Dirty()` stays `0`.
+- `WriteChunk > 0` and `BackPressure > 0` use an SPSC ring capped at `BackPressure * WriteChunk`. Overflow is `TryAgain`.
+- `MaxMemory > 0` keeps dirty **pages**. Writes stay off the device until GC, `Flush` or `Close`. Overlapping and abutting spans coalesce. `MaxMemory == 0` stores no pages.
+- `BackPressure` is in **chunks**, not bytes.
+- **Delayed seek.** `Seek` updates `Tell` only. `OriginSeek` runs when a page is materialized or when the ring must align before a drain. Typical workload: local corrections (seek a short way back, patch, seek to the front). That path is meant to stay in RAM when `MaxMemory` allows it.
+- **GC.** When dirty pages exceed `MaxMemory`, the farthest-past page is materialized first, then future islands. An eviction is a real origin seek + write. Far random writes need more `MaxMemory` or they become device seeks.
+- **Holes.** Seeking past the durable end and writing an island leaves zeros in the gap when that range is materialized. That is the filesystem contract, not a fill loop in the caller.
+- `Flush` and `Close` force every dirty page and the ring onto the origin. After either, `Dirty() == 0` and `Telemetry().Materialized == Telemetry().HighWater`.
+- Seek is **not** guaranteed O(1). A jump that is still dirty in the map does not touch the device. Evicting a non-local island does.
+
+`Telemetry()` snapshot:
+
+| Field | Meaning |
+| --- | --- |
+| `Accepted` | Bytes taken by `Write` since `Open`. |
+| `Behind` / `Direct` | Accepted into pages/ring vs written immediately. |
+| `Origin` | Bytes actually pushed to the device (overwrites count again). |
+| `Materialized` | Highest origin offset known to hold data (holes included once flushed past them). |
+| `HighWater` | Highest logical cursor since `Open` / `Truncate`. |
+| `HitAhead` / `HitBack` / `Miss` | Page-map classification of accepted bytes. Zero on the ring-only / direct paths. |
+| `Dirty` / `DirtyPeak` / `Cap` | Pending bytes and ring cap. |
+| `SeekLogical` / `SeekOrigin` / `SeekSavedFull` / `SeekSavedPartial` | Same epoch rules as the reader. |
+| `Evicted` | Pages forced to the origin by GC. |
+
+Durable progress is `Materialized / HighWater`, not `Accepted / HighWater` and not `Tell`. `Accepted` can run ahead while pages are still dirty. After `Close`, the two lengths match.
+
+This cache is not magic. Local seeks and short rewinds with a budget that fits the dirty working set stay off the device. A seek several gigabytes ahead, a tiny write, and a seek back only stays cheap if that island still fits in `MaxMemory`. Document that to the caller: more random access needs more RAM.
 
 ### BufferedFileReader / BufferedFileWriter
 
 File leaves of the bases above. They are meant to be derived from (same hooks, no extra setters for the path). Override `CreateDevice()` to return a `unique_ptr<StormByte::System::Device>` when a derived leaf needs its own measurement (no slicing).
 
-Two constructors:
-
 | Constructor | What happens at `Open` |
 | --- | --- |
-| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` uses `CreateDevice()` and `Device::Window` to set `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). `MaxMemory` on the short reader ctor is 1 MiB. |
-| `BufferedFileReader(path, read_ahead, max_memory)` / `BufferedFileWriter(path, write_chunk, backpressure)` | Those values stay. `Setup()` does not overwrite them. `(path, 0, 0)` is direct / no prefetch. |
+| `BufferedFileReader(path)` / `BufferedFileWriter(path)` | `Setup()` uses `CreateDevice()` and `Device::Window` to set `ReadAhead` (reader) or `WriteChunk` + `BackPressure` (writer). Path-only `MaxMemory` is 1 MiB. Path-only writer `BackPressure` is 4. |
+| `BufferedFileReader(path, read_ahead, max_memory)` | Those values stay. `(path, 0, 0)` is no prefetch / no pages. |
+| `BufferedFileWriter(path, write_chunk, back_pressure)` | Ring knobs stay. `MaxMemory` stays 0 (no pages). |
+| `BufferedFileWriter(path, write_chunk, max_memory, back_pressure)` | Pages and ring together. Either ring knob `0` disables the ring. `MaxMemory == 0` disables pages. |
 
-The device does not change after construction, so there are no setters for `ReadAhead` / `WriteChunk` / `BackPressure` on the *policy of the device*. `MaxMemory` and `MaxWait` stay settable: they are cache and wait policy, not device speed.
+The device does not change after construction. `MaxMemory` and `MaxWait` stay settable: they are cache and wait policy, not device speed.
 
 `Setup()` is a protected hook on the base, called from `Open` before `OriginOpen`. A derived leaf can override `Setup()` (or skip the probe) and still reuse File origin hooks.
+
+`Open` on an existing file does not truncate. `Truncate` overwrites. A second `Open` after `Close` starts `Tell` at 0; seek to `Size()` to append.
 
 ```cpp
 #include <StormByte/buffer/io/buffered_file_reader.hxx>
 #include <StormByte/buffer/io/buffered_file_writer.hxx>
 
 using StormByte::Buffer::FIFO;
+using StormByte::Buffer::Position;
 using StormByte::Buffer::IO::BufferedFileReader;
 using StormByte::Buffer::IO::BufferedFileWriter;
 
@@ -310,11 +356,21 @@ int main() {
 	in.Open();
 	FIFO dest;
 	(void)in.Read(16, dest);
+	(void)in.Seek(0, Position::Absolute); // Tell is 0; origin moves only on miss
+	(void)in.Read(16, dest);              // served from the page map when MaxMemory allows
+	const struct BufferedFileReader::Telemetry rt = in.Telemetry();
+	(void)rt.Delivered;
 
-	BufferedFileWriter direct("out.bin", 0, 0);
-	direct.Open();
-	(void)direct.Write(dest);
-	direct.Close();
+	BufferedFileWriter out("out.bin", StormByte::Size{4096},
+		StormByte::Size{256ull * 1024ull}, 4);
+	out.Open();
+	(void)out.Write(dest);
+	(void)out.Seek(0, Position::Absolute);
+	(void)out.Write(dest); // patch stays dirty until Flush / Close / GC
+	(void)out.Flush();
+	const struct BufferedFileWriter::Telemetry wt = out.Telemetry();
+	(void)wt.Materialized;
+	out.Close();
 }
 ```
 

@@ -55,6 +55,7 @@ using namespace StormByte::Buffer::IO;
 
 namespace {
 	constexpr std::size_t DefaultBackPressure = 4;
+	constexpr StormByte::Size DefaultMaxMemory{1024ull * 1024ull};
 
 	std::filesystem::path SpacePath(const std::filesystem::path& path) {
 		std::error_code ec;
@@ -117,6 +118,13 @@ BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormBy
 	m_path(std::move(path)),
 	m_probe_on_setup(false) {}
 
+BufferedFileWriter::BufferedFileWriter(std::filesystem::path path, const StormByte::Size write_chunk,
+		const StormByte::Size max_memory, const std::size_t back_pressure,
+		const std::chrono::milliseconds max_wait):
+	BufferedWriter(write_chunk, back_pressure, max_wait, max_memory),
+	m_path(std::move(path)),
+	m_probe_on_setup(false) {}
+
 BufferedFileWriter::BufferedFileWriter(BufferedFileWriter&& other) noexcept:
 	BufferedWriter(std::move(other)),
 	m_path(std::move(other.m_path)),
@@ -153,30 +161,6 @@ StormByte::Size BufferedFileWriter::Size() const noexcept {
 	return on_disk > logical ? on_disk : logical;
 }
 
-Result BufferedFileWriter::Seek(const std::ptrdiff_t offset, const Position mode) {
-	const auto flushed = Flush();
-	if (flushed.status != Status::Ok)
-		return flushed;
-
-	StormByte::Size abs = Tell();
-	if (mode == Position::Absolute) {
-		if (offset < 0)
-			return { Status::Failed, 0 };
-		abs = StormByte::Size{static_cast<std::size_t>(offset)};
-	}
-	else {
-		if (offset < 0 && StormByte::Size{static_cast<std::size_t>(-offset)} > abs)
-			return { Status::Failed, 0 };
-		abs = StormByte::Size{static_cast<std::size_t>(static_cast<std::ptrdiff_t>(static_cast<std::size_t>(abs)) + offset)};
-	}
-
-	const auto moved = OriginSeek(abs);
-	if (moved.status != Status::Ok)
-		return moved;
-	SetTell(abs);
-	return { Status::Ok, 0 };
-}
-
 std::unique_ptr<StormByte::System::Device> BufferedFileWriter::CreateDevice() const {
 	return std::make_unique<StormByte::System::Device>(m_path);
 }
@@ -190,6 +174,7 @@ void BufferedFileWriter::Setup() {
 	else
 		WriteChunk(device->Window().write);
 	BackPressure(DefaultBackPressure);
+	MaxMemory(DefaultMaxMemory);
 }
 
 bool BufferedFileWriter::WillWrite(const StormByte::Size n) const {
