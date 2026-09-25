@@ -529,24 +529,23 @@ Result BufferedWriter::Flush() {
 	if (!m_open || m_failed || !m_owner)
 		return { Status::Failed, 0 };
 
-	const bool need_drain = m_ring && m_ring->AvailableBytes() > StormByte::Size{0};
-	if (need_drain) {
+	const bool ring_dirty = m_ring && m_ring->AvailableBytes() > StormByte::Size{0};
+	if (ring_dirty) {
 		m_flush.store(true, std::memory_order_release);
 		m_drain_run = true;
 		m_cv.notify_all();
-		m_cv.wait(lock, [this] {
-			return m_stop.load(std::memory_order_acquire)
-				|| m_failed
-				|| !m_ring
-				|| m_ring->AvailableBytes() == StormByte::Size{0};
-		});
-		m_flush.store(false, std::memory_order_release);
-		m_drain_run = false;
-		if (m_failed)
-			return { Status::Error, 0 };
-		if (m_stop.load(std::memory_order_acquire))
-			return { Status::Failed, 0 };
 	}
+	m_cv.wait(lock, [this] {
+		const bool empty = !m_ring || m_ring->AvailableBytes() == StormByte::Size{0};
+		return m_stop.load(std::memory_order_acquire)
+			|| m_failed
+			|| (empty && !m_drain_run);
+	});
+	m_flush.store(false, std::memory_order_release);
+	if (m_failed)
+		return { Status::Error, 0 };
+	if (m_stop.load(std::memory_order_acquire))
+		return { Status::Failed, 0 };
 	lock.unlock();
 
 	Result visible;
