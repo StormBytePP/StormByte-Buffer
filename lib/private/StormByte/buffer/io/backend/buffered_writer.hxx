@@ -106,6 +106,14 @@ namespace StormByte {
 				 * @c Seek updates Tell only and opens/closes epochs for
 				 * SeekSavedFull / SeekSavedPartial. Prefetch analog: the
 				 * worker does not chase the logical cursor.
+				 *
+				 * @par Origin cursor
+				 * @c OriginFlush may leave the device cursor untrusted
+				 * (observed on Darwin). @c EnsureOrigin then OriginSeek's
+				 * even when @c m_origin_pos already equals the target.
+				 * A sequential ring drain after that first realign does
+				 * not OriginSeek again. Logical @c Seek still does not
+				 * touch the device.
 				 */
 				class STORMBYTE_BUFFER_PRIVATE BufferedWriter {
 					public:
@@ -475,9 +483,12 @@ namespace StormByte {
 							std::map<std::size_t, Page>::iterator it);
 
 						/**
-						 * @brief OriginSeek if the device cursor is not @p absolute.
+						 * @brief OriginSeek when the device cursor is untrusted or not @p absolute.
 						 * @param absolute Device offset.
 						 * @return Ok or Failed. Increments SeekOrigin on a real seek.
+						 *
+						 * Skips OriginSeek when @c m_origin_pos equals @p absolute
+						 * and @c m_origin_cursor_dirty is false.
 						 */
 						Result EnsureOrigin(StormByte::Size absolute);
 
@@ -517,6 +528,7 @@ namespace StormByte {
 						mutable bool m_failed {false};				///< Permanent failure.
 						mutable StormByte::Size m_tell {0};			///< Logical cursor.
 						StormByte::Size m_high_water {0};			///< Max Tell seen this session.
+						bool m_origin_cursor_dirty {false};			///< OriginFlush may desync the fd.
 						StormByte::Size m_origin_pos {0};			///< Device cursor.
 						StormByte::Size m_materialized {0};			///< Durable origin length.
 

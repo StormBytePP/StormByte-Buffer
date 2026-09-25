@@ -236,6 +236,7 @@ bool BufferedWriter::Open() {
 	m_tell = StormByte::Size{0};
 	m_high_water = StormByte::Size{0};
 	m_origin_pos = StormByte::Size{0};
+	m_origin_cursor_dirty = false;
 	m_materialized = StormByte::Size{0};
 	ClearPages();
 	m_epoch_open = false;
@@ -307,7 +308,13 @@ bool BufferedWriter::IsOpen() const noexcept {
 Result BufferedWriter::EnsureOrigin(const StormByte::Size absolute) {
 	if (!m_owner)
 		return { Status::Failed, 0 };
-	if (m_origin_pos == absolute)
+
+	bool skip = false;
+	{
+		std::lock_guard lock(m_mutex);
+		skip = !m_origin_cursor_dirty && m_origin_pos == absolute;
+	}
+	if (skip)
 		return { Status::Ok, 0 };
 
 	const Result moved = m_owner->OriginSeek(absolute);
@@ -316,6 +323,7 @@ Result BufferedWriter::EnsureOrigin(const StormByte::Size absolute) {
 
 	std::lock_guard lock(m_mutex);
 	m_origin_pos = absolute;
+	m_origin_cursor_dirty = false;
 	++m_seek_origin;
 	if (m_epoch_open)
 		m_epoch_origin = true;
@@ -530,12 +538,15 @@ Result BufferedWriter::Flush() {
 	lock.unlock();
 
 	const Result visible = m_owner->OriginFlush();
-	if (visible.status != Status::Ok) {
-		std::lock_guard fault(m_mutex);
-		m_failed = true;
-		if (m_state == State::Idle)
-			m_state = State::Fault;
-		return visible;
+	{
+		std::lock_guard dirty(m_mutex);
+		m_origin_cursor_dirty = true;
+		if (visible.status != Status::Ok) {
+			m_failed = true;
+			if (m_state == State::Idle)
+				m_state = State::Fault;
+			return visible;
+		}
 	}
 	return { Status::Ok, 0 };
 }
@@ -561,6 +572,7 @@ Result BufferedWriter::Truncate() {
 	m_tell = StormByte::Size{0};
 	m_high_water = StormByte::Size{0};
 	m_origin_pos = StormByte::Size{0};
+	m_origin_cursor_dirty = true;
 	m_materialized = StormByte::Size{0};
 	return { Status::Ok, 0 };
 }
@@ -687,6 +699,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		if (m_tell > m_high_water)
 			m_high_water = m_tell;
 		m_origin_pos = m_tell;
+		m_origin_cursor_dirty = true;
 		m_origin_bytes = m_origin_bytes + n;
 		if (m_tell > m_materialized)
 			m_materialized = m_tell;
@@ -699,13 +712,22 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	if (!m_ring)
 		return { Status::Failed, 0 };
 
-	const StormByte::Size pending = m_ring->AvailableBytes();
-	const StormByte::Size tail = m_origin_pos + pending;
-	if (m_tell != tail) {
+	bool need_align = false;
+	StormByte::Size align_to{0};
+	{
+		std::lock_guard lock(m_mutex);
+		const StormByte::Size pending = m_ring->AvailableBytes();
+		const StormByte::Size tail = m_origin_pos + pending;
+		if (m_tell != tail) {
+			need_align = true;
+			align_to = m_tell;
+		}
+	}
+	if (need_align) {
 		const Result drained = Flush();
 		if (drained.status != Status::Ok)
 			return drained;
-		const Result aligned = EnsureOrigin(m_tell);
+		const Result aligned = EnsureOrigin(align_to);
 		if (aligned.status != Status::Ok)
 			return aligned;
 	}
@@ -869,6 +891,21 @@ void BufferedWriter::Worker() {
 				: std::min(StormByte::Size{front.size()}, chunk);
 			front = front.first(static_cast<std::size_t>(want));
 
+			StormByte::Size start{0};
+			{
+				std::lock_guard inner(m_mutex);
+				start = m_origin_pos;
+			}
+			const Result aligned = EnsureOrigin(start);
+			if (aligned.status != Status::Ok) {
+				std::lock_guard inner(m_mutex);
+				m_failed = true;
+				if (m_state == State::Idle)
+					m_state = State::Fault;
+				m_cv.notify_all();
+				break;
+			}
+
 			const Result pushed = PushAll(front);
 			if (pushed.status != Status::Ok) {
 				std::lock_guard inner(m_mutex);
@@ -881,7 +918,7 @@ void BufferedWriter::Worker() {
 			static_cast<void>(m_ring->Consume(StormByte::Size{front.size()}));
 			{
 				std::lock_guard inner(m_mutex);
-				m_origin_pos = m_origin_pos + StormByte::Size{front.size()};
+				m_origin_pos = start + StormByte::Size{front.size()};
 				m_origin_bytes = m_origin_bytes + StormByte::Size{front.size()};
 				if (m_origin_pos > m_materialized)
 					m_materialized = m_origin_pos;
