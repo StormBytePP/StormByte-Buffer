@@ -219,7 +219,11 @@ bool BufferedWriter::Open() {
 		already = m_open;
 	}
 
-	const Result opened = m_owner->OriginOpen();
+	Result opened;
+	{
+		std::lock_guard origin(m_origin_io);
+		opened = m_owner->OriginOpen();
+	}
 
 	std::lock_guard lock(m_mutex);
 	if (already)
@@ -257,8 +261,10 @@ bool BufferedWriter::Close() {
 		CloseSeekEpoch();
 	}
 
-	if (was_open && m_owner)
+	if (was_open && m_owner) {
+		std::lock_guard origin(m_origin_io);
 		static_cast<void>(m_owner->OriginClose());
+	}
 
 	std::lock_guard lock(m_mutex);
 	m_open = false;
@@ -440,19 +446,25 @@ Result BufferedWriter::MaterializeFrom(std::unique_lock<std::mutex>& lock,
 	Data payload = std::move(page.bytes);
 	lock.unlock();
 
-	Result ensured = EnsureOrigin(start);
+	Result ensured;
+	Result pushed;
+	{
+		std::lock_guard origin(m_origin_io);
+		ensured = EnsureOrigin(start);
+		if (ensured.status == Status::Ok) {
+			const auto view = std::span<const std::byte>(payload.data(),
+				static_cast<std::size_t>(payload.size()));
+			pushed = PushAll(view);
+		}
+	}
+	lock.lock();
 	if (ensured.status != Status::Ok) {
-		lock.lock();
 		Page back;
 		back.offset = start;
 		back.bytes = std::move(payload);
 		m_pages.emplace(static_cast<std::size_t>(start), std::move(back));
 		return ensured;
 	}
-
-	const auto view = std::span<const std::byte>(payload.data(), static_cast<std::size_t>(payload.size()));
-	const Result pushed = PushAll(view);
-	lock.lock();
 	if (pushed.status != Status::Ok) {
 		Page back;
 		back.offset = start;
@@ -537,7 +549,11 @@ Result BufferedWriter::Flush() {
 	}
 	lock.unlock();
 
-	const Result visible = m_owner->OriginFlush();
+	Result visible;
+	{
+		std::lock_guard origin(m_origin_io);
+		visible = m_owner->OriginFlush();
+	}
 	{
 		std::lock_guard dirty(m_mutex);
 		m_origin_cursor_dirty = true;
@@ -562,7 +578,11 @@ Result BufferedWriter::Truncate() {
 		CloseSeekEpoch();
 	}
 
-	const Result truncated = m_owner->OriginTruncate();
+	Result truncated;
+	{
+		std::lock_guard origin(m_origin_io);
+		truncated = m_owner->OriginTruncate();
+	}
 	std::lock_guard lock(m_mutex);
 	if (truncated.status != Status::Ok) {
 		m_failed = true;
@@ -673,10 +693,19 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 	}
 
 	if (!BufferedMode()) {
-		const Result aligned = EnsureOrigin(m_tell);
+		Result aligned;
+		Result pushed;
+		Result visible;
+		{
+			std::lock_guard origin(m_origin_io);
+			aligned = EnsureOrigin(m_tell);
+			if (aligned.status == Status::Ok)
+				pushed = PushAll(src);
+			if (aligned.status == Status::Ok && pushed.status == Status::Ok)
+				visible = m_owner->OriginFlush();
+		}
 		if (aligned.status != Status::Ok)
 			return aligned;
-		const Result pushed = PushAll(src);
 		if (pushed.status != Status::Ok) {
 			std::lock_guard lock(m_mutex);
 			m_failed = true;
@@ -685,7 +714,6 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 			NoteWait(std::chrono::steady_clock::now() - started);
 			return pushed;
 		}
-		const Result visible = m_owner->OriginFlush();
 		if (visible.status != Status::Ok) {
 			std::lock_guard lock(m_mutex);
 			m_failed = true;
@@ -727,6 +755,7 @@ Result BufferedWriter::WriteSpan(const std::span<const std::byte> src) {
 		const Result drained = Flush();
 		if (drained.status != Status::Ok)
 			return drained;
+		std::lock_guard origin(m_origin_io);
 		const Result aligned = EnsureOrigin(align_to);
 		if (aligned.status != Status::Ok)
 			return aligned;
@@ -896,7 +925,15 @@ void BufferedWriter::Worker() {
 				std::lock_guard inner(m_mutex);
 				start = m_origin_pos;
 			}
-			const Result aligned = EnsureOrigin(start);
+
+			Result aligned;
+			Result pushed;
+			{
+				std::lock_guard origin(m_origin_io);
+				aligned = EnsureOrigin(start);
+				if (aligned.status == Status::Ok)
+					pushed = PushAll(front);
+			}
 			if (aligned.status != Status::Ok) {
 				std::lock_guard inner(m_mutex);
 				m_failed = true;
@@ -905,8 +942,6 @@ void BufferedWriter::Worker() {
 				m_cv.notify_all();
 				break;
 			}
-
-			const Result pushed = PushAll(front);
 			if (pushed.status != Status::Ok) {
 				std::lock_guard inner(m_mutex);
 				m_failed = true;

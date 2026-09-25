@@ -89,6 +89,9 @@ namespace StormByte {
 				 * dirty page map, the logical cursor and the push worker.
 				 * Invokes @c Origin* hooks on @c m_owner.
 				 * Origin hooks never run while @c m_mutex is held.
+				 * Every Origin hook runs under @c m_origin_io so the
+				 * worker and the write thread cannot share the device
+				 * cursor (stdio FILE* is not thread-safe).
 				 *
 				 * @par Page map
 				 * When @c m_max_memory > 0, @c Write lands in @c m_pages
@@ -438,6 +441,8 @@ namespace StormByte {
 						 * @brief OriginPush @p data, retry short writes, honor MaxWait.
 						 * @param data Contiguous octets.
 						 * @return Ok when every byte was pushed; Error or Failed otherwise.
+						 *
+						 * Caller already holds @c m_origin_io.
 						 */
 						Result PushAll(std::span<const std::byte> data) const;
 
@@ -516,6 +521,7 @@ namespace StormByte {
 						IO::BufferedWriter* m_owner;				///< Public leaf (hooks).
 
 						mutable std::mutex m_mutex;					///< Session + knobs.
+						mutable std::mutex m_origin_io;				///< Serialises every Origin* hook.
 						mutable std::condition_variable m_cv;		///< Worker / flush waits.
 
 						StormByte::Size m_write_chunk {0};			///< Origin push unit.
