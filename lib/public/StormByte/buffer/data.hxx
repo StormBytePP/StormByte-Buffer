@@ -711,11 +711,7 @@ namespace StormByte::Buffer {
 	 */
 	STORMBYTE_BUFFER_PUBLIC void swap(Data& lhs, Data& rhs) noexcept;
 
-	/**
-	 * @brief Copy from an input range of byte-convertible values.
-	 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
-	 * @param range Source range.
-	 */
+	/// @cond
 	template<Type::ByteInputRange R>
 	Data::Data(const R& range)
 		: Data() {
@@ -728,11 +724,6 @@ namespace StormByte::Buffer {
 			push_back(static_cast<std::byte>(element));
 	}
 
-	/**
-	 * @brief Consume an rvalue range. Moves when @p R is an rvalue @ref StormByte::Buffer::Data.
-	 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
-	 * @param range Source range.
-	 */
 	template<Type::ByteInputRange R>
 	Data::Data(R&& range)
 		: Data() {
@@ -753,24 +744,11 @@ namespace StormByte::Buffer {
 		}
 	}
 
-	/**
-	 * @brief Append one byte constructed from @p args.
-	 * @tparam Args Constructor argument types for @c std::byte.
-	 * @param args Arguments forwarded to @c std::byte.
-	 */
 	template<typename... Args>
 	void Data::emplace_back(Args&&... args) {
 		push_back(std::byte(std::forward<Args>(args)...));
 	}
 
-	/**
-	 * @brief Insert the range @c [first, last) before @p pos.
-	 * @tparam InputIt Input iterator type.
-	 * @param pos Insertion iterator.
-	 * @param first Range begin.
-	 * @param last Range end.
-	 * @return Iterator to the first inserted byte, or @p pos when the range is empty.
-	 */
 	template<typename InputIt>
 	Data::iterator Data::insert(const_iterator pos, InputIt first, InputIt last) {
 		const StormByte::Size index = offset_of(pos);
@@ -780,16 +758,11 @@ namespace StormByte::Buffer {
 		return insert_at(index, scratch.data(), scratch.size());
 	}
 
-	/**
-	 * @brief Replace contents with @c [first, last).
-	 * @tparam InputIt Input iterator type.
-	 * @param first Range begin.
-	 * @param last Range end.
-	 */
 	template<typename InputIt>
 	void Data::assign(InputIt first, InputIt last) {
 		clear();
 		for (; first != last; ++first)
 			push_back(static_cast<std::byte>(*first));
 	}
+	/// @endcond
 }
