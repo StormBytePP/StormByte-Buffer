@@ -180,8 +180,10 @@ namespace StormByte::Buffer {
 			/**
 			 * @brief Longest contiguous unread span from the read cursor.
 			 * @return Empty if none. Does not wrap; call again after Consume.
-			 * @details Valid until the next producer Grow or a Consume/Extract that
-			 *          advances past this span.
+			 * @details Returns a view of an internal snapshot taken under the wait
+			 *          mutex so a concurrent @ref Grow cannot invalidate the pointer
+			 *          while the consumer is still draining. Valid until the next
+			 *          @ref FrontSpan call on this instance.
 			 */
 			std::span<const std::byte> FrontSpan() const noexcept;
 
@@ -405,10 +407,11 @@ namespace StormByte::Buffer {
 			std::atomic<bool> m_closed{false};				///< Closed-for-writes flag
 			std::atomic<bool> m_error{false};				///< Permanent error flag
 
-			mutable std::mutex m_wait_mtx;					///< Mutex for blocking waits only
+			mutable std::mutex m_wait_mtx;					///< Mutex for blocking waits and Grow/FrontSpan
 			mutable std::condition_variable m_cv;			///< Signalled on data / close / error
 
 			mutable class Data m_data_cache;				///< Cache used by @ref ReadOnly::Data()
+			mutable std::vector<std::byte> m_front_cache;	///< Snapshot backing @ref FrontSpan
 
 			/**
 			 * @brief Round @p v up to the next power of two.
@@ -418,7 +421,7 @@ namespace StormByte::Buffer {
 			static std::size_t RoundUpPow2(std::size_t v) noexcept;
 
 			/**
-			 * @brief Double capacity (producer side only; not thread-safe with concurrent grow).
+			 * @brief Double capacity (producer side only; caller holds @c m_wait_mtx).
 			 */
 			void Grow() noexcept;
 

@@ -65,6 +65,7 @@ LockFreeRing::LockFreeRing(StormByte::Size initial_capacity) {
 
 LockFreeRing::LockFreeRing(LockFreeRing&& other) noexcept {
 	m_storage   = std::move(other.m_storage);
+	m_front_cache = std::move(other.m_front_cache);
 	m_capacity  = other.m_capacity;
 	m_mask      = other.m_mask;
 	m_head.store(other.m_head.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -82,6 +83,7 @@ LockFreeRing::LockFreeRing(LockFreeRing&& other) noexcept {
 LockFreeRing& LockFreeRing::operator=(LockFreeRing&& other) noexcept {
 	if (this != &other) {
 		m_storage   = std::move(other.m_storage);
+		m_front_cache = std::move(other.m_front_cache);
 		m_capacity  = other.m_capacity;
 		m_mask      = other.m_mask;
 		m_head.store(other.m_head.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -150,6 +152,7 @@ const class Data& LockFreeRing::Data() const noexcept {
 std::span<const std::byte> LockFreeRing::FrontSpan() const noexcept {
 	if (m_error.load(std::memory_order_acquire))
 		return {};
+	std::lock_guard lock(m_wait_mtx);
 	const std::size_t logical = m_logical.load(std::memory_order_acquire);
 	const std::size_t tail = m_tail.load(std::memory_order_acquire);
 	if (logical >= tail)
@@ -158,7 +161,8 @@ std::span<const std::byte> LockFreeRing::FrontSpan() const noexcept {
 	const std::size_t pos = logical & m_mask;
 	const std::size_t linear = m_capacity - pos;
 	const std::size_t n = avail < linear ? avail : linear;
-	return std::span<const std::byte>(m_storage.data() + pos, n);
+	m_front_cache.assign(m_storage.data() + pos, m_storage.data() + pos + n);
+	return std::span<const std::byte>(m_front_cache.data(), m_front_cache.size());
 }
 
 void LockFreeRing::Clean() noexcept {
@@ -172,6 +176,7 @@ void LockFreeRing::Clear() noexcept {
 	m_head.store(0, std::memory_order_relaxed);
 	m_tail.store(0, std::memory_order_relaxed);
 	m_logical.store(0, std::memory_order_relaxed);
+	m_front_cache.clear();
 	m_cv.notify_all();
 }
 
@@ -240,7 +245,7 @@ void LockFreeRing::Grow() noexcept {
 	m_mask     = new_cap - 1;
 	m_head.store(0, std::memory_order_relaxed);
 	m_logical.store(logical_off, std::memory_order_relaxed);
-	m_tail.store(sz, std::memory_order_relaxed);
+	m_tail.store(sz, std::memory_order_release);
 }
 
 bool LockFreeRing::WaitFor(StormByte::Size n) const {
@@ -421,21 +426,16 @@ bool LockFreeRing::WriteInternal(StormByte::Size count, const std::byte* src) no
 		return true;
 
 	const std::size_t n = static_cast<std::size_t>(count);
-	{
-		std::lock_guard lock(m_wait_mtx);
-		const std::size_t h = m_head.load(std::memory_order_acquire);
-		const std::size_t t = m_tail.load(std::memory_order_relaxed);
-		const std::size_t used = t - h;
-		if (used + n + 1 > m_capacity)
-			Grow();
-		while (used + n + 1 > m_capacity)
-			Grow();
-	}
-
-	const std::size_t t    = m_tail.load(std::memory_order_relaxed);
+	std::lock_guard lock(m_wait_mtx);
+	std::size_t h = m_head.load(std::memory_order_acquire);
+	std::size_t t = m_tail.load(std::memory_order_relaxed);
+	while ((t - h) + n + 1 > m_capacity)
+		Grow();
+	t = m_tail.load(std::memory_order_relaxed);
 	const std::size_t mask = m_mask;
 	for (std::size_t i = 0; i < n; ++i)
 		m_storage[(t + i) & mask] = src[i];
+	std::atomic_thread_fence(std::memory_order_release);
 	m_tail.store(t + n, std::memory_order_release);
 	m_cv.notify_all();
 	return true;
