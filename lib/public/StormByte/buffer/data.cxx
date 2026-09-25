@@ -383,6 +383,8 @@ Data::iterator Data::insert_at(const StormByte::Size& index, const std::byte* by
 	return begin() + static_cast<std::ptrdiff_t>(index);
 }
 
-void swap(Data& lhs, Data& rhs) noexcept {
-	lhs.swap(rhs);
+namespace StormByte::Buffer {
+	void swap(Data& lhs, Data& rhs) noexcept {
+		lhs.swap(rhs);
+	}
 }

@@ -56,11 +56,20 @@
 #include <utility>
 
 /**
+ * @file StormByte/buffer/data.hxx
+ * @brief DLL-boundary-safe owned byte sequence for StormByte-Buffer.
+ */
+
+/**
  * @namespace StormByte::Buffer
  * @brief Buffer module of the StormByte suite.
  */
 namespace StormByte::Buffer {
-	class Storage;	///< Private byte store. Defined only in Buffer's translation unit.
+	/**
+	 * @class Storage
+	 * @brief Private byte store. Defined only in Buffer's translation unit.
+	 */
+	class Storage;
 
 	/**
 	 * @class Data
@@ -91,17 +100,60 @@ namespace StormByte::Buffer {
 	 */
 	class STORMBYTE_BUFFER_PUBLIC Data {
 		public:
-			using value_type = std::byte;							///< Element type.
-			using size_type = std::size_t;							///< STL size typedef; @ref size() returns @ref StormByte::Size.
-			using difference_type = std::ptrdiff_t;					///< Iterator difference.
-			using reference = std::byte&;							///< Mutable reference to an element.
-			using const_reference = const std::byte&;				///< Const reference to an element.
-			using pointer = std::byte*;								///< Mutable pointer and iterator.
-			using const_pointer = const std::byte*;					///< Const pointer and iterator.
-			using iterator = std::byte*;							///< Contiguous mutable iterator.
-			using const_iterator = const std::byte*;				///< Contiguous const iterator.
-			using reverse_iterator = std::reverse_iterator<iterator>;				///< Reverse iterator.
-			using const_reverse_iterator = std::reverse_iterator<const_iterator>;	///< Const reverse iterator.
+			/**
+			 * @brief Element type.
+			 */
+			using value_type = std::byte;
+
+			/**
+			 * @brief STL size typedef; @ref size() returns @ref StormByte::Size.
+			 */
+			using size_type = std::size_t;
+
+			/**
+			 * @brief Iterator difference.
+			 */
+			using difference_type = std::ptrdiff_t;
+
+			/**
+			 * @brief Mutable reference to an element.
+			 */
+			using reference = std::byte&;
+
+			/**
+			 * @brief Const reference to an element.
+			 */
+			using const_reference = const std::byte&;
+
+			/**
+			 * @brief Mutable pointer and iterator.
+			 */
+			using pointer = std::byte*;
+
+			/**
+			 * @brief Const pointer and iterator.
+			 */
+			using const_pointer = const std::byte*;
+
+			/**
+			 * @brief Contiguous mutable iterator.
+			 */
+			using iterator = std::byte*;
+
+			/**
+			 * @brief Contiguous const iterator.
+			 */
+			using const_iterator = const std::byte*;
+
+			/**
+			 * @brief Reverse iterator.
+			 */
+			using reverse_iterator = std::reverse_iterator<iterator>;
+
+			/**
+			 * @brief Const reverse iterator.
+			 */
+			using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 			/**
 			 * @name Constructors / destructor / assignment
@@ -159,16 +211,19 @@ namespace StormByte::Buffer {
 
 			/**
 			 * @brief Copy from an input range of byte-convertible values.
-			 * @tparam R Range type satisfying @c Type::ByteInputRange.
+			 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
 			 * @param range Source range.
 			 */
 			template<Type::ByteInputRange R>
 			explicit Data(const R& range);
 
 			/**
-			 * @brief Consume an rvalue range. Moves when @p R is @c Data.
-			 * @tparam R Range type satisfying @c Type::ByteInputRange.
+			 * @brief Consume an rvalue range. Moves when @p R is an rvalue @ref StormByte::Buffer::Data.
+			 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
 			 * @param range Source range.
+			 * @note An lvalue @ref StormByte::Buffer::Data is copied. @ref StormByte::Type::SameAs
+			 *       ignores references, so the implementation uses
+			 *       @ref StormByte::Type::LvalueReference before moving.
 			 */
 			template<Type::ByteInputRange R>
 			explicit Data(R&& range);
@@ -627,7 +682,10 @@ namespace StormByte::Buffer {
 			/** @} */
 
 		private:
-			std::unique_ptr<Storage> m_storage;	///< Byte store allocated by Buffer.
+			/**
+			 * @brief Byte store allocated by Buffer.
+			 */
+			std::unique_ptr<Storage> m_storage;
 
 			/**
 			 * @brief Byte offset of @p pos from @ref data().
@@ -647,12 +705,17 @@ namespace StormByte::Buffer {
 	};
 
 	/**
-	 * @brief Swap two @ref Data sequences.
+	 * @brief Swap two @ref StormByte::Buffer::Data sequences.
 	 * @param lhs Left-hand side.
 	 * @param rhs Right-hand side.
 	 */
 	STORMBYTE_BUFFER_PUBLIC void swap(Data& lhs, Data& rhs) noexcept;
 
+	/**
+	 * @brief Copy from an input range of byte-convertible values.
+	 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
+	 * @param range Source range.
+	 */
 	template<Type::ByteInputRange R>
 	Data::Data(const R& range)
 		: Data() {
@@ -665,11 +728,19 @@ namespace StormByte::Buffer {
 			push_back(static_cast<std::byte>(element));
 	}
 
+	/**
+	 * @brief Consume an rvalue range. Moves when @p R is an rvalue @ref StormByte::Buffer::Data.
+	 * @tparam R Range type satisfying @ref StormByte::Type::ByteInputRange.
+	 * @param range Source range.
+	 */
 	template<Type::ByteInputRange R>
 	Data::Data(R&& range)
 		: Data() {
 		if constexpr (Type::SameAs<R, Data>) {
-			*this = std::move(range);
+			if constexpr (Type::LvalueReference<R>)
+				*this = range;
+			else
+				*this = std::move(range);
 		}
 		else {
 			if constexpr (requires { std::ranges::size(range); }) {
@@ -682,11 +753,24 @@ namespace StormByte::Buffer {
 		}
 	}
 
+	/**
+	 * @brief Append one byte constructed from @p args.
+	 * @tparam Args Constructor argument types for @c std::byte.
+	 * @param args Arguments forwarded to @c std::byte.
+	 */
 	template<typename... Args>
 	void Data::emplace_back(Args&&... args) {
 		push_back(std::byte(std::forward<Args>(args)...));
 	}
 
+	/**
+	 * @brief Insert the range @c [first, last) before @p pos.
+	 * @tparam InputIt Input iterator type.
+	 * @param pos Insertion iterator.
+	 * @param first Range begin.
+	 * @param last Range end.
+	 * @return Iterator to the first inserted byte, or @p pos when the range is empty.
+	 */
 	template<typename InputIt>
 	Data::iterator Data::insert(const_iterator pos, InputIt first, InputIt last) {
 		const StormByte::Size index = offset_of(pos);
@@ -696,6 +780,12 @@ namespace StormByte::Buffer {
 		return insert_at(index, scratch.data(), scratch.size());
 	}
 
+	/**
+	 * @brief Replace contents with @c [first, last).
+	 * @tparam InputIt Input iterator type.
+	 * @param first Range begin.
+	 * @param last Range end.
+	 */
 	template<typename InputIt>
 	void Data::assign(InputIt first, InputIt last) {
 		clear();
