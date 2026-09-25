@@ -169,6 +169,30 @@ namespace {
 			<< std::endl;
 	}
 
+	void DumpMismatch(const char* tag, const std::string& expect, const std::string& got) {
+		std::cout << "[mismatch " << tag << "]"
+			<< " expect_size=" << expect.size()
+			<< " got_size=" << got.size();
+		const std::size_t n = expect.size() < got.size() ? expect.size() : got.size();
+		std::size_t i = 0;
+		for (; i < n; ++i) {
+			if (expect[i] != got[i])
+				break;
+		}
+		if (i == n && expect.size() == got.size()) {
+			std::cout << " identical" << std::endl;
+			return;
+		}
+		std::cout << " first=" << i;
+		if (i < expect.size())
+			std::cout << " expect_byte="
+				<< static_cast<unsigned>(static_cast<unsigned char>(expect[i]));
+		if (i < got.size())
+			std::cout << " got_byte="
+				<< static_cast<unsigned>(static_cast<unsigned char>(got[i]));
+		std::cout << std::endl;
+	}
+
 	int WriteAll(const std::string& fn, BufferedFileWriter& out, const std::string& body) {
 		std::size_t off = 0;
 		while (off < body.size()) {
@@ -818,7 +842,9 @@ int test_stress_patch_evicted_and_dirty() {
 		std::string expect = body;
 		expect.replace(32, 8, "EVICTED!");
 		expect.replace(12000, 8, "STILDIRT");
-		ASSERT_EQUAL(fn, expect, Slurp(path));
+		const std::string got = Slurp(path);
+		DumpMismatch((std::string("patev-") + k.tag).c_str(), expect, got);
+		ASSERT_EQUAL(fn, expect, got);
 		ASSERT_EQUAL(fn, StormByte::Size{16384}, out.Telemetry().HighWater);
 		ASSERT_EQUAL(fn, out.Telemetry().Materialized, out.Telemetry().HighWater);
 		std::filesystem::remove(path);
