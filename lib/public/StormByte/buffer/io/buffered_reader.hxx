@@ -202,7 +202,7 @@ namespace StormByte {
 					 * @c Peek does not move @ref Delivered, @ref HitAhead,
 					 * @ref HitBack, @ref Miss, @ref Origin or the Seek* counts.
 					 *
-					 * On consuming @ref Read:
+					 * On consuming @c Read:
 					 * @c Delivered == @c HitAhead + @c HitBack + @c Miss.
 					 * @c Origin counts every @ref OriginPull (Serve and worker).
 					 * @c Origin >= @c Miss. Mean wait is
