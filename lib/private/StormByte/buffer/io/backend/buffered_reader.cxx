@@ -441,8 +441,11 @@ void BufferedReader::Worker() {
 		m_cv.wait(lock, [this] {
 			return m_stop.load() || m_prefetch_run;
 		});
-		if (m_stop.load())
+		if (m_stop.load()) {
+			m_prefetch_run = false;
+			m_cv.notify_all();
 			return;
+		}
 
 		const StormByte::Size target = m_prefetch_target;
 		lock.unlock();
@@ -480,6 +483,7 @@ void BufferedReader::Worker() {
 			std::lock_guard inner(m_mutex);
 			if (pulled.status == Status::Failed || pulled.status == Status::Error) {
 				m_failed = true;
+				m_prefetch_run = false;
 				m_cv.notify_all();
 				break;
 			}
@@ -846,6 +850,7 @@ Result BufferedReader::Serve(const StormByte::Size n, FIFO& dest, const bool con
 		StormByte::Size max_tell{0};
 		bool exhausted = false;
 		bool failed = false;
+		FIFO from_cache;
 		{
 			std::lock_guard lock(m_mutex);
 			pos = m_tell + have;
@@ -853,15 +858,19 @@ Result BufferedReader::Serve(const StormByte::Size n, FIFO& dest, const bool con
 			max_tell = m_max_tell;
 			exhausted = m_origin_exhausted;
 			failed = m_failed;
+			if (cached > StormByte::Size{0}) {
+				const StormByte::Size take = cached < (n - have) ? cached : (n - have);
+				if (!CopyFromCache(pos, take, from_cache))
+					return { Status::Failed, 0 };
+				cached = take;
+			}
 		}
 		if (failed)
 			return { Status::Failed, 0 };
 
-		if (cached > StormByte::Size{0}) {
-			const StormByte::Size take = cached < (n - have) ? cached : (n - have);
-			if (!CopyFromCache(pos, take, assembled))
-				return { Status::Failed, 0 };
-			SplitHit(pos, take, max_tell, hit_ahead, hit_back);
+		if (from_cache.AvailableBytes() > StormByte::Size{0}) {
+			SplitHit(pos, cached, max_tell, hit_ahead, hit_back);
+			AppendFifo(assembled, from_cache);
 			continue;
 		}
 
